@@ -1,147 +1,120 @@
-# GMA (Git Message Assistant) 技术设计方案
+# gma
 
-## 项目概述
+## Project Overview
 
-GMA 是一个加速 Git add 和 commit 效率的 CLI 工具，通过 LLM 智能生成高质量的 commit message，减少开发者在提交代码时的心智负担。
+`gma` is a CLI tool that accelerates the efficiency of Git add and commit by using LLM to generate high-quality commit messages, thereby reducing the cognitive load on developers when submitting code.
 
-## 核心功能
+## Core Features
 
-1. **快速提交**：一键完成 git add 和 commit 操作
-2. **智能消息生成**：基于 git diff 自动生成符合规范的 commit message
-3. **多模型支持**：支持 OpenAI API 规范
-4. **角色定制**：根据不同工程师角色生成针对性的 commit message
-5. **符合规范**：生成的消息遵循 Conventional Commits 规范
+1. **Quick Commit**：Complete git add and commit operations with a single command
+2. **Smart Message Generation**：Automatically generate commit messages based on git diff
+3. **Multiple Models Support**：Support OpenAI API
+4. **Role Customization**：Generate commit messages tailored to different engineering roles
+5. **Conventional Commits**：The generated message follows the Conventional Commits specification
 
-## 安装方法
+## Usage
 
-### 从源码安装
-
-```bash
-# 克隆仓库
-git clone https://github.com/samzong/gma.git
-cd gma
-
-# 构建和安装
-make install
-```
-
-### 使用Go安装
-
-```bash
-go install github.com/samzong/gma@latest
-```
-
-## 使用方法
-
-### 首次使用
-
-首次使用GMA需要设置OpenAI API密钥：
+First use GMA to set the OpenAI API key:
 
 ```bash
 gma config set apikey YOUR_OPENAI_API_KEY
 ```
 
-可选：设置LLM模型、角色和API基础URL：
+Optional: Set LLM model, role, and API base URL:
 
 ```bash
-# 设置模型
-gma config set model gpt-4
+# Set model
+gma config set model gpt-4.1-mini
 
-# 设置角色
-gma config set role 前端工程师
+# Set role
+gma config set role Frontend
 
-# 设置API基础URL（用于代理访问OpenAI API）
+# Set API base URL (for proxy access to OpenAI API)
 gma config set apibase https://your-proxy-domain.com/v1
-```
 
-### 基本使用
-
-在Git仓库中，修改代码后，先将变更添加到暂存区，然后运行：
-
-```bash
-# 先手动添加文件到暂存区
-git add <文件路径>
-
-# 然后使用GMA生成提交消息并提交
-gma
-```
-
-自动添加所有变更并提交：
-
-```bash
-# 自动添加所有变更到暂存区并提交
-gma -a
-```
-
-### 高级选项
-
-```bash
-# 跳过 pre-commit 钩子
+# Skip pre-commit hook
 gma --no-verify
 
-# 仅生成消息，不实际提交
+# Generate message only, do not actually commit
 gma --dry-run
 
-# 自动添加所有变更到暂存区
+# Automatically add all changes to the staging area
 gma --all
 
-# 关联issue编号
+# Associate issue number
 gma --issue 123
-
-# 组合使用
-gma -a --issue 123 --no-verify
-
-# 使用自定义配置文件
-gma --config /path/to/config.yaml
 ```
 
-## 支持的角色和模型
+## Prompt template
 
-GMA支持自定义任意角色和模型名称，以下是内置的建议选项：
+`gma` supports custom prompt templates, allowing you to adjust the style of the generated commit message.
 
-### 建议角色
+#### Built-in Templates
 
-| 角色 | 特点 |
-|------|------|
-| 前端工程师 | 关注 UI 组件、样式和用户体验 |
-| 后端工程师 | 关注 API、数据库和业务逻辑 |
-| DevOps 工程师 | 关注部署、CI/CD 和基础设施 |
-| 全栈工程师 | 平衡前后端关注点 |
-| Markdown 工程师 | 关注文档和说明文件 |
+| Template Name | Description                                         |
+| -------- | -------------------------------------------- |
+| default     | Standard prompt template, generate commit messages that conform to the specification |
+| detailed     | Generate more detailed commit messages, including type description and more guidance |
+| concise     | Generate concise commit messages                       |
+| chinese     | Generate Chinese description commit messages                       |
 
-您可以根据自己的需要自定义角色名称，例如：
+Set template example:
+
 ```bash
-gma config set role "Python专家"
+# Use built-in template
+gma config set prompt_template detailed
 ```
 
-## 技术架构
+#### Custom template
 
-### 核心模块
+You can create a custom prompt template, the method is as follows:
 
-1. **命令模块 (cmd)**
-   - 使用 Cobra 框架构建命令行接口
-   - 提供主命令和子命令，如 `gma`、`gma config` 等
-   - `gma` 可一键完成 git diff 分析， git add ， git commit 操作
+1. Create a YAML format template file in the `~/.gma/prompts` directory, for example `my_template.yaml`:
 
-2. **Git 操作模块 (internal/git)**
-   - 封装 Git 操作，获取 diff 信息
-   - 分析变更文件类型和变更内容
+```yaml
+name: "My Custom Template"
+description: "My team's commit message format"
+template: |
+  As a {{.Role}}, please generate a commit message that follows the Conventional Commits specification for the following Git changes:
 
-3. **LLM 集成模块 (internal/llm)**
-   - 支持 OpenAI API
-   - 统一 LLM 调用接口
+  Changed Files:
+  {{.Files}}
 
-4. **配置管理模块 (internal/config)**
-   - 管理用户配置文件
-   - 提供角色模板管理
+  Changed Content:
+  {{.Diff}}
 
-5. **消息格式化模块 (internal/formatter)**
-   - 将 LLM 生成的内容格式化为规范的 commit message
+  Commit message format requirements:
+  - Use the "type(scope): description" format
+  - The type must be one of: feat, fix, docs, style, refactor, perf, test, chore
+  - The scope should be specific, and the description should be concise
+  - Do not include issue numbers
+```
 
-## 贡献指南
+2. Use the configuration command to set the custom template:
 
-欢迎提交 Issues 和 Pull Requests。
+```bash
+# Use custom template (only filename)
+gma config set prompt_template my_template
 
-## 许可证
+# Or specify the full path
+gma config set prompt_template /path/to/my_template.yaml
+```
+
+3. Custom template directory location:
+
+```bash
+# Set custom template directory
+gma config set custom_prompts_dir /path/to/templates
+```
+
+#### Template variables
+
+You can use the following variables in the template:
+
+- `{{.Role}}`: The user configured role
+- `{{.Files}}`: The list of changed files
+- `{{.Diff}}`: Git difference content
+
+## License
 
 MIT
