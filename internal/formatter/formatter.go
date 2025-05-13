@@ -25,9 +25,10 @@ func BuildPrompt(role string, changedFiles []string, diff string) string {
 变更内容：
 %s
 
-请生成格式为"类型(范围): 描述 (#issue号，如有)"的提交消息。
+请生成格式为"类型(范围): 描述"的提交消息。
 类型应从以下选择最合适的：feat, fix, docs, style, refactor, perf, test, chore。
-描述应简明扼要（不超过150字符），准确反映变更内容。`, role, changedFilesStr, diff)
+描述应简明扼要（不超过150字符），准确反映变更内容。
+不要在提交消息中添加issue编号，如"#123"或"(#123)"，这会由工具自动处理。`, role, changedFilesStr, diff)
 	
 	return prompt
 }
@@ -41,6 +42,10 @@ func FormatCommitMessage(message string) string {
 	lines := strings.Split(message, "\n")
 	if len(lines) > 0 {
 		firstLine := lines[0]
+		
+		// 移除可能存在的issue编号引用
+		issuePattern := regexp.MustCompile(`\s*\(#\d+\)|\s*#\d+`)
+		firstLine = issuePattern.ReplaceAllString(firstLine, "")
 		
 		// 检查是否符合Conventional Commits规范
 		conventionalPattern := regexp.MustCompile(`^(feat|fix|docs|style|refactor|perf|test|chore)(\([^\)]+\))?: .+`)

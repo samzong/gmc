@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// GetDiff 获取当前工作区的diff
+// GetDiff 获取当前工作区的所有diff（包括未暂存和已暂存）
 func GetDiff() (string, error) {
 	// 获取未暂存的变更
 	cmd := exec.Command("git", "diff")
@@ -34,7 +34,19 @@ func GetDiff() (string, error) {
 	return diff, nil
 }
 
-// ParseChangedFiles 解析变更的文件列表
+// GetStagedDiff 只获取已暂存的变更
+func GetStagedDiff() (string, error) {
+	cmd := exec.Command("git", "diff", "--cached")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("执行git diff --cached失败: %w", err)
+	}
+	
+	return out.String(), nil
+}
+
+// ParseChangedFiles 解析所有变更的文件列表（包括未暂存和已暂存）
 func ParseChangedFiles() ([]string, error) {
 	// 获取未暂存的变更文件
 	cmd := exec.Command("git", "diff", "--name-only")
@@ -76,6 +88,28 @@ func ParseChangedFiles() ([]string, error) {
 	}
 	
 	return changedFiles, nil
+}
+
+// ParseStagedFiles 只解析已暂存的文件列表
+func ParseStagedFiles() ([]string, error) {
+	cmd := exec.Command("git", "diff", "--cached", "--name-only")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("执行git diff --cached --name-only失败: %w", err)
+	}
+	
+	stagedFiles := strings.Split(strings.TrimSpace(out.String()), "\n")
+	
+	// 过滤空字符串
+	var result []string
+	for _, file := range stagedFiles {
+		if file != "" {
+			result = append(result, file)
+		}
+	}
+	
+	return result, nil
 }
 
 // AddAll 执行git add .

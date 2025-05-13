@@ -56,13 +56,22 @@ gma config set apibase https://your-proxy-domain.com/v1
 
 ### 基本使用
 
-在Git仓库中，修改代码后，直接运行：
+在Git仓库中，修改代码后，先将变更添加到暂存区，然后运行：
 
 ```bash
+# 先手动添加文件到暂存区
+git add <文件路径>
+
+# 然后使用GMA生成提交消息并提交
 gma
 ```
 
-这将自动检测文件变更，生成提交消息，然后执行git add和git commit操作。
+自动添加所有变更并提交：
+
+```bash
+# 自动添加所有变更到暂存区并提交
+gma -a
+```
 
 ### 高级选项
 
@@ -72,6 +81,15 @@ gma --no-verify
 
 # 仅生成消息，不实际提交
 gma --dry-run
+
+# 自动添加所有变更到暂存区
+gma --all
+
+# 关联issue编号
+gma --issue 123
+
+# 组合使用
+gma -a --issue 123 --no-verify
 
 # 使用自定义配置文件
 gma --config /path/to/config.yaml
@@ -94,19 +112,6 @@ GMA支持自定义任意角色和模型名称，以下是内置的建议选项�
 您可以根据自己的需要自定义角色名称，例如：
 ```bash
 gma config set role "Python专家"
-```
-
-### 建议模型
-
-以下是默认支持的模型，但您可以设置任何支持OpenAI API格式的模型：
-
-- gpt-3.5-turbo (默认)
-- gpt-4
-- gpt-4-turbo
-
-自定义模型示例：
-```bash
-gma config set model "your-custom-model"
 ```
 
 ## 技术架构

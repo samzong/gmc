@@ -14,6 +14,8 @@ var (
 	cfgFile   string
 	noVerify  bool
 	dryRun    bool
+	addAll    bool // 添加变量控制是否执行git add .
+	issueNum  string // issue编号
 	rootCmd   = &cobra.Command{
 		Use:   "gma",
 		Short: "GMA - Git Message Assistant",
@@ -39,6 +41,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "配置文件路径 (默认为 $HOME/.gma.yaml)")
 	rootCmd.Flags().BoolVar(&noVerify, "no-verify", false, "跳过 pre-commit 钩子")
 	rootCmd.Flags().BoolVar(&dryRun, "dry-run", false, "仅生成消息，不实际提交")
+	rootCmd.Flags().BoolVarP(&addAll, "all", "a", false, "自动将所有变更添加到暂存区后再提交")
+	rootCmd.Flags().StringVar(&issueNum, "issue", "", "关联的issue编号(可选)")
 
 	// 添加子命令
 	rootCmd.AddCommand(configCmd)
@@ -52,7 +56,13 @@ func initConfig() {
 func handleErrors(err error) error {
 	if err != nil {
 		// 对特定错误使用自定义处理
-		if err.Error() == "没有检测到文件变更" {
+		if err.Error() == "没有检测到暂存区的文件变更" {
+			fmt.Println("没有检测到暂存区的文件变更")
+			if !addAll {
+				fmt.Println("提示: 可以使用 -a 或 --all 参数自动添加所有变更到暂存区")
+			}
+			return nil // 不算作错误退出
+		} else if err.Error() == "没有检测到文件变更" {
 			fmt.Println("没有检测到文件变更")
 			return nil // 不算作错误退出
 		}
@@ -65,18 +75,26 @@ func handleErrors(err error) error {
 }
 
 func generateAndCommit() error {
-	// 1. 获取 git diff 信息
-	diff, err := git.GetDiff()
+	// 如果指定了--all/-a参数，先执行git add .
+	if addAll {
+		if err := git.AddAll(); err != nil {
+			return fmt.Errorf("git add 失败: %w", err)
+		}
+		fmt.Println("已将所有变更添加到暂存区")
+	}
+
+	// 1. 获取 git diff 信息（只获取暂存区的变更）
+	diff, err := git.GetStagedDiff()
 	if err != nil {
 		return fmt.Errorf("获取Git差异失败: %w", err)
 	}
 
 	if diff == "" {
-		return fmt.Errorf("没有检测到文件变更")
+		return fmt.Errorf("没有检测到暂存区的文件变更")
 	}
 
-	// 2. 解析变更文件
-	changedFiles, err := git.ParseChangedFiles()
+	// 2. 解析变更文件（只解析暂存区的变更）
+	changedFiles, err := git.ParseStagedFiles()
 	if err != nil {
 		return fmt.Errorf("解析变更文件失败: %w", err)
 	}
@@ -96,17 +114,18 @@ func generateAndCommit() error {
 	// 5. 格式化消息
 	formattedMessage := formatter.FormatCommitMessage(message)
 	
+	// 6. 如果指定了issue编号，添加到提交消息中
+	if issueNum != "" {
+		formattedMessage = fmt.Sprintf("%s (#%s)", formattedMessage, issueNum)
+	}
+	
 	fmt.Println("生成的提交消息:")
 	fmt.Println("-------------------")
 	fmt.Println(formattedMessage)
 	fmt.Println("-------------------")
 
-	// 6. 如果不是dry-run，则执行git add和commit
+	// 7. 如果不是dry-run，则执行git commit
 	if !dryRun {
-		if err := git.AddAll(); err != nil {
-			return fmt.Errorf("git add 失败: %w", err)
-		}
-
 		commitArgs := []string{}
 		if noVerify {
 			commitArgs = append(commitArgs, "--no-verify")
