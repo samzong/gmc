@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samzong/gma/internal/config"
+	"github.com/samzong/gmc/internal/config"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -15,7 +15,7 @@ func GenerateCommitMessage(prompt string, model string) (string, error) {
 	cfg := config.GetConfig()
 
 	if cfg.APIKey == "" {
-		return "", errors.New("API key not set, please set the API key first: gma config set apikey YOUR_API_KEY")
+		return "", errors.New("API key not set, please set the API key first: gmc config set apikey YOUR_API_KEY")
 	}
 
 	clientConfig := openai.DefaultConfig(cfg.APIKey)

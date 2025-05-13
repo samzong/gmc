@@ -1,16 +1,16 @@
 .PHONY: build install clean test fmt all help update-homebrew
 
 BUILD_DIR=./bin
-BINARY_NAME=gma
+BINARY_NAME=gmc
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILDTIME=$(shell date -u '+%Y-%m-%d %H:%M:%S UTC')
-LDFLAGS=-ldflags "-X github.com/samzong/gma/cmd.Version=$(VERSION) -X 'github.com/samzong/gma/cmd.BuildTime=$(BUILDTIME)'"
+LDFLAGS=-ldflags "-X github.com/samzong/gmc/cmd.Version=$(VERSION) -X 'github.com/samzong/gmc/cmd.BuildTime=$(BUILDTIME)'"
 
 # Homebrew related variables
 CLEAN_VERSION=$(shell echo $(VERSION) | sed 's/^v//')
 HOMEBREW_TAP_REPO=homebrew-tap
-FORMULA_FILE=Formula/gma.rb
-BRANCH_NAME=update-gma-$(CLEAN_VERSION)
+FORMULA_FILE=Formula/gmc.rb
+BRANCH_NAME=update-gmc-$(CLEAN_VERSION)
 
 # Adjust architecture definitions to match goreleaser output
 SUPPORTED_ARCHS = Darwin_x86_64 Darwin_arm64 Linux_x86_64 Linux_arm64
@@ -67,7 +67,7 @@ update-homebrew:
 	for arch in $(SUPPORTED_ARCHS); do \
 		echo "    - Processing $$arch..."; \
 		if [ "$(DRY_RUN)" = "1" ]; then \
-			echo "      [DRY_RUN] Would download: https://github.com/samzong/gma/releases/download/v$(CLEAN_VERSION)/gma_$${arch}.tar.gz"; \
+			echo "      [DRY_RUN] Would download: https://github.com/samzong/gmc/releases/download/v$(CLEAN_VERSION)/gmc_$${arch}.tar.gz"; \
 			case "$$arch" in \
 				Darwin_x86_64) DARWIN_AMD64_SHA="fake_sha_amd64" ;; \
 				Darwin_arm64) DARWIN_ARM64_SHA="fake_sha_arm64" ;; \
@@ -76,9 +76,9 @@ update-homebrew:
 			esac; \
 		else \
 			echo "      - Downloading release archive..."; \
-			curl -L -sSfO "https://github.com/samzong/gma/releases/download/v$(CLEAN_VERSION)/gma_$${arch}.tar.gz" || { echo "❌ Failed to download $$arch archive"; exit 1; }; \
+			curl -L -sSfO "https://github.com/samzong/gmc/releases/download/v$(CLEAN_VERSION)/gmc_$${arch}.tar.gz" || { echo "❌ Failed to download $$arch archive"; exit 1; }; \
 			echo "      - Calculating SHA256..."; \
-			sha=$$(shasum -a 256 "gma_$${arch}.tar.gz" | cut -d' ' -f1); \
+			sha=$$(shasum -a 256 "gmc_$${arch}.tar.gz" | cut -d' ' -f1); \
 			case "$$arch" in \
 				Darwin_x86_64) DARWIN_AMD64_SHA="$$sha"; echo "      ✓ Darwin AMD64 SHA: $$sha" ;; \
 				Darwin_arm64) DARWIN_ARM64_SHA="$$sha"; echo "      ✓ Darwin ARM64 SHA: $$sha" ;; \
@@ -105,21 +105,21 @@ update-homebrew:
 		sed -i '' \
 			-e '/on_macos/,/end/ { \
 				/if Hardware::CPU.arm?/,/else/ { \
-					s|url ".*"|url "https://github.com/samzong/gma/releases/download/v#{version}/gma_Darwin_arm64.tar.gz"|; \
+					s|url ".*"|url "https://github.com/samzong/gmc/releases/download/v#{version}/gmc_Darwin_arm64.tar.gz"|; \
 					s|sha256 ".*"|sha256 "'"$$DARWIN_ARM64_SHA"'"|; \
 				}; \
 				/else/,/end/ { \
-					s|url ".*"|url "https://github.com/samzong/gma/releases/download/v#{version}/gma_Darwin_x86_64.tar.gz"|; \
+					s|url ".*"|url "https://github.com/samzong/gmc/releases/download/v#{version}/gmc_Darwin_x86_64.tar.gz"|; \
 					s|sha256 ".*"|sha256 "'"$$DARWIN_AMD64_SHA"'"|; \
 				}; \
 			}' \
 			-e '/on_linux/,/end/ { \
 				/if Hardware::CPU.arm?/,/else/ { \
-					s|url ".*"|url "https://github.com/samzong/gma/releases/download/v#{version}/gma_Linux_arm64.tar.gz"|; \
+					s|url ".*"|url "https://github.com/samzong/gmc/releases/download/v#{version}/gmc_Linux_arm64.tar.gz"|; \
 					s|sha256 ".*"|sha256 "'"$$LINUX_ARM64_SHA"'"|; \
 				}; \
 				/else/,/end/ { \
-					s|url ".*"|url "https://github.com/samzong/gma/releases/download/v#{version}/gma_Linux_x86_64.tar.gz"|; \
+					s|url ".*"|url "https://github.com/samzong/gmc/releases/download/v#{version}/gmc_Linux_x86_64.tar.gz"|; \
 					s|sha256 ".*"|sha256 "'"$$LINUX_AMD64_SHA"'"|; \
 				}; \
 			}' $(FORMULA_FILE); \
@@ -135,7 +135,7 @@ update-homebrew:
 			git push -u origin $(BRANCH_NAME); \
 			echo "    - Preparing pull request data"; \
 			pr_data=$$(jq -n \
-				--arg title "chore: update gma to $(VERSION)" \
+				--arg title "chore: update gmc to $(VERSION)" \
 				--arg body "Auto-generated PR\nSHAs:\n- Darwin(amd64): $$DARWIN_AMD64_SHA\n- Darwin(arm64): $$DARWIN_ARM64_SHA" \
 				--arg head "$(BRANCH_NAME)" \
 				--arg base "main" \

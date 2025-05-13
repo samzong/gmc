@@ -2,10 +2,10 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/samzong/gma/internal/config"
-	"github.com/samzong/gma/internal/formatter"
-	"github.com/samzong/gma/internal/git"
-	"github.com/samzong/gma/internal/llm"
+	"github.com/samzong/gmc/internal/config"
+	"github.com/samzong/gmc/internal/formatter"
+	"github.com/samzong/gmc/internal/git"
+	"github.com/samzong/gmc/internal/llm"
 	"github.com/spf13/cobra"
 	"os"
 )
@@ -17,9 +17,9 @@ var (
 	addAll   bool
 	issueNum string
 	rootCmd  = &cobra.Command{
-		Use:     "gma",
-		Short:   "gma - Git Message Assistant",
-		Long:    `gma is a CLI tool that accelerates Git commit efficiency by generating high-quality commit messages using LLM.`,
+		Use:     "gmc",
+		Short:   "gmc - Git Message Assistant",
+		Long:    `gmc is a CLI tool that accelerates Git commit efficiency by generating high-quality commit messages using LLM.`,
 		Version: fmt.Sprintf("%s (built at %s)", Version, BuildTime),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return handleErrors(generateAndCommit())
@@ -36,7 +36,7 @@ func Execute() error {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "Configuration file path (default is $HOME/.gma.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "Configuration file path (default is $HOME/.gmc.yaml)")
 	rootCmd.Flags().BoolVar(&noVerify, "no-verify", false, "Skip pre-commit hooks")
 	rootCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Generate message only, do not commit")
 	rootCmd.Flags().BoolVarP(&addAll, "all", "a", false, "Automatically add all changes to the staging area before committing")

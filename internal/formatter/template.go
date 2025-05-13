@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"text/template"
 
-	"github.com/samzong/gma/internal/config"
+	"github.com/samzong/gmc/internal/config"
 	"gopkg.in/yaml.v3"
 )
 

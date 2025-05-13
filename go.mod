@@ -1,4 +1,4 @@
-module github.com/samzong/gma
+module github.com/samzong/gmc
 
 go 1.21
 

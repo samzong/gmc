@@ -20,7 +20,7 @@ type Config struct {
 const (
 	DefaultRole           = "Developer"
 	DefaultModel          = "gpt-3.5-turbo"
-	DefaultConfigName     = ".gma"
+	DefaultConfigName     = ".gmc"
 	DefaultPromptTemplate = "default"
 )
 
@@ -61,7 +61,7 @@ func InitConfig(cfgFile string) {
 	viper.SetDefault("prompt_template", DefaultPromptTemplate)
 
 	home, _ := os.UserHomeDir()
-	defaultPromptsDir := filepath.Join(home, ".gma", "prompts")
+	defaultPromptsDir := filepath.Join(home, ".gmc", "prompts")
 	viper.SetDefault("custom_prompts_dir", defaultPromptsDir)
 
 	viper.AutomaticEnv()
@@ -116,7 +116,7 @@ func GetConfig() *Config {
 			APIKey:           "",
 			APIBase:          "",
 			PromptTemplate:   DefaultPromptTemplate,
-			CustomPromptsDir: filepath.Join(os.Getenv("HOME"), ".gma", "prompts"),
+			CustomPromptsDir: filepath.Join(os.Getenv("HOME"), ".gmc", "prompts"),
 		}
 	}
 	return cfg

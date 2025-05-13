@@ -38,5 +38,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gma
-          path: bin/gma 
+          name: gmc
+          path: bin/gmc 

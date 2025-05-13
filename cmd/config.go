@@ -2,16 +2,16 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/samzong/gma/internal/config"
-	"github.com/samzong/gma/internal/formatter"
+	"github.com/samzong/gmc/internal/config"
+	"github.com/samzong/gmc/internal/formatter"
 	"github.com/spf13/cobra"
 )
 
 var (
 	configCmd = &cobra.Command{
 		Use:   "config",
-		Short: "Manage gma configuration",
-		Long:  `Manage gma configuration, including setting roles and LLM models, etc.`,
+		Short: "Manage gmc configuration",
+		Long:  `Manage gmc configuration, including setting roles and LLM models, etc.`,
 	}
 
 	configSetCmd = &cobra.Command{

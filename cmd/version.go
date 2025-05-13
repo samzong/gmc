@@ -13,9 +13,9 @@ var (
 
 	versionCmd = &cobra.Command{
 		Use:   "version",
-		Short: "Show gma version information",
+		Short: "Show gmc version information",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("gma version %s (built at %s)\n", Version, BuildTime)
+			fmt.Printf("gmc version %s (built at %s)\n", Version, BuildTime)
 		},
 	}
 )

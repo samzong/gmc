@@ -1,8 +1,8 @@
-# gma
+# gmc
 
 ## Project Overview
 
-`gma` is a CLI tool that accelerates the efficiency of Git add and commit by using LLM to generate high-quality commit messages, thereby reducing the cognitive load on developers when submitting code.
+`gmc` is a CLI tool that accelerates the efficiency of Git add and commit by using LLM to generate high-quality commit messages, thereby reducing the cognitive load on developers when submitting code.
 
 ## Core Features
 
@@ -14,40 +14,40 @@
 
 ## Usage
 
-First use GMA to set the OpenAI API key:
+First use gmc to set the OpenAI API key:
 
 ```bash
-gma config set apikey YOUR_OPENAI_API_KEY
+gmc config set apikey YOUR_OPENAI_API_KEY
 ```
 
 Optional: Set LLM model, role, and API base URL:
 
 ```bash
 # Set model
-gma config set model gpt-4.1-mini
+gmc config set model gpt-4.1-mini
 
 # Set role
-gma config set role Frontend
+gmc config set role Frontend
 
 # Set API base URL (for proxy access to OpenAI API)
-gma config set apibase https://your-proxy-domain.com/v1
+gmc config set apibase https://your-proxy-domain.com/v1
 
 # Skip pre-commit hook
-gma --no-verify
+gmc --no-verify
 
 # Generate message only, do not actually commit
-gma --dry-run
+gmc --dry-run
 
 # Automatically add all changes to the staging area
-gma --all
+gmc --all
 
 # Associate issue number
-gma --issue 123
+gmc --issue 123
 ```
 
 ## Prompt template
 
-`gma` supports custom prompt templates, allowing you to adjust the style of the generated commit message.
+`gmc` supports custom prompt templates, allowing you to adjust the style of the generated commit message.
 
 #### Built-in Templates
 
@@ -62,14 +62,14 @@ Set template example:
 
 ```bash
 # Use built-in template
-gma config set prompt_template detailed
+gmc config set prompt_template detailed
 ```
 
 #### Custom template
 
 You can create a custom prompt template, the method is as follows:
 
-1. Create a YAML format template file in the `~/.gma/prompts` directory, for example `my_template.yaml`:
+1. Create a YAML format template file in the `~/.gmc/prompts` directory, for example `my_template.yaml`:
 
 ```yaml
 name: "My Custom Template"
@@ -94,17 +94,17 @@ template: |
 
 ```bash
 # Use custom template (only filename)
-gma config set prompt_template my_template
+gmc config set prompt_template my_template
 
 # Or specify the full path
-gma config set prompt_template /path/to/my_template.yaml
+gmc config set prompt_template /path/to/my_template.yaml
 ```
 
 3. Custom template directory location:
 
 ```bash
 # Set custom template directory
-gma config set custom_prompts_dir /path/to/templates
+gmc config set custom_prompts_dir /path/to/templates
 ```
 
 #### Template variables

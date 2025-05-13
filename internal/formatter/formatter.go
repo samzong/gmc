@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/samzong/gma/internal/config"
+	"github.com/samzong/gmc/internal/config"
 )
 
 func BuildPrompt(role string, changedFiles []string, diff string) string {
