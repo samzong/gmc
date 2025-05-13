@@ -144,22 +144,22 @@ func ListCustomTemplates(dirPath string) ([]string, error) {
 		}
 		return nil, err
 	}
-	
+
 	if !fi.IsDir() {
 		return nil, fmt.Errorf("Path is not a directory: %s", dirPath)
 	}
-	
+
 	files, err := ioutil.ReadDir(dirPath)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var templates []string
 	for _, file := range files {
 		if file.IsDir() {
 			continue
 		}
-		
+
 		ext := filepath.Ext(file.Name())
 		if ext == ".yaml" || ext == ".yml" {
 			filePath := filepath.Join(dirPath, file.Name())
@@ -178,6 +178,6 @@ func ListCustomTemplates(dirPath string) ([]string, error) {
 			}
 		}
 	}
-	
+
 	return templates, nil
-} 
+}

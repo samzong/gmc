@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	
+
 	"github.com/spf13/viper"
 )
 
 type Config struct {
-	Role            string `mapstructure:"role"`
-	Model           string `mapstructure:"model"`
-	APIKey          string `mapstructure:"api_key"`
-	APIBase         string `mapstructure:"api_base"`
-	PromptTemplate  string `mapstructure:"prompt_template"`
+	Role             string `mapstructure:"role"`
+	Model            string `mapstructure:"model"`
+	APIKey           string `mapstructure:"api_key"`
+	APIBase          string `mapstructure:"api_base"`
+	PromptTemplate   string `mapstructure:"prompt_template"`
 	CustomPromptsDir string `mapstructure:"custom_prompts_dir"`
 }
 
@@ -59,7 +59,7 @@ func InitConfig(cfgFile string) {
 	viper.SetDefault("api_key", "")
 	viper.SetDefault("api_base", "")
 	viper.SetDefault("prompt_template", DefaultPromptTemplate)
-	
+
 	home, _ := os.UserHomeDir()
 	defaultPromptsDir := filepath.Join(home, ".gma", "prompts")
 	viper.SetDefault("custom_prompts_dir", defaultPromptsDir)
@@ -75,12 +75,12 @@ func InitConfig(cfgFile string) {
 				home, _ := os.UserHomeDir()
 				configDir = home
 			}
-			
+
 			if err := os.MkdirAll(configDir, 0755); err != nil {
 				fmt.Printf("Error: Failed to create configuration directory: %v\n", err)
 				return
 			}
-			
+
 			configPath := ""
 			if cfgFile != "" {
 				configPath = cfgFile
@@ -88,7 +88,7 @@ func InitConfig(cfgFile string) {
 				home, _ := os.UserHomeDir()
 				configPath = filepath.Join(home, DefaultConfigName+".yaml")
 			}
-			
+
 			if err := viper.WriteConfigAs(configPath); err != nil {
 				fmt.Printf("Error: Failed to write configuration file: %v\n", err)
 				return
@@ -97,7 +97,7 @@ func InitConfig(cfgFile string) {
 			fmt.Printf("Error: Failed to read configuration file: %v\n", err)
 		}
 	}
-	
+
 	promptsDir := viper.GetString("custom_prompts_dir")
 	if promptsDir != "" {
 		if err := os.MkdirAll(promptsDir, 0755); err != nil {
@@ -111,11 +111,11 @@ func GetConfig() *Config {
 	if err := viper.Unmarshal(cfg); err != nil {
 		fmt.Println("Error: Failed to parse configuration:", err)
 		return &Config{
-			Role:            DefaultRole,
-			Model:           DefaultModel,
-			APIKey:          "",
-			APIBase:         "",
-			PromptTemplate:  DefaultPromptTemplate,
+			Role:             DefaultRole,
+			Model:            DefaultModel,
+			APIKey:           "",
+			APIBase:          "",
+			PromptTemplate:   DefaultPromptTemplate,
 			CustomPromptsDir: filepath.Join(os.Getenv("HOME"), ".gma", "prompts"),
 		}
 	}
@@ -150,4 +150,4 @@ func GetSuggestedRoles() []string {
 
 func GetSuggestedModels() []string {
 	return suggestedModels
-} 
+}

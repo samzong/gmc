@@ -13,17 +13,17 @@ import (
 
 func GenerateCommitMessage(prompt string, model string) (string, error) {
 	cfg := config.GetConfig()
-	
+
 	if cfg.APIKey == "" {
 		return "", errors.New("API key not set, please set the API key first: gma config set apikey YOUR_API_KEY")
 	}
 
 	clientConfig := openai.DefaultConfig(cfg.APIKey)
-	
+
 	if cfg.APIBase != "" {
 		clientConfig.BaseURL = cfg.APIBase
 	}
-	
+
 	client := openai.NewClientWithConfig(clientConfig)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -60,4 +60,4 @@ func GenerateCommitMessage(prompt string, model string) (string, error) {
 	}
 
 	return strings.TrimSpace(resp.Choices[0].Message.Content), nil
-} 
+}

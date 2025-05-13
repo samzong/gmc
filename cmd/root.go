@@ -1,25 +1,26 @@
 package cmd
 
 import (
-	"github.com/samzong/gma/internal/git"
-	"github.com/samzong/gma/internal/llm"
+	"fmt"
 	"github.com/samzong/gma/internal/config"
 	"github.com/samzong/gma/internal/formatter"
+	"github.com/samzong/gma/internal/git"
+	"github.com/samzong/gma/internal/llm"
 	"github.com/spf13/cobra"
-	"fmt"
 	"os"
 )
 
 var (
-	cfgFile   string
-	noVerify  bool
-	dryRun    bool
-	addAll    bool
-	issueNum  string
-	rootCmd   = &cobra.Command{
-		Use:   "gma",
-		Short: "gma - Git Message Assistant",
-		Long: `gma is a CLI tool that accelerates Git commit efficiency by generating high-quality commit messages using LLM.`,
+	cfgFile  string
+	noVerify bool
+	dryRun   bool
+	addAll   bool
+	issueNum string
+	rootCmd  = &cobra.Command{
+		Use:     "gma",
+		Short:   "gma - Git Message Assistant",
+		Long:    `gma is a CLI tool that accelerates Git commit efficiency by generating high-quality commit messages using LLM.`,
+		Version: fmt.Sprintf("%s (built at %s)", Version, BuildTime),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return handleErrors(generateAndCommit())
 		},
@@ -63,7 +64,7 @@ func handleErrors(err error) error {
 			}
 			return nil
 		}
-		
+
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		return nil
 	}
@@ -103,15 +104,13 @@ func generateAndCommit() error {
 	}
 
 	formattedMessage := formatter.FormatCommitMessage(message)
-	
+
 	if issueNum != "" {
 		formattedMessage = fmt.Sprintf("%s (#%s)", formattedMessage, issueNum)
 	}
-	
+
 	fmt.Println("Generated Commit Message:")
-	fmt.Println("-------------------")
 	fmt.Println(formattedMessage)
-	fmt.Println("-------------------")
 
 	if !dryRun {
 		commitArgs := []string{}
@@ -122,11 +121,11 @@ func generateAndCommit() error {
 		if err := git.Commit(formattedMessage, commitArgs...); err != nil {
 			return fmt.Errorf("Failed to commit changes: %w", err)
 		}
-		
+
 		fmt.Println("Successfully committed changes!")
 	} else {
 		fmt.Println("Dry run mode, no actual commit")
 	}
 
 	return nil
-} 
+}

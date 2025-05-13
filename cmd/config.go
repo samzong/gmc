@@ -30,13 +30,13 @@ var (
 			if !config.IsValidRole(role) {
 				return fmt.Errorf("invalid role: %s", role)
 			}
-			
+
 			config.SetConfigValue("role", role)
-			
+
 			if err := config.SaveConfig(); err != nil {
 				return fmt.Errorf("Failed to save configuration: %w", err)
 			}
-			
+
 			fmt.Printf("The role has been set to: %s\n", role)
 			return nil
 		},
@@ -51,13 +51,13 @@ var (
 			if !config.IsValidModel(model) {
 				return fmt.Errorf("invalid model: %s", model)
 			}
-			
+
 			config.SetConfigValue("model", model)
-			
+
 			if err := config.SaveConfig(); err != nil {
 				return fmt.Errorf("Failed to save configuration: %w", err)
 			}
-			
+
 			fmt.Printf("The model has been set to: %s\n", model)
 			return nil
 		},
@@ -69,13 +69,13 @@ var (
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			apiKey := args[0]
-			
+
 			config.SetConfigValue("api_key", apiKey)
-			
+
 			if err := config.SaveConfig(); err != nil {
 				return fmt.Errorf("Failed to save configuration: %w", err)
 			}
-			
+
 			fmt.Println("The API key has been set")
 			return nil
 		},
@@ -87,13 +87,13 @@ var (
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			apiBase := args[0]
-			
+
 			config.SetConfigValue("api_base", apiBase)
-			
+
 			if err := config.SaveConfig(); err != nil {
 				return fmt.Errorf("Failed to save configuration: %w", err)
 			}
-			
+
 			fmt.Println("The API base URL has been set to:", apiBase)
 			fmt.Println("Note: This setting is used for proxy OpenAI API, leave it empty if you don't need a proxy")
 			return nil
@@ -106,18 +106,18 @@ var (
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			templateName := args[0]
-			
+
 			_, err := formatter.GetPromptTemplate(templateName)
 			if err != nil {
 				return fmt.Errorf("invalid prompt template: %s, error: %w", templateName, err)
 			}
-			
+
 			config.SetConfigValue("prompt_template", templateName)
-			
+
 			if err := config.SaveConfig(); err != nil {
 				return fmt.Errorf("Failed to save configuration: %w", err)
 			}
-			
+
 			fmt.Printf("The prompt template has been set to: %s\n", templateName)
 			return nil
 		},
@@ -129,13 +129,13 @@ var (
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := args[0]
-			
+
 			config.SetConfigValue("custom_prompts_dir", dir)
-			
+
 			if err := config.SaveConfig(); err != nil {
 				return fmt.Errorf("Failed to save configuration: %w", err)
 			}
-			
+
 			fmt.Printf("The custom prompt template directory has been set to: %s\n", dir)
 			return nil
 		},
@@ -168,7 +168,7 @@ var (
 			for name := range formatter.GetBuiltinTemplates() {
 				fmt.Printf("- %s\n", name)
 			}
-			
+
 			cfg := config.GetConfig()
 			if cfg.CustomPromptsDir != "" {
 				fmt.Printf("\nCustom Template Directory (%s):\n", cfg.CustomPromptsDir)
@@ -196,8 +196,8 @@ func init() {
 	configSetCmd.AddCommand(configSetAPIBaseCmd)
 	configSetCmd.AddCommand(configSetPromptTemplateCmd)
 	configSetCmd.AddCommand(configSetCustomPromptsDirCmd)
-	
+
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configGetCmd)
 	configCmd.AddCommand(configListTemplatesCmd)
-} 
+}

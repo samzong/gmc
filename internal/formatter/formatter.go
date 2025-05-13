@@ -13,27 +13,27 @@ func BuildPrompt(role string, changedFiles []string, diff string) string {
 	if len(diff) > 4000 {
 		diff = diff[:4000] + "...(content is too long, truncated)"
 	}
-	
+
 	changedFilesStr := strings.Join(changedFiles, "\n")
-	
+
 	cfg := config.GetConfig()
 	templateName := cfg.PromptTemplate
 	if templateName == "" {
 		templateName = "default"
 	}
-	
+
 	data := TemplateData{
 		Role:  role,
 		Files: changedFilesStr,
 		Diff:  diff,
 	}
-	
+
 	templateContent, err := GetPromptTemplate(templateName)
 	if err != nil {
 		fmt.Printf("Warning: %v, using default template\n", err)
 		templateContent = builtinTemplates["default"]
 	}
-	
+
 	prompt, err := RenderTemplate(templateContent, data)
 	if err != nil {
 		fmt.Printf("Warning: %v, using simple format\n", err)
@@ -50,36 +50,36 @@ The type should be the most appropriate from the following choices: feat, fix, d
 The description should be concise (no more than 150 characters) and accurately reflect the changes.
 Do not add issue numbers like "#123" or "(#123)" in the commit message, this will be handled automatically by the tool.`, role, changedFilesStr, diff)
 	}
-	
+
 	return prompt
 }
 
 func FormatCommitMessage(message string) string {
 	message = strings.TrimSpace(message)
-	
+
 	lines := strings.Split(message, "\n")
 	if len(lines) > 0 {
 		firstLine := lines[0]
-		
+
 		issuePattern := regexp.MustCompile(`\s*\(#\d+\)|\s*#\d+`)
 		firstLine = issuePattern.ReplaceAllString(firstLine, "")
-		
+
 		conventionalPattern := regexp.MustCompile(`^(feat|fix|docs|style|refactor|perf|test|chore)(\([^\)]+\))?: .+`)
 		if !conventionalPattern.MatchString(firstLine) {
 			return formatToConventional(firstLine)
 		}
-		
+
 		return firstLine
 	}
-	
+
 	return message
 }
 
 func formatToConventional(message string) string {
 	message = strings.TrimSpace(message)
-	
+
 	var commitType string
-	
+
 	lowerMsg := strings.ToLower(message)
 	if strings.Contains(lowerMsg, "fix") || strings.Contains(lowerMsg, "bug") {
 		commitType = "fix"
@@ -98,7 +98,7 @@ func formatToConventional(message string) string {
 	} else {
 		commitType = "chore"
 	}
-	
+
 	cleanMessage := message
 	prefixes := []string{"fix:", "bug:", "feat:", "feature:", "docs:", "style:", "refactor:", "perf:", "test:", "chore:"}
 	for _, prefix := range prefixes {
@@ -107,8 +107,8 @@ func formatToConventional(message string) string {
 			break
 		}
 	}
-	
+
 	cleanMessage = strings.TrimSpace(cleanMessage)
-	
+
 	return fmt.Sprintf("%s: %s", commitType, cleanMessage)
 }
