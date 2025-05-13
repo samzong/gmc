@@ -18,9 +18,8 @@ var (
 	issueNum  string
 	rootCmd   = &cobra.Command{
 		Use:   "gma",
-		Short: "GMA - Git Message Assistant",
-		Long: `GMA is a CLI tool that accelerates Git commit efficiency by generating high-quality commit messages using LLM.
-With GMA, you can complete git add and commit operations with a single command, reducing the mental burden of developers when submitting code.`,
+		Short: "gma - Git Message Assistant",
+		Long: `gma is a CLI tool that accelerates Git commit efficiency by generating high-quality commit messages using LLM.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return handleErrors(generateAndCommit())
 		},
@@ -74,7 +73,7 @@ func handleErrors(err error) error {
 func generateAndCommit() error {
 	if addAll {
 		if err := git.AddAll(); err != nil {
-			return fmt.Errorf("git add 失败: %w", err)
+			return fmt.Errorf("git add failed: %w", err)
 		}
 		fmt.Println("All changes have been added to the staging area.")
 	}

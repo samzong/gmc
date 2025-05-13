@@ -6,22 +6,22 @@ VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-ldflags "-X github.com/samzong/gma/cmd.Version=$(VERSION)"
 
 build:
-	@echo "构建 GMA..."
+	@echo "Build Command..."
 	@mkdir -p $(BUILD_DIR)
 	@go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) .
-	@echo "构建完成: $(BUILD_DIR)/$(BINARY_NAME)"
+	@echo "Build Command Done"
 
 install: build
-	@echo "安装 GMA..."
+	@echo "Install Command..."
 	@cp $(BUILD_DIR)/$(BINARY_NAME) $(GOPATH)/bin/
-	@echo "安装完成: $(GOPATH)/bin/$(BINARY_NAME)"
+	@echo "Install Command Done"
 
 clean:
-	@echo "清理..."
+	@echo "Clean Command..."
 	@rm -rf $(BUILD_DIR)
-	@echo "清理完成"
+	@echo "Clean Command Done"
 
 test:
-	@echo "运行测试..."
+	@echo "Run Test Command..."
 	@go test -v ./...
-	@echo "测试完成" 
+	@echo "Test Command Done" 

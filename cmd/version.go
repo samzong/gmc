@@ -10,9 +10,9 @@ var (
 	Version   = "dev"
 	versionCmd = &cobra.Command{
 		Use:   "version",
-		Short: "Show GMA version information",
+		Short: "Show gma version information",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("GMA version v%s\n", Version)
+			fmt.Printf("gma version v%s\n", Version)
 		},
 	}
 )

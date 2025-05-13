@@ -24,29 +24,40 @@ type TemplateData struct {
 	Diff  string
 }
 
+// Common template parts that are shared between templates
+var templateParts = struct {
+	Header   string
+	Files    string
+	Content  string
+	Format   string
+	NoIssues string
+}{
+	Header:   "{{.Role}}, please generate a commit message that follows the Conventional Commits specification",
+	Files:    "Changed Files:\n{{.Files}}",
+	Content:  "Changed Content:\n{{.Diff}}",
+	Format:   "in the format of \"type(scope): description\"",
+	NoIssues: "Do not include issue numbers, the system will handle them automatically.",
+}
+
 var builtinTemplates = map[string]string{
-	"default": `You are a professional {{.Role}}, please generate a commit message that follows the Conventional Commits specification based on the following Git changes:
+	"default": fmt.Sprintf(`You are a professional %s based on the following Git changes:
 
-Changed Files:
-{{.Files}}
+%s
 
-Changed Content:
-{{.Diff}}
+%s
 
-Please generate a commit message in the format of "type(scope): description".
+Please generate a commit message %s.
 The type should be the most appropriate from the following choices: feat, fix, docs, style, refactor, perf, test, chore.
 The description should be concise (no more than 150 characters) and accurately reflect the changes.
-Do not add issue numbers like "#123" or "(#123)" in the commit message, this will be handled automatically by the tool.`,
+%s`, templateParts.Header, templateParts.Files, templateParts.Content, templateParts.Format, templateParts.NoIssues),
 
-	"detailed": `As a seasoned {{.Role}}, please carefully analyze the following Git changes and generate a commit message that follows the Conventional Commits specification:
+	"detailed": fmt.Sprintf(`As a seasoned %s:
 
-Changed Files:
-{{.Files}}
+%s
 
-Changed Content:
-{{.Diff}}
+%s
 
-Please provide a commit message in the format of "type(scope): description", where:
+Please provide a commit message %s, where:
 1. The type must be the most appropriate from the following choices:
    - feat: new feature
    - fix: bug fix
@@ -60,7 +71,7 @@ Please provide a commit message in the format of "type(scope): description", whe
 2. The scope (optional): should clearly identify the component or module that has been changed
 3. The description: must be concise (no more than 150 characters) and accurately reflect the changes, using an imperative sentence starting with a verb
 
-Do not include issue numbers, the system will handle them automatically.`,
+%s`, templateParts.Header, templateParts.Files, templateParts.Content, templateParts.Format, templateParts.NoIssues),
 }
 
 func GetPromptTemplate(templateName string) (string, error) {

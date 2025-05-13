@@ -10,8 +10,8 @@ import (
 var (
 	configCmd = &cobra.Command{
 		Use:   "config",
-		Short: "Manage GMA configuration",
-		Long:  `Manage GMA configuration, including setting roles and LLM models, etc.`,
+		Short: "Manage gma configuration",
+		Long:  `Manage gma configuration, including setting roles and LLM models, etc.`,
 	}
 
 	configSetCmd = &cobra.Command{
