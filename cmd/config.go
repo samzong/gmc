@@ -3,136 +3,201 @@ package cmd
 import (
 	"fmt"
 	"github.com/samzong/gma/internal/config"
+	"github.com/samzong/gma/internal/formatter"
 	"github.com/spf13/cobra"
 )
 
 var (
 	configCmd = &cobra.Command{
 		Use:   "config",
-		Short: "管理GMA配置",
-		Long:  `管理GMA配置，包括设置角色和LLM模型等`,
+		Short: "Manage GMA configuration",
+		Long:  `Manage GMA configuration, including setting roles and LLM models, etc.`,
 	}
 
 	configSetCmd = &cobra.Command{
 		Use:   "set",
-		Short: "设置配置项",
+		Short: "Set configuration item",
 		Run: func(cmd *cobra.Command, args []string) {
-			// 配置项设置逻辑在子命令中实现
 		},
 	}
 
 	configSetRoleCmd = &cobra.Command{
-		Use:   "role [角色名]",
-		Short: "设置当前角色",
+		Use:   "role [Role Name]",
+		Short: "Set Current Role",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			role := args[0]
 			if !config.IsValidRole(role) {
-				return fmt.Errorf("无效的角色: %s", role)
+				return fmt.Errorf("invalid role: %s", role)
 			}
 			
-			cfg := config.GetConfig()
-			cfg.Role = role
+			config.SetConfigValue("role", role)
+			
 			if err := config.SaveConfig(); err != nil {
-				return fmt.Errorf("保存配置失败: %w", err)
+				return fmt.Errorf("Failed to save configuration: %w", err)
 			}
 			
-			fmt.Printf("已设置角色为: %s\n", role)
-			fmt.Println("提示: 您可以使用任何角色名称，建议角色有:")
-			for _, r := range config.GetSuggestedRoles() {
-				fmt.Printf("- %s\n", r)
-			}
+			fmt.Printf("The role has been set to: %s\n", role)
 			return nil
 		},
 	}
 
 	configSetModelCmd = &cobra.Command{
-		Use:   "model [模型名]",
-		Short: "设置LLM模型",
+		Use:   "model [Model Name]",
+		Short: "Set up the LLM model",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			model := args[0]
 			if !config.IsValidModel(model) {
-				return fmt.Errorf("无效的模型: %s", model)
+				return fmt.Errorf("invalid model: %s", model)
 			}
 			
-			cfg := config.GetConfig()
-			cfg.Model = model
+			config.SetConfigValue("model", model)
+			
 			if err := config.SaveConfig(); err != nil {
-				return fmt.Errorf("保存配置失败: %w", err)
+				return fmt.Errorf("Failed to save configuration: %w", err)
 			}
 			
-			fmt.Printf("已设置模型为: %s\n", model)
-			fmt.Println("提示: 您可以使用任何模型名称，建议模型有:")
-			for _, m := range config.GetSuggestedModels() {
-				fmt.Printf("- %s\n", m)
-			}
+			fmt.Printf("The model has been set to: %s\n", model)
 			return nil
 		},
 	}
 
 	configSetAPIKeyCmd = &cobra.Command{
-		Use:   "apikey [API密钥]",
-		Short: "设置OpenAI API密钥",
+		Use:   "apikey [API Key]",
+		Short: "Set OpenAI API Key",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			apiKey := args[0]
 			
-			cfg := config.GetConfig()
-			cfg.APIKey = apiKey
+			config.SetConfigValue("api_key", apiKey)
+			
 			if err := config.SaveConfig(); err != nil {
-				return fmt.Errorf("保存配置失败: %w", err)
+				return fmt.Errorf("Failed to save configuration: %w", err)
 			}
 			
-			fmt.Println("已设置API密钥")
+			fmt.Println("The API key has been set")
 			return nil
 		},
 	}
 
 	configSetAPIBaseCmd = &cobra.Command{
-		Use:   "apibase [API基础URL]",
-		Short: "设置OpenAI API基础URL",
+		Use:   "apibase [API Base URL]",
+		Short: "Set OpenAI API Base URL",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			apiBase := args[0]
 			
-			cfg := config.GetConfig()
-			cfg.APIBase = apiBase
+			config.SetConfigValue("api_base", apiBase)
+			
 			if err := config.SaveConfig(); err != nil {
-				return fmt.Errorf("保存配置失败: %w", err)
+				return fmt.Errorf("Failed to save configuration: %w", err)
 			}
 			
-			fmt.Println("已设置API基础URL为:", apiBase)
-			fmt.Println("提示: 此设置用于代理OpenAI API，如不需要代理请留空")
+			fmt.Println("The API base URL has been set to:", apiBase)
+			fmt.Println("Note: This setting is used for proxy OpenAI API, leave it empty if you don't need a proxy")
+			return nil
+		},
+	}
+
+	configSetPromptTemplateCmd = &cobra.Command{
+		Use:   "prompt_template [Template Name or Path]",
+		Short: "Set Prompt Template",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			templateName := args[0]
+			
+			_, err := formatter.GetPromptTemplate(templateName)
+			if err != nil {
+				return fmt.Errorf("invalid prompt template: %s, error: %w", templateName, err)
+			}
+			
+			config.SetConfigValue("prompt_template", templateName)
+			
+			if err := config.SaveConfig(); err != nil {
+				return fmt.Errorf("Failed to save configuration: %w", err)
+			}
+			
+			fmt.Printf("The prompt template has been set to: %s\n", templateName)
+			return nil
+		},
+	}
+
+	configSetCustomPromptsDirCmd = &cobra.Command{
+		Use:   "custom_prompts_dir [Directory Path]",
+		Short: "Set Custom Prompt Template Directory",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dir := args[0]
+			
+			config.SetConfigValue("custom_prompts_dir", dir)
+			
+			if err := config.SaveConfig(); err != nil {
+				return fmt.Errorf("Failed to save configuration: %w", err)
+			}
+			
+			fmt.Printf("The custom prompt template directory has been set to: %s\n", dir)
 			return nil
 		},
 	}
 
 	configGetCmd = &cobra.Command{
 		Use:   "get",
-		Short: "获取当前配置",
+		Short: "Get Current Configuration",
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg := config.GetConfig()
-			fmt.Println("当前配置:")
-			fmt.Printf("角色: %s\n", cfg.Role)
-			fmt.Printf("模型: %s\n", cfg.Model)
-			fmt.Println("API密钥: ********")
+			fmt.Println("Current Configuration:")
+			fmt.Printf("Role: %s\n", cfg.Role)
+			fmt.Printf("Model: %s\n", cfg.Model)
+			fmt.Println("API Key: ********")
 			if cfg.APIBase != "" {
-				fmt.Printf("API基础URL: %s\n", cfg.APIBase)
+				fmt.Printf("API Base URL: %s\n", cfg.APIBase)
 			} else {
-				fmt.Println("API基础URL: <未设置>")
+				fmt.Println("API Base URL: <Not Set>")
+			}
+			fmt.Printf("Prompt Template: %s\n", cfg.PromptTemplate)
+			fmt.Printf("Custom Prompt Template Directory: %s\n", cfg.CustomPromptsDir)
+		},
+	}
+
+	configListTemplatesCmd = &cobra.Command{
+		Use:   "list_templates",
+		Short: "List All Available Prompt Templates",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println("Built-in Templates:")
+			for name := range formatter.GetBuiltinTemplates() {
+				fmt.Printf("- %s\n", name)
+			}
+			
+			cfg := config.GetConfig()
+			if cfg.CustomPromptsDir != "" {
+				fmt.Printf("\nCustom Template Directory (%s):\n", cfg.CustomPromptsDir)
+				templates, err := formatter.ListCustomTemplates(cfg.CustomPromptsDir)
+				if err != nil {
+					fmt.Printf("Failed to read custom templates: %v\n", err)
+				} else {
+					if len(templates) == 0 {
+						fmt.Println("No custom templates found")
+					} else {
+						for _, tpl := range templates {
+							fmt.Printf("- %s\n", tpl)
+						}
+					}
+				}
 			}
 		},
 	}
 )
 
 func init() {
-	// 添加config子命令
 	configSetCmd.AddCommand(configSetRoleCmd)
 	configSetCmd.AddCommand(configSetModelCmd)
 	configSetCmd.AddCommand(configSetAPIKeyCmd)
 	configSetCmd.AddCommand(configSetAPIBaseCmd)
+	configSetCmd.AddCommand(configSetPromptTemplateCmd)
+	configSetCmd.AddCommand(configSetCustomPromptsDirCmd)
 	
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configGetCmd)
+	configCmd.AddCommand(configListTemplatesCmd)
 } 
