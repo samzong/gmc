@@ -1,6 +1,7 @@
 before:
   hooks:
     - go mod tidy
+    - git-chglog -o CHANGELOG.md
 
 builds:
   - env:
