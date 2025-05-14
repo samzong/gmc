@@ -9,12 +9,12 @@ import (
 )
 
 type Config struct {
-	Role             string `mapstructure:"role"`
-	Model            string `mapstructure:"model"`
-	APIKey           string `mapstructure:"api_key"`
-	APIBase          string `mapstructure:"api_base"`
-	PromptTemplate   string `mapstructure:"prompt_template"`
-	PromptsDir       string `mapstructure:"prompts_dir"`
+	Role           string `mapstructure:"role"`
+	Model          string `mapstructure:"model"`
+	APIKey         string `mapstructure:"api_key"`
+	APIBase        string `mapstructure:"api_base"`
+	PromptTemplate string `mapstructure:"prompt_template"`
+	PromptsDir     string `mapstructure:"prompts_dir"`
 }
 
 const (
@@ -111,12 +111,12 @@ func GetConfig() *Config {
 	if err := viper.Unmarshal(cfg); err != nil {
 		fmt.Println("Error: Failed to parse configuration:", err)
 		return &Config{
-			Role:             DefaultRole,
-			Model:            DefaultModel,
-			APIKey:           "",
-			APIBase:          "",
-			PromptTemplate:   DefaultPromptTemplate,
-			PromptsDir:       filepath.Join(os.Getenv("HOME"), ".gmc", "prompts"),
+			Role:           DefaultRole,
+			Model:          DefaultModel,
+			APIKey:         "",
+			APIBase:        "",
+			PromptTemplate: DefaultPromptTemplate,
+			PromptsDir:     filepath.Join(os.Getenv("HOME"), ".gmc", "prompts"),
 		}
 	}
 	return cfg
