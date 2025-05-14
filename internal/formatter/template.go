@@ -94,8 +94,8 @@ func GetPromptTemplate(templateName string) (string, error) {
 	}
 
 	cfg := config.GetConfig()
-	if cfg.CustomPromptsDir != "" {
-		customPath := filepath.Join(cfg.CustomPromptsDir, templateName)
+	if cfg.PromptsDir != "" {
+		customPath := filepath.Join(cfg.PromptsDir, templateName)
 		if filepath.Ext(customPath) == "" {
 			customPath += ".yaml"
 		}
@@ -136,7 +136,7 @@ func GetBuiltinTemplates() map[string]string {
 	return builtinTemplates
 }
 
-func ListCustomTemplates(dirPath string) ([]string, error) {
+func ListTemplates(dirPath string) ([]string, error) {
 	fi, err := os.Stat(dirPath)
 	if err != nil {
 		if os.IsNotExist(err) {

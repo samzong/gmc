@@ -156,7 +156,7 @@ var (
 				fmt.Println("API Base URL: <Not Set>")
 			}
 			fmt.Printf("Prompt Template: %s\n", cfg.PromptTemplate)
-			fmt.Printf("Custom Prompt Template Directory: %s\n", cfg.CustomPromptsDir)
+			fmt.Printf("Prompt Template Directory: %s\n", cfg.PromptsDir)
 		},
 	}
 
@@ -170,14 +170,14 @@ var (
 			}
 
 			cfg := config.GetConfig()
-			if cfg.CustomPromptsDir != "" {
-				fmt.Printf("\nCustom Template Directory (%s):\n", cfg.CustomPromptsDir)
-				templates, err := formatter.ListCustomTemplates(cfg.CustomPromptsDir)
+			if cfg.PromptsDir != "" {
+				fmt.Printf("\nTemplate Directory (%s):\n", cfg.PromptsDir)
+				templates, err := formatter.ListTemplates(cfg.PromptsDir)
 				if err != nil {
-					fmt.Printf("Failed to read custom templates: %v\n", err)
+					fmt.Printf("Failed to read templates: %v\n", err)
 				} else {
 					if len(templates) == 0 {
-						fmt.Println("No custom templates found")
+						fmt.Println("No templates found")
 					} else {
 						for _, tpl := range templates {
 							fmt.Printf("- %s\n", tpl)
