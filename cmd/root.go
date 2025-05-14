@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"github.com/samzong/gmc/internal/config"
 	"github.com/samzong/gmc/internal/formatter"
@@ -8,6 +9,7 @@ import (
 	"github.com/samzong/gmc/internal/llm"
 	"github.com/spf13/cobra"
 	"os"
+	"strings"
 )
 
 var (
@@ -16,6 +18,7 @@ var (
 	dryRun   bool
 	addAll   bool
 	issueNum string
+	autoYes  bool
 	rootCmd  = &cobra.Command{
 		Use:     "gmc",
 		Short:   "gmc - Git Message Assistant",
@@ -41,6 +44,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Generate message only, do not commit")
 	rootCmd.Flags().BoolVarP(&addAll, "all", "a", false, "Automatically add all changes to the staging area before committing")
 	rootCmd.Flags().StringVar(&issueNum, "issue", "", "Optional issue number")
+	rootCmd.Flags().BoolVarP(&autoYes, "yes", "y", false, "Automatically confirm the commit message")
 
 	rootCmd.AddCommand(configCmd)
 }
@@ -97,35 +101,63 @@ func generateAndCommit() error {
 	role := cfg.Role
 	model := cfg.Model
 
-	prompt := formatter.BuildPrompt(role, changedFiles, diff)
-	message, err := llm.GenerateCommitMessage(prompt, model)
-	if err != nil {
-		return fmt.Errorf("Failed to generate commit message: %w", err)
-	}
-
-	formattedMessage := formatter.FormatCommitMessage(message)
-
-	if issueNum != "" {
-		formattedMessage = fmt.Sprintf("%s (#%s)", formattedMessage, issueNum)
-	}
-
-	fmt.Println("Generated Commit Message:")
-	fmt.Println(formattedMessage)
-
-	if !dryRun {
-		commitArgs := []string{}
-		if noVerify {
-			commitArgs = append(commitArgs, "--no-verify")
+	for {
+		prompt := formatter.BuildPrompt(role, changedFiles, diff)
+		message, err := llm.GenerateCommitMessage(prompt, model)
+		if err != nil {
+			return fmt.Errorf("Failed to generate commit message: %w", err)
 		}
 
-		if err := git.Commit(formattedMessage, commitArgs...); err != nil {
-			return fmt.Errorf("Failed to commit changes: %w", err)
+		formattedMessage := formatter.FormatCommitMessage(message)
+
+		if issueNum != "" {
+			formattedMessage = fmt.Sprintf("%s (#%s)", formattedMessage, issueNum)
 		}
 
-		fmt.Println("Successfully committed changes!")
-	} else {
-		fmt.Println("Dry run mode, no actual commit")
-	}
+		fmt.Println("\nGenerated Commit Message:")
+		fmt.Println(formattedMessage)
 
-	return nil
+		if autoYes {
+			fmt.Println("Auto-confirming commit message (-y flag is set)")
+		} else {
+			fmt.Print("\nDo you want to proceed with this commit message? [y/n/r] (y=yes, n=no, r=regenerate): ")
+			reader := bufio.NewReader(os.Stdin)
+			response, err := reader.ReadString('\n')
+			if err != nil {
+				return fmt.Errorf("Failed to read user input: %w", err)
+			}
+
+			response = strings.ToLower(strings.TrimSpace(response))
+			switch response {
+			case "n":
+				fmt.Println("Commit cancelled by user")
+				return nil
+			case "r":
+				fmt.Println("Regenerating commit message...")
+				continue
+			case "y":
+				// Continue with commit
+			default:
+				fmt.Println("Invalid input. Commit cancelled")
+				return nil
+			}
+		}
+
+		if !dryRun {
+			commitArgs := []string{}
+			if noVerify {
+				commitArgs = append(commitArgs, "--no-verify")
+			}
+
+			if err := git.Commit(formattedMessage, commitArgs...); err != nil {
+				return fmt.Errorf("Failed to commit changes: %w", err)
+			}
+
+			fmt.Println("Successfully committed changes!")
+		} else {
+			fmt.Println("Dry run mode, no actual commit")
+		}
+
+		return nil
+	}
 }
