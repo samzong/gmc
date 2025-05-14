@@ -9,12 +9,12 @@ import (
 )
 
 type Config struct {
-	Role             string `mapstructure:"role"`
-	Model            string `mapstructure:"model"`
-	APIKey           string `mapstructure:"api_key"`
-	APIBase          string `mapstructure:"api_base"`
-	PromptTemplate   string `mapstructure:"prompt_template"`
-	CustomPromptsDir string `mapstructure:"custom_prompts_dir"`
+	Role           string `mapstructure:"role"`
+	Model          string `mapstructure:"model"`
+	APIKey         string `mapstructure:"api_key"`
+	APIBase        string `mapstructure:"api_base"`
+	PromptTemplate string `mapstructure:"prompt_template"`
+	PromptsDir     string `mapstructure:"prompts_dir"`
 }
 
 const (
@@ -62,7 +62,7 @@ func InitConfig(cfgFile string) {
 
 	home, _ := os.UserHomeDir()
 	defaultPromptsDir := filepath.Join(home, ".gmc", "prompts")
-	viper.SetDefault("custom_prompts_dir", defaultPromptsDir)
+	viper.SetDefault("prompts_dir", defaultPromptsDir)
 
 	viper.AutomaticEnv()
 
@@ -98,10 +98,10 @@ func InitConfig(cfgFile string) {
 		}
 	}
 
-	promptsDir := viper.GetString("custom_prompts_dir")
+	promptsDir := viper.GetString("prompts_dir")
 	if promptsDir != "" {
 		if err := os.MkdirAll(promptsDir, 0755); err != nil {
-			fmt.Printf("Warning: Failed to create custom prompt directory %s: %v\n", promptsDir, err)
+			fmt.Printf("Warning: Failed to create prompt directory %s: %v\n", promptsDir, err)
 		}
 	}
 }
@@ -111,12 +111,12 @@ func GetConfig() *Config {
 	if err := viper.Unmarshal(cfg); err != nil {
 		fmt.Println("Error: Failed to parse configuration:", err)
 		return &Config{
-			Role:             DefaultRole,
-			Model:            DefaultModel,
-			APIKey:           "",
-			APIBase:          "",
-			PromptTemplate:   DefaultPromptTemplate,
-			CustomPromptsDir: filepath.Join(os.Getenv("HOME"), ".gmc", "prompts"),
+			Role:           DefaultRole,
+			Model:          DefaultModel,
+			APIKey:         "",
+			APIBase:        "",
+			PromptTemplate: DefaultPromptTemplate,
+			PromptsDir:     filepath.Join(os.Getenv("HOME"), ".gmc", "prompts"),
 		}
 	}
 	return cfg

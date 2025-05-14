@@ -123,20 +123,20 @@ var (
 		},
 	}
 
-	configSetCustomPromptsDirCmd = &cobra.Command{
-		Use:   "custom_prompts_dir [Directory Path]",
-		Short: "Set Custom Prompt Template Directory",
+	configSetPromptsDirCmd = &cobra.Command{
+		Use:   "prompts_dir [Directory Path]",
+		Short: "Set Prompt Template Directory",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := args[0]
 
-			config.SetConfigValue("custom_prompts_dir", dir)
+			config.SetConfigValue("prompts_dir", dir)
 
 			if err := config.SaveConfig(); err != nil {
 				return fmt.Errorf("Failed to save configuration: %w", err)
 			}
 
-			fmt.Printf("The custom prompt template directory has been set to: %s\n", dir)
+			fmt.Printf("The prompt template directory has been set to: %s\n", dir)
 			return nil
 		},
 	}
@@ -156,7 +156,7 @@ var (
 				fmt.Println("API Base URL: <Not Set>")
 			}
 			fmt.Printf("Prompt Template: %s\n", cfg.PromptTemplate)
-			fmt.Printf("Custom Prompt Template Directory: %s\n", cfg.CustomPromptsDir)
+			fmt.Printf("Prompt Template Directory: %s\n", cfg.PromptsDir)
 		},
 	}
 
@@ -170,14 +170,14 @@ var (
 			}
 
 			cfg := config.GetConfig()
-			if cfg.CustomPromptsDir != "" {
-				fmt.Printf("\nCustom Template Directory (%s):\n", cfg.CustomPromptsDir)
-				templates, err := formatter.ListCustomTemplates(cfg.CustomPromptsDir)
+			if cfg.PromptsDir != "" {
+				fmt.Printf("\nTemplate Directory (%s):\n", cfg.PromptsDir)
+				templates, err := formatter.ListTemplates(cfg.PromptsDir)
 				if err != nil {
-					fmt.Printf("Failed to read custom templates: %v\n", err)
+					fmt.Printf("Failed to read templates: %v\n", err)
 				} else {
 					if len(templates) == 0 {
-						fmt.Println("No custom templates found")
+						fmt.Println("No templates found")
 					} else {
 						for _, tpl := range templates {
 							fmt.Printf("- %s\n", tpl)
@@ -195,7 +195,7 @@ func init() {
 	configSetCmd.AddCommand(configSetAPIKeyCmd)
 	configSetCmd.AddCommand(configSetAPIBaseCmd)
 	configSetCmd.AddCommand(configSetPromptTemplateCmd)
-	configSetCmd.AddCommand(configSetCustomPromptsDirCmd)
+	configSetCmd.AddCommand(configSetPromptsDirCmd)
 
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configGetCmd)
