@@ -14,7 +14,7 @@ type Config struct {
 	APIKey           string `mapstructure:"api_key"`
 	APIBase          string `mapstructure:"api_base"`
 	PromptTemplate   string `mapstructure:"prompt_template"`
-	CustomPromptsDir string `mapstructure:"custom_prompts_dir"`
+	PromptsDir       string `mapstructure:"prompts_dir"`
 }
 
 const (
@@ -62,7 +62,7 @@ func InitConfig(cfgFile string) {
 
 	home, _ := os.UserHomeDir()
 	defaultPromptsDir := filepath.Join(home, ".gmc", "prompts")
-	viper.SetDefault("custom_prompts_dir", defaultPromptsDir)
+	viper.SetDefault("prompts_dir", defaultPromptsDir)
 
 	viper.AutomaticEnv()
 
@@ -116,7 +116,7 @@ func GetConfig() *Config {
 			APIKey:           "",
 			APIBase:          "",
 			PromptTemplate:   DefaultPromptTemplate,
-			CustomPromptsDir: filepath.Join(os.Getenv("HOME"), ".gmc", "prompts"),
+			PromptsDir:       filepath.Join(os.Getenv("HOME"), ".gmc", "prompts"),
 		}
 	}
 	return cfg
