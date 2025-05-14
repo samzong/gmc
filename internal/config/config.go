@@ -98,10 +98,10 @@ func InitConfig(cfgFile string) {
 		}
 	}
 
-	promptsDir := viper.GetString("custom_prompts_dir")
+	promptsDir := viper.GetString("prompts_dir")
 	if promptsDir != "" {
 		if err := os.MkdirAll(promptsDir, 0755); err != nil {
-			fmt.Printf("Warning: Failed to create custom prompt directory %s: %v\n", promptsDir, err)
+			fmt.Printf("Warning: Failed to create prompt directory %s: %v\n", promptsDir, err)
 		}
 	}
 }

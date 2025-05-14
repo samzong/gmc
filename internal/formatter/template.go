@@ -103,7 +103,7 @@ func GetPromptTemplate(templateName string) (string, error) {
 		if _, err := os.Stat(customPath); err == nil {
 			content, err := ioutil.ReadFile(customPath)
 			if err != nil {
-				return "", fmt.Errorf("Unable to read custom template file %s: %w", customPath, err)
+				return "", fmt.Errorf("Unable to read Template file %s: %w", customPath, err)
 			}
 
 			var tpl PromptTemplate

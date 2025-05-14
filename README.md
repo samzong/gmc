@@ -47,7 +47,7 @@ gmc --issue 123
 
 ## Prompt template
 
-`gmc` supports custom prompt templates, allowing you to adjust the style of the generated commit message.
+`gmc` supports prompt templates, allowing you to adjust the style of the generated commit message.
 
 #### Built-in Templates
 
@@ -65,14 +65,14 @@ Set template example:
 gmc config set prompt_template detailed
 ```
 
-#### Custom template
+#### Template
 
-You can create a custom prompt template, the method is as follows:
+You can create a prompt template, the method is as follows:
 
 1. Create a YAML format template file in the `~/.gmc/prompts` directory, for example `my_template.yaml`:
 
 ```yaml
-name: "My Custom Template"
+name: "My Template"
 description: "My team's commit message format"
 template: |
   As a {{.Role}}, please generate a commit message that follows the Conventional Commits specification for the following Git changes:
@@ -90,21 +90,21 @@ template: |
   - Do not include issue numbers
 ```
 
-2. Use the configuration command to set the custom template:
+2. Use the configuration command to set the Template:
 
 ```bash
-# Use custom template (only filename)
+# Use Template (only filename)
 gmc config set prompt_template my_template
 
 # Or specify the full path
 gmc config set prompt_template /path/to/my_template.yaml
 ```
 
-3. Custom template directory location:
+3. Template directory location:
 
 ```bash
-# Set custom template directory
-gmc config set custom_prompts_dir /path/to/templates
+# Set Template directory
+gmc config set prompts_dir /path/to/templates
 ```
 
 #### Template variables

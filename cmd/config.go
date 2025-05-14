@@ -123,20 +123,20 @@ var (
 		},
 	}
 
-	configSetCustomPromptsDirCmd = &cobra.Command{
-		Use:   "custom_prompts_dir [Directory Path]",
-		Short: "Set Custom Prompt Template Directory",
+	configSetPromptsDirCmd = &cobra.Command{
+		Use:   "prompts_dir [Directory Path]",
+		Short: "Set Prompt Template Directory",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := args[0]
 
-			config.SetConfigValue("custom_prompts_dir", dir)
+			config.SetConfigValue("prompts_dir", dir)
 
 			if err := config.SaveConfig(); err != nil {
 				return fmt.Errorf("Failed to save configuration: %w", err)
 			}
 
-			fmt.Printf("The custom prompt template directory has been set to: %s\n", dir)
+			fmt.Printf("The prompt template directory has been set to: %s\n", dir)
 			return nil
 		},
 	}
@@ -195,7 +195,7 @@ func init() {
 	configSetCmd.AddCommand(configSetAPIKeyCmd)
 	configSetCmd.AddCommand(configSetAPIBaseCmd)
 	configSetCmd.AddCommand(configSetPromptTemplateCmd)
-	configSetCmd.AddCommand(configSetCustomPromptsDirCmd)
+	configSetCmd.AddCommand(configSetPromptsDirCmd)
 
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configGetCmd)
