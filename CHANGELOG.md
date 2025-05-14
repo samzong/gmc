@@ -1,7 +1,7 @@
 # Changelog
 
-## [Unreleased]
 
+## [v0.0.2] - 2025-05-14
 ### Bug Fixes
 - correct template format in changelog
 
@@ -24,4 +24,5 @@
 - **gma:** add option to automatically stage all changes ([#123](https://github.com/samzong/gmc/issues/123))
 
 
-[Unreleased]: https://github.com/samzong/gmc/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/samzong/gmc/compare/v0.0.2...HEAD
+[v0.0.2]: https://github.com/samzong/gmc/compare/v0.0.1...v0.0.2
