@@ -7,7 +7,25 @@ import (
 	"strings"
 )
 
+// IsGitRepository checks if the current directory is a git repository
+func IsGitRepository() bool {
+	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+	err := cmd.Run()
+	return err == nil
+}
+
+func CheckGitRepository() error {
+	if !IsGitRepository() {
+		return fmt.Errorf("Not in a git repository. Please run this command in a git repository directory")
+	}
+	return nil
+}
+
 func GetDiff() (string, error) {
+	if err := CheckGitRepository(); err != nil {
+		return "", err
+	}
+
 	cmd := exec.Command("git", "diff")
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -31,6 +49,10 @@ func GetDiff() (string, error) {
 }
 
 func GetStagedDiff() (string, error) {
+	if err := CheckGitRepository(); err != nil {
+		return "", err
+	}
+
 	cmd := exec.Command("git", "diff", "--cached")
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -42,6 +64,10 @@ func GetStagedDiff() (string, error) {
 }
 
 func ParseChangedFiles() ([]string, error) {
+	if err := CheckGitRepository(); err != nil {
+		return nil, err
+	}
+
 	cmd := exec.Command("git", "diff", "--name-only")
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -82,6 +108,10 @@ func ParseChangedFiles() ([]string, error) {
 }
 
 func ParseStagedFiles() ([]string, error) {
+	if err := CheckGitRepository(); err != nil {
+		return nil, err
+	}
+
 	cmd := exec.Command("git", "diff", "--cached", "--name-only")
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -102,6 +132,10 @@ func ParseStagedFiles() ([]string, error) {
 }
 
 func AddAll() error {
+	if err := CheckGitRepository(); err != nil {
+		return err
+	}
+
 	cmd := exec.Command("git", "add", ".")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("Failed to run git add .: %w", err)
@@ -110,6 +144,10 @@ func AddAll() error {
 }
 
 func Commit(message string, args ...string) error {
+	if err := CheckGitRepository(); err != nil {
+		return err
+	}
+
 	commitArgs := append([]string{"commit", "-m", message}, args...)
 	cmd := exec.Command("git", commitArgs...)
 	if err := cmd.Run(); err != nil {
