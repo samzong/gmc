@@ -6,6 +6,7 @@
   <p>gmc is a CLI tool that accelerates the efficiency of Git add and commit by using LLM to generate high-quality commit messages, thereby reducing the cognitive load on developers when submitting code.</p>
   <p>
     <a href="https://github.com/samzong/gmc/releases"><img src="https://img.shields.io/github/v/release/samzong/gmc" alt="Release Version" /></a>
+    <a href="https://goreportcard.com/report/github.com/samzong/gmc"><img src="https://goreportcard.com/badge/github.com/samzong/gmc" alt="go report" /></a>
     <a href="https://github.com/samzong/gmc/blob/main/LICENSE"><img src="https://img.shields.io/github/license/samzong/gmc" alt="MIT License" /></a>
   </p>
 </div>
