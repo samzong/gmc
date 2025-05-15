@@ -9,6 +9,7 @@ import (
 	"github.com/samzong/gmc/internal/llm"
 	"github.com/spf13/cobra"
 	"os"
+	"os/exec"
 	"strings"
 )
 
@@ -120,7 +121,7 @@ func generateAndCommit() error {
 		if autoYes {
 			fmt.Println("Auto-confirming commit message (-y flag is set)")
 		} else {
-			fmt.Print("\nDo you want to proceed with this commit message? [y/n/r] (y=yes, n=no, r=regenerate): ")
+			fmt.Print("\nDo you want to proceed with this commit message? [y/n/r/e] (y=yes, n=no, r=regenerate, e=edit): ")
 			reader := bufio.NewReader(os.Stdin)
 			response, err := reader.ReadString('\n')
 			if err != nil {
@@ -135,8 +136,60 @@ func generateAndCommit() error {
 			case "r":
 				fmt.Println("Regenerating commit message...")
 				continue
-			case "y":
-				// Continue with commit
+			case "e":
+				fmt.Println("Opening editor to modify commit message...")
+
+				tmpFile, err := os.CreateTemp("", "gmc-commit-")
+				if err != nil {
+					return fmt.Errorf("Failed to create temporary file: %w", err)
+				}
+
+				tmpFileName := tmpFile.Name()
+				defer os.Remove(tmpFileName)
+
+				if _, err := tmpFile.WriteString(formattedMessage); err != nil {
+					tmpFile.Close()
+					return fmt.Errorf("Failed to write to temporary file: %w", err)
+				}
+				tmpFile.Close()
+
+				editor := os.Getenv("EDITOR")
+				if editor == "" {
+					editor = os.Getenv("VISUAL")
+				}
+				if editor == "" {
+					editor = "vi" // use vi for edit
+				}
+
+				cmd := exec.Command(editor, tmpFileName)
+				cmd.Stdin = os.Stdin
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+
+				if err := cmd.Run(); err != nil {
+					return fmt.Errorf("Failed to open editor: %w", err)
+				}
+
+				editedBytes, err := os.ReadFile(tmpFileName)
+				if err != nil {
+					return fmt.Errorf("Failed to read edited message: %w", err)
+				}
+
+				editedMessage := strings.TrimSpace(string(editedBytes))
+				if editedMessage != "" {
+					formattedMessage = formatter.FormatCommitMessage(editedMessage)
+					if issueNum != "" {
+						formattedMessage = fmt.Sprintf("%s (#%s)", formattedMessage, issueNum)
+					}
+					fmt.Println("Using edited message:")
+					fmt.Println(formattedMessage)
+				} else {
+					fmt.Println("Empty message provided, using original message")
+				}
+			case "y", "":
+				if response == "" {
+					fmt.Println("Using default option (yes)")
+				}
 			default:
 				fmt.Println("Invalid input. Commit cancelled")
 				return nil
