@@ -1,0 +1,14 @@
+site_name: gmc prompt template
+site_url: https://samzong.github.io/gmc-prompt-template
+site_author: samzong
+
+edit_uri: 'blob/main/website/docs/'
+
+
+theme:
+  name: readthedocs
+  language: en
+
+nav:
+  - default: default.md
+  - details: details.md

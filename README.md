@@ -1,71 +1,76 @@
-# gmc
+# gmc - Git Message Commit
 
-## Project Overview
-
-`gmc` is a CLI tool that accelerates the efficiency of Git add and commit by using LLM to generate high-quality commit messages, thereby reducing the cognitive load on developers when submitting code.
+<div align="center">
+  <img src="./logo.png" alt="gmc logo" width="200" />
+  <br />
+  <p>gmc is a CLI tool that accelerates the efficiency of Git add and commit by using LLM to generate high-quality commit messages, thereby reducing the cognitive load on developers when submitting code.</p>
+  <p>
+    <a href="https://github.com/samzong/gmc/releases"><img src="https://img.shields.io/github/v/release/samzong/gmc" alt="Release Version" /></a>
+    <a href="https://github.com/samzong/gmc/blob/main/LICENSE"><img src="https://img.shields.io/github/license/samzong/gmc" alt="MIT License" /></a>
+  </p>
+</div>
 
 ## Core Features
 
-1. **Quick Commit**：Complete git add and commit operations with a single command
+1. **One Command Commit**：Complete git add and commit operations with a single command
 2. **Smart Message Generation**：Automatically generate commit messages based on git diff
-3. **Multiple Models Support**：Support OpenAI API
+3. **LLM Models Support**：Support OpenAI API Style
 4. **Role Customization**：Generate commit messages tailored to different engineering roles
 5. **Conventional Commits**：The generated message follows the Conventional Commits specification
 
 ## Usage
 
-First use gmc to set the OpenAI API key:
+First use gmc to set the OpenAI API serivce:
 
 ```bash
+gmc config set apibase https://your-proxy-domain.com/v1
 gmc config set apikey YOUR_OPENAI_API_KEY
+gmc config set model gpt-4.1-mini
 ```
 
-Optional: Set LLM model, role, and API base URL:
+And Configure other parameters.
 
 ```bash
-# Set model
-gmc config set model gpt-4.1-mini
-
 # Set role
-gmc config set role Frontend
+(base) ➜  ~ gmc config set [Key]
+apibase          -- Set OpenAI API Base URL
+apikey           -- Set OpenAI API Key
+model            -- Set up the LLM model
+prompt_template  -- Set Prompt Template
+prompts_dir      -- Set Prompt Template Directory
+role             -- Set Current Role
+```
 
-# Set API base URL (for proxy access to OpenAI API)
-gmc config set apibase https://your-proxy-domain.com/v1
+Use the following command.
 
-# Skip pre-commit hook
-gmc --no-verify
-
-# Generate message only, do not actually commit
-gmc --dry-run
+```bash
+# It's will Automatically read git diff from staging area.
+gmc
 
 # Automatically add all changes to the staging area
-gmc --all
+gmc -a
 
 # Associate issue number
 gmc --issue 123
+
+# Set Template directory
+gmc config set prompts_dir /path/to/templates
+
+# Use Template (only filename in prompts_dir)
+gmc config set prompt_template my_template
 ```
 
 ## Prompt template
 
 `gmc` supports prompt templates, allowing you to adjust the style of the generated commit message.
 
-#### Built-in Templates
+### Built-in Templates
 
-| Template Name | Description                                         |
-| -------- | -------------------------------------------- |
-| default     | Standard prompt template, generate commit messages that conform to the specification |
-| detailed     | Generate more detailed commit messages, including type description and more guidance |
-| concise     | Generate concise commit messages                       |
-| chinese     | Generate Chinese description commit messages                       |
+| Template Name | Description                                                                          |
+| ------------- | ------------------------------------------------------------------------------------ |
+| default       | Standard prompt template, generate commit messages that conform to the specification |
 
-Set template example:
-
-```bash
-# Use built-in template
-gmc config set prompt_template detailed
-```
-
-#### Template
+### Template
 
 You can create a prompt template, the method is as follows:
 
@@ -73,7 +78,7 @@ You can create a prompt template, the method is as follows:
 
 ```yaml
 name: "My Template"
-description: "My team's commit message format"
+description: "My commit message format"
 template: |
   As a {{.Role}}, please generate a commit message that follows the Conventional Commits specification for the following Git changes:
 
@@ -90,24 +95,7 @@ template: |
   - Do not include issue numbers
 ```
 
-2. Use the configuration command to set the Template:
-
-```bash
-# Use Template (only filename)
-gmc config set prompt_template my_template
-
-# Or specify the full path
-gmc config set prompt_template /path/to/my_template.yaml
-```
-
-3. Template directory location:
-
-```bash
-# Set Template directory
-gmc config set prompts_dir /path/to/templates
-```
-
-#### Template variables
+### Template variables
 
 You can use the following variables in the template:
 
@@ -117,4 +105,4 @@ You can use the following variables in the template:
 
 ## License
 
-MIT
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
