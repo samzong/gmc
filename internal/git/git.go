@@ -3,9 +3,12 @@ package git
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
+
+var Verbose bool
 
 // IsGitRepository checks if the current directory is a git repository
 func IsGitRepository() bool {
@@ -55,8 +58,18 @@ func GetStagedDiff() (string, error) {
 
 	cmd := exec.Command("git", "diff", "--cached")
 	var out bytes.Buffer
+	var errBuf bytes.Buffer
 	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
+	
+	if Verbose {
+		fmt.Fprintln(os.Stderr, "Running: git diff --cached")
+	}
+	
 	if err := cmd.Run(); err != nil {
+		if Verbose && errBuf.Len() > 0 {
+			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
+		}
 		return "", fmt.Errorf("Failed to run git diff --cached: %w", err)
 	}
 
@@ -114,8 +127,18 @@ func ParseStagedFiles() ([]string, error) {
 
 	cmd := exec.Command("git", "diff", "--cached", "--name-only")
 	var out bytes.Buffer
+	var errBuf bytes.Buffer
 	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
+	
+	if Verbose {
+		fmt.Fprintln(os.Stderr, "Running: git diff --cached --name-only")
+	}
+	
 	if err := cmd.Run(); err != nil {
+		if Verbose && errBuf.Len() > 0 {
+			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
+		}
 		return nil, fmt.Errorf("Failed to run git diff --cached --name-only: %w", err)
 	}
 
@@ -137,9 +160,24 @@ func AddAll() error {
 	}
 
 	cmd := exec.Command("git", "add", ".")
+	var errBuf bytes.Buffer
+	cmd.Stderr = &errBuf
+	
+	if Verbose {
+		fmt.Fprintln(os.Stderr, "Running: git add .")
+	}
+	
 	if err := cmd.Run(); err != nil {
+		if Verbose && errBuf.Len() > 0 {
+			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
+		}
 		return fmt.Errorf("Failed to run git add .: %w", err)
 	}
+	
+	if Verbose && errBuf.Len() > 0 {
+		fmt.Fprintln(os.Stderr, "Git output:", errBuf.String())
+	}
+	
 	return nil
 }
 
@@ -150,8 +188,36 @@ func Commit(message string, args ...string) error {
 
 	commitArgs := append([]string{"commit", "-m", message}, args...)
 	cmd := exec.Command("git", commitArgs...)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("Failed to run git commit: %w", err)
+	
+	var outBuf bytes.Buffer
+	var errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	
+	if Verbose {
+		fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(commitArgs, " "))
 	}
+	
+	err := cmd.Run()
+	
+	// Always show output in verbose mode
+	if Verbose {
+		if outBuf.Len() > 0 {
+			fmt.Fprintln(os.Stderr, "Git output:", outBuf.String())
+		}
+		if errBuf.Len() > 0 {
+			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
+		}
+	}
+	
+	if err != nil {
+		// Include git error output in the error message
+		errMsg := "Failed to run git commit"
+		if errBuf.Len() > 0 {
+			errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(errBuf.String()))
+		}
+		return fmt.Errorf("%s: %w", errMsg, err)
+	}
+	
 	return nil
 }

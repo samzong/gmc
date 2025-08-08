@@ -20,6 +20,7 @@ var (
 	addAll   bool
 	issueNum string
 	autoYes  bool
+	verbose  bool
 	rootCmd  = &cobra.Command{
 		Use:     "gmc",
 		Short:   "gmc - Git Message Assistant",
@@ -46,6 +47,7 @@ func init() {
 	rootCmd.Flags().BoolVarP(&addAll, "all", "a", false, "Automatically add all changes to the staging area before committing")
 	rootCmd.Flags().StringVar(&issueNum, "issue", "", "Optional issue number")
 	rootCmd.Flags().BoolVarP(&autoYes, "yes", "y", false, "Automatically confirm the commit message")
+	rootCmd.Flags().BoolVarP(&verbose, "verbose", "V", false, "Show detailed git command output")
 
 	rootCmd.AddCommand(configCmd)
 }
@@ -77,6 +79,9 @@ func handleErrors(err error) error {
 }
 
 func generateAndCommit() error {
+	// Set verbose mode for git operations
+	git.Verbose = verbose
+	
 	if addAll {
 		if err := git.AddAll(); err != nil {
 			return fmt.Errorf("git add failed: %w", err)
