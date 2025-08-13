@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,14 @@ import (
 )
 
 var Verbose bool
+
+// CommitInfo represents information about a single commit
+type CommitInfo struct {
+	Hash    string `json:"hash"`
+	Author  string `json:"author"`
+	Date    string `json:"date"`
+	Message string `json:"message"`
+}
 
 // IsGitRepository checks if the current directory is a git repository
 func IsGitRepository() bool {
@@ -19,7 +28,7 @@ func IsGitRepository() bool {
 
 func CheckGitRepository() error {
 	if !IsGitRepository() {
-		return fmt.Errorf("Not in a git repository. Please run this command in a git repository directory")
+		return errors.New("Not in a git repository. Please run this command in a git repository directory")
 	}
 	return nil
 }
@@ -242,7 +251,7 @@ func CreateAndSwitchBranch(branchName string) error {
 
 func validateBranchName(branchName string) error {
 	if branchName == "" {
-		return fmt.Errorf("branch name cannot be empty")
+		return errors.New("branch name cannot be empty")
 	}
 
 	if strings.Contains(branchName, "..") || strings.HasPrefix(branchName, "-") {
@@ -286,4 +295,89 @@ func createAndSwitchBranch(branchName string) error {
 	}
 
 	return nil
+}
+
+// GetCommitHistory retrieves commit history with different modes
+func GetCommitHistory(limit int, teamMode bool) ([]CommitInfo, error) {
+	if err := CheckGitRepository(); err != nil {
+		return nil, err
+	}
+
+	var cmd *exec.Cmd
+	if teamMode {
+		// Team mode: get commits from all authors
+		cmd = exec.Command("git", "log", "--pretty=format:%h|%an|%ad|%s", "--date=short", fmt.Sprintf("-n%d", limit))
+	} else {
+		// Personal mode: get commits from current user only
+		currentUser, err := getCurrentGitUser()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current git user: %w", err)
+		}
+		cmd = exec.Command("git", "log", "--pretty=format:%h|%an|%ad|%s", "--date=short", fmt.Sprintf("--author=%s", currentUser), fmt.Sprintf("-n%d", limit))
+	}
+
+	var out bytes.Buffer
+	var errBuf bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
+
+	if Verbose {
+		fmt.Fprintf(os.Stderr, "Running: %s\n", strings.Join(cmd.Args, " "))
+	}
+
+	if err := cmd.Run(); err != nil {
+		if Verbose && errBuf.Len() > 0 {
+			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
+		}
+		return nil, fmt.Errorf("failed to run git log: %w", err)
+	}
+
+	output := strings.TrimSpace(out.String())
+	if output == "" {
+		return []CommitInfo{}, nil
+	}
+
+	return parseCommitOutput(output)
+}
+
+// getCurrentGitUser gets the current git user name
+func getCurrentGitUser() (string, error) {
+	cmd := exec.Command("git", "config", "user.name")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to get git user name: %w", err)
+	}
+
+	return strings.TrimSpace(out.String()), nil
+}
+
+// parseCommitOutput parses the git log output into CommitInfo structs
+func parseCommitOutput(output string) ([]CommitInfo, error) {
+	lines := strings.Split(output, "\n")
+	commits := make([]CommitInfo, 0, len(lines))
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		parts := strings.SplitN(line, "|", 4)
+		if len(parts) != 4 {
+			continue // Skip malformed lines
+		}
+
+		commit := CommitInfo{
+			Hash:    strings.TrimSpace(parts[0]),
+			Author:  strings.TrimSpace(parts[1]),
+			Date:    strings.TrimSpace(parts[2]),
+			Message: strings.TrimSpace(parts[3]),
+		}
+
+		commits = append(commits, commit)
+	}
+
+	return commits, nil
 }

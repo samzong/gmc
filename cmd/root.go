@@ -2,16 +2,18 @@ package cmd
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+
 	"github.com/samzong/gmc/internal/branch"
 	"github.com/samzong/gmc/internal/config"
 	"github.com/samzong/gmc/internal/formatter"
 	"github.com/samzong/gmc/internal/git"
 	"github.com/samzong/gmc/internal/llm"
 	"github.com/spf13/cobra"
-	"os"
-	"os/exec"
-	"strings"
 )
 
 var (
@@ -106,7 +108,7 @@ func handleBranchCreation() error {
 
 	branchName := branch.GenerateName(branchDesc)
 	if branchName == "" {
-		return fmt.Errorf("invalid branch description: cannot generate branch name")
+		return errors.New("invalid branch description: cannot generate branch name")
 	}
 
 	fmt.Printf("Creating and switching to branch: %s\n", branchName)
@@ -136,7 +138,7 @@ func getStagedChanges() (string, []string, error) {
 	}
 
 	if diff == "" {
-		return "", nil, fmt.Errorf("No changes detected in the staging area files.")
+		return "", nil, errors.New("No changes detected in the staging area files.")
 	}
 
 	changedFiles, err := git.ParseStagedFiles()

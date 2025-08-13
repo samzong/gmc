@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+
 	"github.com/samzong/gmc/internal/config"
 	"github.com/samzong/gmc/internal/formatter"
 	"github.com/spf13/cobra"

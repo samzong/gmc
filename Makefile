@@ -1,5 +1,3 @@
-.PHONY: build install clean test fmt all help update-homebrew
-
 BUILD_DIR=./build
 BINARY_NAME=gmc
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -15,35 +13,58 @@ BRANCH_NAME=update-gmc-$(CLEAN_VERSION)
 # Adjust architecture definitions to match goreleaser output
 SUPPORTED_ARCHS = Darwin_x86_64 Darwin_arm64 Linux_x86_64 Linux_arm64
 
+.PHONY: help
+help:
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+
+##@ General
+.PHONY: build
 build:
 	@echo "Building $(BINARY_NAME) $(VERSION)..."
 	@mkdir -p $(BUILD_DIR)
 	@CGO_ENABLED=0 go build -trimpath $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) .
 	@echo "Build Command Done"
 
+.PHONY: install
 install: build
 	@echo "Installing $(BINARY_NAME) $(VERSION)..."
 	@cp $(BUILD_DIR)/$(BINARY_NAME) $(GOPATH)/bin/
 	@echo "Install Command Done"
 
+.PHONY: clean
 clean:
 	@echo "Cleaning build artifacts..."
 	@rm -rf $(BUILD_DIR)
 	@echo "Clean Command Done"
 
+.PHONY: test
 test:
 	@echo "Running tests..."
 	@go test -v ./...
 	@echo "Test Command Done"
 
+.PHONY: fmt
 fmt:
 	@echo "Formatting code..."
 	@go fmt ./...
 	@go mod tidy
 	@echo "Format Command Done"
 
-all: clean fmt build test
+.PHONY: lint
+lint:
+	@echo "$(BLUE)Running code analysis...$(NC)"
+	$(call ensure-external-tool,golangci-lint,$(GOLANGCI_LINT_INSTALL))
+	golangci-lint run
+	@echo "$(GREEN)Code analysis completed$(NC)"
 
+.PHONY: lint-fix
+lint-fix:
+	@echo "$(BLUE)Running code analysis with auto-fix...$(NC)"
+	$(call ensure-external-tool,golangci-lint,$(GOLANGCI_LINT_INSTALL))
+	golangci-lint run --fix
+	@echo "$(GREEN)Code analysis and fixes completed$(NC)"
+
+.PHONY: update-homebrew
 update-homebrew:
 	@echo "==> Starting Homebrew formula update process..."
 	@if [ -z "$(GH_PAT)" ]; then \
@@ -157,15 +178,8 @@ update-homebrew:
 	@rm -rf tmp
 	@echo "✅ Homebrew formula update process completed"
 
-help:
-	@echo "Available targets:"
-	@echo "  build    - Build the binary"
-	@echo "  install  - Build and install the binary to GOPATH"
-	@echo "  clean    - Remove build artifacts"
-	@echo "  test     - Run tests"
-	@echo "  fmt      - Format code and tidy modules"
-	@echo "  all      - Clean, format, build, and test"
-	@echo "  update-homebrew - Update Homebrew formula (requires GH_PAT)"
-	@echo "  help     - Show this help message"
+.PHONY: check
+check: fmt lint test
+	@echo "$(GREEN)All quality checks passed!$(NC)"
 
 .DEFAULT_GOAL := help 

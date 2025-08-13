@@ -19,6 +19,7 @@
 4. **Role Customization**：Generate commit messages tailored to different engineering roles
 5. **Conventional Commits**：The generated message follows the Conventional Commits specification
 6. **Branch Creation**：Automatically create feature branches with generated names based on description
+7. **Commit History Analysis**：Analyze commit quality and get AI-powered improvement suggestions
 
 ## Usage
 
@@ -66,6 +67,12 @@ gmc config set prompts_dir /path/to/templates
 
 # Use Template (only filename in prompts_dir)
 gmc config set prompt_template my_template
+
+# Analyze commit history quality (personal)
+gmc analyze
+
+# Analyze team commit history quality
+gmc analyze --team
 ```
 
 ## Prompt template

@@ -1,0 +1,111 @@
+# golangci-lint configuration file
+# see: https://golangci-lint.run/usage/configuration/
+
+version: "2"
+linters:
+  enable:
+    - copyloopvar
+    - dupword
+    - durationcheck
+    - fatcontext
+    - ginkgolinter
+    - gocritic
+    - goheader
+    - intrange
+    - loggercheck
+    - makezero
+    - misspell
+    - nilerr
+    - nilnesserr
+    - nolintlint
+    - perfsprint
+    - revive
+    - unconvert
+    - lll
+    - dupl
+    - dogsled
+  settings:
+    gocritic:
+      enabled-checks:
+        - dupImport
+        - stringsCompare
+      disabled-checks:
+        - appendAssign
+        - exitAfterDefer
+    govet:
+      enable:
+        - nilness
+    nolintlint:
+      # Require an explanation after each nolint directive.
+      require-explanation: true
+      # Require nolint directives to mention the specific linter being suppressed.
+      require-specific: true
+    perfsprint:
+      int-conversion: false
+      errorf: true
+      sprintf1: false
+      strconcat: false
+    revive:
+      enable-all-rules: false
+      rules:
+        - name: context-as-argument
+        - name: deep-exit
+        - name: empty-lines
+        - name: increment-decrement
+        - name: var-naming
+        - name: redundant-import-alias
+        - name: use-any
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - staticcheck
+        # TODO(#768): Drop when incrementing the API version.
+        text: "SA1019: constants.QueueAnnotation is deprecated"
+      - linters:
+          - staticcheck
+        text: "SA1019: j.Status.State is deprecated: the State field is replaced by the Conditions field."
+      - linters:
+          - staticcheck
+        text: "SA1019: j.Status.RayClusterStatus.State is deprecated: the State field is replaced by the Conditions field."
+      - linters:
+          - fatcontext
+        path: ^test/*
+      - linters:
+          - revive
+        path: "util/*"
+        text: "var-naming: avoid meaningless package names"
+    paths:
+      - bin
+      - vendor
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  # Show all issues from a linter
+  max-issues-per-linter: 0
+  # Show all issues with the same text
+  max-same-issues: 0
+formatters:
+  enable:
+    - gci
+  settings:
+    gci:
+      sections:
+        - standard # Standard section: captures all standard packages.
+        - default # Default section: contains all imports that could not be matched to another section type.
+        - blank # Blank section: contains all blank imports. This section is not present unless explicitly enabled.
+        - dot # Dot section: contains all dot imports.
+  exclusions:
+    generated: lax
+    paths:
+      - bin
+      - vendor
+      - third_party$
+      - builtin$
+      - examples$
