@@ -121,7 +121,7 @@ func ParseChangedFiles() ([]string, error) {
 		}
 	}
 
-	var changedFiles []string
+	changedFiles := make([]string, 0, len(fileMap))
 	for file := range fileMap {
 		changedFiles = append(changedFiles, file)
 	}
@@ -193,6 +193,15 @@ func AddAll() error {
 func Commit(message string, args ...string) error {
 	if err := CheckGitRepository(); err != nil {
 		return err
+	}
+
+	// Safety check: In test environment, prevent commits unless in temp directory
+	if os.Getenv("GO_TEST_ENV") == "1" {
+		cwd, _ := os.Getwd()
+		if !strings.Contains(cwd, "/tmp/") && !strings.Contains(cwd, "\\Temp\\") &&
+			!strings.Contains(cwd, "gmc_git_test") && !strings.Contains(cwd, "gmc_non_git_test") {
+			return errors.New("SAFETY: refusing to commit in non-temporary directory during tests")
+		}
 	}
 
 	commitArgs := append([]string{"commit", "-m", message}, args...)

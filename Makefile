@@ -44,6 +44,20 @@ test: ## Run tests
 	@go test -v ./...
 	@echo "Test Command Done"
 
+.PHONY: test-coverage
+test-coverage: ## Run tests with coverage
+	@echo "Running tests with coverage..."
+	@go test -coverprofile=$(BUILD_DIR)/coverage.out ./...
+	@go tool cover -html=$(BUILD_DIR)/coverage.out -o $(BUILD_DIR)/coverage.html
+	@go tool cover -func=$(BUILD_DIR)/coverage.out
+	@echo "Coverage report generated: $(BUILD_DIR)/coverage.html"
+
+.PHONY: test-coverage-ci
+test-coverage-ci: ## Run tests with coverage for CI (no HTML)
+	@echo "Running tests with coverage (CI mode)..."
+	@go test -coverprofile=$(BUILD_DIR)/coverage.out ./...
+	@go tool cover -func=$(BUILD_DIR)/coverage.out | tail -1
+
 .PHONY: fmt
 fmt: ## Format code and tidy modules
 	@echo "Formatting code..."
