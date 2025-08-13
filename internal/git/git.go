@@ -61,11 +61,11 @@ func GetStagedDiff() (string, error) {
 	var errBuf bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
-	
+
 	if Verbose {
 		fmt.Fprintln(os.Stderr, "Running: git diff --cached")
 	}
-	
+
 	if err := cmd.Run(); err != nil {
 		if Verbose && errBuf.Len() > 0 {
 			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
@@ -130,11 +130,11 @@ func ParseStagedFiles() ([]string, error) {
 	var errBuf bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
-	
+
 	if Verbose {
 		fmt.Fprintln(os.Stderr, "Running: git diff --cached --name-only")
 	}
-	
+
 	if err := cmd.Run(); err != nil {
 		if Verbose && errBuf.Len() > 0 {
 			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
@@ -162,22 +162,22 @@ func AddAll() error {
 	cmd := exec.Command("git", "add", ".")
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
-	
+
 	if Verbose {
 		fmt.Fprintln(os.Stderr, "Running: git add .")
 	}
-	
+
 	if err := cmd.Run(); err != nil {
 		if Verbose && errBuf.Len() > 0 {
 			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
 		}
 		return fmt.Errorf("Failed to run git add .: %w", err)
 	}
-	
+
 	if Verbose && errBuf.Len() > 0 {
 		fmt.Fprintln(os.Stderr, "Git output:", errBuf.String())
 	}
-	
+
 	return nil
 }
 
@@ -188,18 +188,18 @@ func Commit(message string, args ...string) error {
 
 	commitArgs := append([]string{"commit", "-m", message}, args...)
 	cmd := exec.Command("git", commitArgs...)
-	
+
 	var outBuf bytes.Buffer
 	var errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
-	
+
 	if Verbose {
 		fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(commitArgs, " "))
 	}
-	
+
 	err := cmd.Run()
-	
+
 	// Always show output in verbose mode
 	if Verbose {
 		if outBuf.Len() > 0 {
@@ -209,7 +209,7 @@ func Commit(message string, args ...string) error {
 			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
 		}
 	}
-	
+
 	if err != nil {
 		// Include git error output in the error message
 		errMsg := "Failed to run git commit"
@@ -218,6 +218,72 @@ func Commit(message string, args ...string) error {
 		}
 		return fmt.Errorf("%s: %w", errMsg, err)
 	}
-	
+
+	return nil
+}
+
+func CreateAndSwitchBranch(branchName string) error {
+	if err := CheckGitRepository(); err != nil {
+		return err
+	}
+
+	if err := validateBranchName(branchName); err != nil {
+		return err
+	}
+
+	if exists, err := branchExists(branchName); err != nil {
+		return err
+	} else if exists {
+		return fmt.Errorf("branch '%s' already exists", branchName)
+	}
+
+	return createAndSwitchBranch(branchName)
+}
+
+func validateBranchName(branchName string) error {
+	if branchName == "" {
+		return fmt.Errorf("branch name cannot be empty")
+	}
+
+	if strings.Contains(branchName, "..") || strings.HasPrefix(branchName, "-") {
+		return fmt.Errorf("invalid branch name: '%s'", branchName)
+	}
+
+	return nil
+}
+
+func branchExists(branchName string) (bool, error) {
+	cmd := exec.Command("git", "rev-parse", "--verify", branchName)
+	cmd.Stderr = nil // Suppress error output
+
+	if Verbose {
+		fmt.Fprintf(os.Stderr, "Checking if branch exists: git rev-parse --verify %s\n", branchName)
+	}
+
+	return cmd.Run() == nil, nil
+}
+
+func createAndSwitchBranch(branchName string) error {
+	cmd := exec.Command("git", "checkout", "-b", branchName)
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+
+	if Verbose {
+		fmt.Fprintf(os.Stderr, "Creating and switching to branch: git checkout -b %s\n", branchName)
+	}
+
+	if err := cmd.Run(); err != nil {
+		errMsg := fmt.Sprintf("failed to create and switch to branch '%s'", branchName)
+		if errBuf.Len() > 0 {
+			errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(errBuf.String()))
+		}
+		return fmt.Errorf("%s: %w", errMsg, err)
+	}
+
+	if Verbose && outBuf.Len() > 0 {
+		fmt.Fprintln(os.Stderr, "Git output:", outBuf.String())
+	}
+
 	return nil
 }
