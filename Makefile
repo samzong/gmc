@@ -1,6 +1,6 @@
 .PHONY: build install clean test fmt all help update-homebrew
 
-BUILD_DIR=./bin
+BUILD_DIR=./build
 BINARY_NAME=gmc
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILDTIME=$(shell date -u '+%Y-%m-%d %H:%M:%S UTC')

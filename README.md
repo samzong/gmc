@@ -18,6 +18,7 @@
 3. **LLM Models Support**：Support OpenAI API Style
 4. **Role Customization**：Generate commit messages tailored to different engineering roles
 5. **Conventional Commits**：The generated message follows the Conventional Commits specification
+6. **Branch Creation**：Automatically create feature branches with generated names based on description
 
 ## Usage
 
@@ -53,6 +54,12 @@ gmc -a
 
 # Associate issue number
 gmc --issue 123
+
+# Create feature branch with generated name
+gmc --branch "implement user authentication"
+
+# Verbose output for debugging
+gmc --verbose
 
 # Set Template directory
 gmc config set prompts_dir /path/to/templates
