@@ -17,55 +17,57 @@ SUPPORTED_ARCHS = Darwin_x86_64 Darwin_arm64 Linux_x86_64 Linux_arm64
 help:
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
-##@ General
+##@ Build
 .PHONY: build
-build:
+build: ## Build the binary
 	@echo "Building $(BINARY_NAME) $(VERSION)..."
 	@mkdir -p $(BUILD_DIR)
 	@CGO_ENABLED=0 go build -trimpath $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) .
 	@echo "Build Command Done"
 
 .PHONY: install
-install: build
+install: build ## Install the binary to GOPATH/bin
 	@echo "Installing $(BINARY_NAME) $(VERSION)..."
 	@cp $(BUILD_DIR)/$(BINARY_NAME) $(GOPATH)/bin/
 	@echo "Install Command Done"
 
 .PHONY: clean
-clean:
+clean: ## Clean build artifacts
 	@echo "Cleaning build artifacts..."
 	@rm -rf $(BUILD_DIR)
 	@echo "Clean Command Done"
 
+##@ Development
 .PHONY: test
-test:
+test: ## Run tests
 	@echo "Running tests..."
 	@go test -v ./...
 	@echo "Test Command Done"
 
 .PHONY: fmt
-fmt:
+fmt: ## Format code and tidy modules
 	@echo "Formatting code..."
 	@go fmt ./...
 	@go mod tidy
 	@echo "Format Command Done"
 
 .PHONY: lint
-lint:
+lint: ## Run code analysis
 	@echo "$(BLUE)Running code analysis...$(NC)"
 	$(call ensure-external-tool,golangci-lint,$(GOLANGCI_LINT_INSTALL))
 	golangci-lint run
 	@echo "$(GREEN)Code analysis completed$(NC)"
 
 .PHONY: lint-fix
-lint-fix:
+lint-fix: ## Run code analysis with auto-fix
 	@echo "$(BLUE)Running code analysis with auto-fix...$(NC)"
 	$(call ensure-external-tool,golangci-lint,$(GOLANGCI_LINT_INSTALL))
 	golangci-lint run --fix
 	@echo "$(GREEN)Code analysis and fixes completed$(NC)"
 
+##@ Release
 .PHONY: update-homebrew
-update-homebrew:
+update-homebrew: ## Update Homebrew formula
 	@echo "==> Starting Homebrew formula update process..."
 	@if [ -z "$(GH_PAT)" ]; then \
 		echo "❌ Error: GH_PAT environment variable is required"; \
@@ -178,8 +180,9 @@ update-homebrew:
 	@rm -rf tmp
 	@echo "✅ Homebrew formula update process completed"
 
+##@ Quality
 .PHONY: check
-check: fmt lint test
+check: fmt lint test ## Run all quality checks (fmt, lint, test)
 	@echo "$(GREEN)All quality checks passed!$(NC)"
 
 .DEFAULT_GOAL := help 
