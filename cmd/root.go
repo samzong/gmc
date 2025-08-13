@@ -23,14 +23,19 @@ var (
 	addAll     bool
 	issueNum   string
 	autoYes    bool
+	configErr  error
 	verbose    bool
 	branchDesc string
 	rootCmd    = &cobra.Command{
-		Use:     "gmc",
-		Short:   "gmc - Git Message Assistant",
-		Long:    `gmc is a CLI tool that accelerates Git commit efficiency by generating high-quality commit messages using LLM.`,
+		Use:   "gmc",
+		Short: "gmc - Git Message Assistant",
+		Long: `gmc is a CLI tool that accelerates Git commit efficiency by generating ` +
+			`high-quality commit messages using LLM.`,
 		Version: fmt.Sprintf("%s (built at %s)", Version, BuildTime),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if configErr != nil {
+				return fmt.Errorf("configuration error: %w", configErr)
+			}
 			return handleErrors(generateAndCommit())
 		},
 		SilenceErrors: true,
@@ -48,7 +53,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "Configuration file path (default is $HOME/.gmc.yaml)")
 	rootCmd.Flags().BoolVar(&noVerify, "no-verify", false, "Skip pre-commit hooks")
 	rootCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Generate message only, do not commit")
-	rootCmd.Flags().BoolVarP(&addAll, "all", "a", false, "Automatically add all changes to the staging area before committing")
+	rootCmd.Flags().BoolVarP(&addAll, "all", "a", false,
+		"Automatically add all changes to the staging area before committing")
 	rootCmd.Flags().StringVar(&issueNum, "issue", "", "Optional issue number")
 	rootCmd.Flags().BoolVarP(&autoYes, "yes", "y", false, "Automatically confirm the commit message")
 	rootCmd.Flags().BoolVarP(&verbose, "verbose", "V", false, "Show detailed git command output")
@@ -58,7 +64,7 @@ func init() {
 }
 
 func initConfig() {
-	config.InitConfig(cfgFile)
+	configErr = config.InitConfig(cfgFile)
 }
 
 func handleErrors(err error) error {
@@ -138,7 +144,7 @@ func getStagedChanges() (string, []string, error) {
 	}
 
 	if diff == "" {
-		return "", nil, errors.New("No changes detected in the staging area files.")
+		return "", nil, errors.New("no changes detected in the staging area files")
 	}
 
 	changedFiles, err := git.ParseStagedFiles()

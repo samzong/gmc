@@ -166,11 +166,12 @@ func (q *QualityEvaluatorImpl) containsVagueWords(message string) bool {
 
 // GetQualityLevel returns a human-readable quality level
 func GetQualityLevel(score float64) string {
-	if score >= 80 {
+	switch {
+	case score >= 80:
 		return "Excellent"
-	} else if score >= 60 {
+	case score >= 60:
 		return "Good"
-	} else {
+	default:
 		return "Needs Improvement"
 	}
 }

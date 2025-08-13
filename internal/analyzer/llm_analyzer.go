@@ -34,7 +34,7 @@ func (l *LLMAnalyzer) GenerateSuggestions(result *AnalysisResult) error {
 	if err != nil {
 		// Fallback to basic suggestions if LLM fails
 		result.Suggestions = l.generateBasicSuggestions(result)
-		return nil // Don't return error, just use fallback
+		return fmt.Errorf("LLM analysis failed, using basic suggestions: %w", err)
 	}
 
 	// Parse suggestions from LLM response
@@ -48,9 +48,11 @@ func (l *LLMAnalyzer) buildAnalysisPrompt(result *AnalysisResult, role string) s
 	var promptBuilder strings.Builder
 
 	// Basic analysis info
-	promptBuilder.WriteString(fmt.Sprintf("As a senior %s, please analyze the following commit history and provide improvement suggestions:\n\n", role))
+	promptBuilder.WriteString(fmt.Sprintf("As a senior %s, please analyze the following commit history "+
+		"and provide improvement suggestions:\n\n", role))
 	promptBuilder.WriteString(fmt.Sprintf("Total commits: %d\n", result.TotalCommits))
-	promptBuilder.WriteString(fmt.Sprintf("Quality score: %.1f/100 (%s)\n\n", result.QualityScore, GetQualityLevel(result.QualityScore)))
+	promptBuilder.WriteString(fmt.Sprintf("Quality score: %.1f/100 (%s)\n\n",
+		result.QualityScore, GetQualityLevel(result.QualityScore)))
 
 	// Type distribution
 	if len(result.TypeDistribution) > 0 {
@@ -74,7 +76,8 @@ func (l *LLMAnalyzer) buildAnalysisPrompt(result *AnalysisResult, role string) s
 	if result.IsTeamAnalysis && len(result.AuthorStats) > 0 {
 		promptBuilder.WriteString("Team contributor status:\n")
 		for author, stats := range result.AuthorStats {
-			promptBuilder.WriteString(fmt.Sprintf("- %s: %d commits, quality score %.1f\n", author, stats.CommitCount, stats.QualityScore))
+			promptBuilder.WriteString(fmt.Sprintf("- %s: %d commits, quality score %.1f\n",
+				author, stats.CommitCount, stats.QualityScore))
 		}
 		promptBuilder.WriteString("\n")
 	}
@@ -183,7 +186,8 @@ func (l *LLMAnalyzer) generateBasicSuggestions(result *AnalysisResult) []string 
 
 	// Team-specific suggestions
 	if result.IsTeamAnalysis {
-		suggestions = append(suggestions, "Recommend team to standardize commit message format, use code review to ensure quality")
+		suggestions = append(suggestions,
+			"Recommend team to standardize commit message format, use code review to ensure quality")
 
 		// Check author distribution
 		if len(result.AuthorStats) > 1 {

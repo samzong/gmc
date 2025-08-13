@@ -39,14 +39,13 @@ var suggestedModels = []string{
 	"gpt-4-turbo",
 }
 
-func InitConfig(cfgFile string) {
+func InitConfig(cfgFile string) error {
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
 	} else {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			fmt.Println("Error: Failed to find home directory:", err)
-			os.Exit(1)
+			return fmt.Errorf("failed to find home directory: %w", err)
 		}
 
 		viper.AddConfigPath(home)
@@ -77,8 +76,7 @@ func InitConfig(cfgFile string) {
 			}
 
 			if err := os.MkdirAll(configDir, 0755); err != nil {
-				fmt.Printf("Error: Failed to create configuration directory: %v\n", err)
-				return
+				return fmt.Errorf("failed to create configuration directory: %w", err)
 			}
 
 			configPath := ""
@@ -90,11 +88,10 @@ func InitConfig(cfgFile string) {
 			}
 
 			if err := viper.WriteConfigAs(configPath); err != nil {
-				fmt.Printf("Error: Failed to write configuration file: %v\n", err)
-				return
+				return fmt.Errorf("failed to write configuration file: %w", err)
 			}
 		} else {
-			fmt.Printf("Error: Failed to read configuration file: %v\n", err)
+			return fmt.Errorf("failed to read configuration file: %w", err)
 		}
 	}
 
@@ -104,6 +101,8 @@ func InitConfig(cfgFile string) {
 			fmt.Printf("Warning: Failed to create prompt directory %s: %v\n", promptsDir, err)
 		}
 	}
+
+	return nil
 }
 
 func GetConfig() *Config {
@@ -126,22 +125,16 @@ func SaveConfig() error {
 	return viper.WriteConfig()
 }
 
-func SetConfigValue(key string, value interface{}) {
+func SetConfigValue(key string, value any) {
 	viper.Set(key, value)
 }
 
 func IsValidRole(role string) bool {
-	if role == "" {
-		return false
-	}
-	return true
+	return role != ""
 }
 
 func IsValidModel(model string) bool {
-	if model == "" {
-		return false
-	}
-	return true
+	return model != ""
 }
 
 func GetSuggestedRoles() []string {

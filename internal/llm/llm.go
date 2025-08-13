@@ -34,8 +34,9 @@ func GenerateCommitMessage(prompt string, model string) (string, error) {
 
 	messages := []openai.ChatCompletionMessage{
 		{
-			Role:    openai.ChatMessageRoleSystem,
-			Content: "You are a professional Git commit message generator, helping developers generate commit messages that comply with the Conventional Commits specification.",
+			Role: openai.ChatMessageRoleSystem,
+			Content: "You are a professional Git commit message generator, helping developers generate " +
+				"commit messages that comply with the Conventional Commits specification.",
 		},
 		{
 			Role:    openai.ChatMessageRoleUser,
@@ -52,7 +53,7 @@ func GenerateCommitMessage(prompt string, model string) (string, error) {
 	)
 
 	if err != nil {
-		return "", fmt.Errorf("Failed to call LLM: %w", err)
+		return "", fmt.Errorf("failed to call LLM: %w", err)
 	}
 
 	if len(resp.Choices) == 0 {

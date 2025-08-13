@@ -81,8 +81,9 @@ func TestEvaluateMessageLength(t *testing.T) {
 			expected: 0.0,
 		},
 		{
-			name:     "Too long",
-			message:  "feat(auth): implement a very comprehensive user authentication system with multiple features and extensive validation that handles all edge cases", // >120 chars
+			name: "Too long",
+			message: "feat(auth): implement a very comprehensive user authentication system " +
+				"with multiple features and extensive validation that handles all edge cases", // >120 chars
 			expected: 0.0,
 		},
 		{

@@ -35,7 +35,7 @@ var (
 			config.SetConfigValue("role", role)
 
 			if err := config.SaveConfig(); err != nil {
-				return fmt.Errorf("Failed to save configuration: %w", err)
+				return fmt.Errorf("failed to save configuration: %w", err)
 			}
 
 			fmt.Printf("The role has been set to: %s\n", role)
@@ -56,7 +56,7 @@ var (
 			config.SetConfigValue("model", model)
 
 			if err := config.SaveConfig(); err != nil {
-				return fmt.Errorf("Failed to save configuration: %w", err)
+				return fmt.Errorf("failed to save configuration: %w", err)
 			}
 
 			fmt.Printf("The model has been set to: %s\n", model)
@@ -74,7 +74,7 @@ var (
 			config.SetConfigValue("api_key", apiKey)
 
 			if err := config.SaveConfig(); err != nil {
-				return fmt.Errorf("Failed to save configuration: %w", err)
+				return fmt.Errorf("failed to save configuration: %w", err)
 			}
 
 			fmt.Println("The API key has been set")
@@ -92,7 +92,7 @@ var (
 			config.SetConfigValue("api_base", apiBase)
 
 			if err := config.SaveConfig(); err != nil {
-				return fmt.Errorf("Failed to save configuration: %w", err)
+				return fmt.Errorf("failed to save configuration: %w", err)
 			}
 
 			fmt.Println("The API base URL has been set to:", apiBase)
@@ -116,7 +116,7 @@ var (
 			config.SetConfigValue("prompt_template", templateName)
 
 			if err := config.SaveConfig(); err != nil {
-				return fmt.Errorf("Failed to save configuration: %w", err)
+				return fmt.Errorf("failed to save configuration: %w", err)
 			}
 
 			fmt.Printf("The prompt template has been set to: %s\n", templateName)
@@ -134,7 +134,7 @@ var (
 			config.SetConfigValue("prompts_dir", dir)
 
 			if err := config.SaveConfig(); err != nil {
-				return fmt.Errorf("Failed to save configuration: %w", err)
+				return fmt.Errorf("failed to save configuration: %w", err)
 			}
 
 			fmt.Printf("The prompt template directory has been set to: %s\n", dir)

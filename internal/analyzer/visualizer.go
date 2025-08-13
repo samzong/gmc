@@ -142,13 +142,14 @@ func (v *Visualizer) GenerateQualityIndicator(score float64) string {
 	var emoji string
 	var color string
 
-	if score >= 80 {
+	switch {
+	case score >= 80:
 		emoji = "🟢"
 		color = "Excellent"
-	} else if score >= 60 {
+	case score >= 60:
 		emoji = "🟡"
 		color = "Good"
-	} else {
+	default:
 		emoji = "🔴"
 		color = "Needs Improvement"
 	}

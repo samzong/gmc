@@ -28,7 +28,7 @@ func IsGitRepository() bool {
 
 func CheckGitRepository() error {
 	if !IsGitRepository() {
-		return errors.New("Not in a git repository. Please run this command in a git repository directory")
+		return errors.New("not in a git repository. Please run this command in a git repository directory")
 	}
 	return nil
 }
@@ -42,7 +42,7 @@ func GetDiff() (string, error) {
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("Failed to run git diff: %w", err)
+		return "", fmt.Errorf("failed to run git diff: %w", err)
 	}
 
 	unstaged := out.String()
@@ -51,7 +51,7 @@ func GetDiff() (string, error) {
 	cmd = exec.Command("git", "diff", "--cached")
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("Failed to run git diff --cached: %w", err)
+		return "", fmt.Errorf("failed to run git diff --cached: %w", err)
 	}
 
 	staged := out.String()
@@ -79,7 +79,7 @@ func GetStagedDiff() (string, error) {
 		if Verbose && errBuf.Len() > 0 {
 			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
 		}
-		return "", fmt.Errorf("Failed to run git diff --cached: %w", err)
+		return "", fmt.Errorf("failed to run git diff --cached: %w", err)
 	}
 
 	return out.String(), nil
@@ -94,7 +94,7 @@ func ParseChangedFiles() ([]string, error) {
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("Failed to run git diff --name-only: %w", err)
+		return nil, fmt.Errorf("failed to run git diff --name-only: %w", err)
 	}
 
 	unstaged := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -103,7 +103,7 @@ func ParseChangedFiles() ([]string, error) {
 	cmd = exec.Command("git", "diff", "--cached", "--name-only")
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("Failed to run git diff --cached --name-only: %w", err)
+		return nil, fmt.Errorf("failed to run git diff --cached --name-only: %w", err)
 	}
 
 	staged := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -148,7 +148,7 @@ func ParseStagedFiles() ([]string, error) {
 		if Verbose && errBuf.Len() > 0 {
 			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
 		}
-		return nil, fmt.Errorf("Failed to run git diff --cached --name-only: %w", err)
+		return nil, fmt.Errorf("failed to run git diff --cached --name-only: %w", err)
 	}
 
 	stagedFiles := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -180,7 +180,7 @@ func AddAll() error {
 		if Verbose && errBuf.Len() > 0 {
 			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
 		}
-		return fmt.Errorf("Failed to run git add .: %w", err)
+		return fmt.Errorf("failed to run git add .: %w", err)
 	}
 
 	if Verbose && errBuf.Len() > 0 {
@@ -313,7 +313,8 @@ func GetCommitHistory(limit int, teamMode bool) ([]CommitInfo, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to get current git user: %w", err)
 		}
-		cmd = exec.Command("git", "log", "--pretty=format:%h|%an|%ad|%s", "--date=short", fmt.Sprintf("--author=%s", currentUser), fmt.Sprintf("-n%d", limit))
+		cmd = exec.Command("git", "log", "--pretty=format:%h|%an|%ad|%s", "--date=short",
+			fmt.Sprintf("--author=%s", currentUser), fmt.Sprintf("-n%d", limit))
 	}
 
 	var out bytes.Buffer

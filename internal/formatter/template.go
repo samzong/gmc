@@ -3,7 +3,6 @@ package formatter
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"text/template"
@@ -69,7 +68,8 @@ Please provide a commit message %s, where:
    - chore: changes to build process or auxiliary tools and libraries
 
 2. The scope (optional): should clearly identify the component or module that has been changed
-3. The description: must be concise (no more than 150 characters) and accurately reflect the changes, using an imperative sentence starting with a verb
+3. The description: must be concise (no more than 150 characters) and accurately reflect the changes, `+
+		`using an imperative sentence starting with a verb
 
 %s`, templateParts.Header, templateParts.Files, templateParts.Content, templateParts.Format, templateParts.NoIssues),
 }
@@ -80,14 +80,15 @@ func GetPromptTemplate(templateName string) (string, error) {
 	}
 
 	if _, err := os.Stat(templateName); err == nil {
-		content, err := ioutil.ReadFile(templateName)
+		content, err := os.ReadFile(templateName)
 		if err != nil {
-			return "", fmt.Errorf("Unable to read template file %s: %w", templateName, err)
+			return "", fmt.Errorf("unable to read template file %s: %w", templateName, err)
 		}
 
 		var tpl PromptTemplate
 		if err := yaml.Unmarshal(content, &tpl); err != nil {
-			return string(content), nil
+			// If YAML parsing fails, treat as plain text template
+			return string(content), nil //nolint:nilerr // Intentional fallback to plain text
 		}
 
 		return tpl.Template, nil
@@ -101,32 +102,33 @@ func GetPromptTemplate(templateName string) (string, error) {
 		}
 
 		if _, err := os.Stat(customPath); err == nil {
-			content, err := ioutil.ReadFile(customPath)
+			content, err := os.ReadFile(customPath)
 			if err != nil {
-				return "", fmt.Errorf("Unable to read Template file %s: %w", customPath, err)
+				return "", fmt.Errorf("unable to read template file %s: %w", customPath, err)
 			}
 
 			var tpl PromptTemplate
 			if err := yaml.Unmarshal(content, &tpl); err != nil {
-				return string(content), nil
+				// If YAML parsing fails, treat as plain text template
+				return string(content), nil //nolint:nilerr // Intentional fallback to plain text
 			}
 
 			return tpl.Template, nil
 		}
 	}
 
-	return "", fmt.Errorf("Could not find cue template: %s", templateName)
+	return "", fmt.Errorf("could not find cue template: %s", templateName)
 }
 
 func RenderTemplate(templateContent string, data TemplateData) (string, error) {
 	tmpl, err := template.New("prompt").Parse(templateContent)
 	if err != nil {
-		return "", fmt.Errorf("Template parsing error: %w", err)
+		return "", fmt.Errorf("template parsing error: %w", err)
 	}
 
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("Template rendering error: %w", err)
+		return "", fmt.Errorf("template rendering error: %w", err)
 	}
 
 	return buf.String(), nil
@@ -140,16 +142,16 @@ func ListTemplates(dirPath string) ([]string, error) {
 	fi, err := os.Stat(dirPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("Directory does not exist: %s", dirPath)
+			return nil, fmt.Errorf("directory does not exist: %s", dirPath)
 		}
 		return nil, err
 	}
 
 	if !fi.IsDir() {
-		return nil, fmt.Errorf("Path is not a directory: %s", dirPath)
+		return nil, fmt.Errorf("path is not a directory: %s", dirPath)
 	}
 
-	files, err := ioutil.ReadDir(dirPath)
+	files, err := os.ReadDir(dirPath)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +165,7 @@ func ListTemplates(dirPath string) ([]string, error) {
 		ext := filepath.Ext(file.Name())
 		if ext == ".yaml" || ext == ".yml" {
 			filePath := filepath.Join(dirPath, file.Name())
-			content, err := ioutil.ReadFile(filePath)
+			content, err := os.ReadFile(filePath)
 			if err == nil {
 				var tpl PromptTemplate
 				if err := yaml.Unmarshal(content, &tpl); err == nil && tpl.Template != "" {

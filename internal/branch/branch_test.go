@@ -143,7 +143,7 @@ func BenchmarkGenerateName(b *testing.B) {
 	description := "add user authentication with oauth2 support"
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		GenerateName(description)
 	}
 }
@@ -152,7 +152,7 @@ func BenchmarkSanitizeDescription(b *testing.B) {
 	description := "add user@email.com validation with special!@#$%^&*() characters"
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		sanitizeDescription(description)
 	}
 }

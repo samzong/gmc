@@ -37,7 +37,8 @@ func BuildPrompt(role string, changedFiles []string, diff string) string {
 	prompt, err := RenderTemplate(templateContent, data)
 	if err != nil {
 		fmt.Printf("Warning: %v, using simple format\n", err)
-		return fmt.Sprintf(`You are a professional %s, please generate a commit message that follows the Conventional Commits specification based on the following Git changes:
+		return fmt.Sprintf(`You are a professional %s, please generate a commit message that follows the `+
+			`Conventional Commits specification based on the following Git changes:
 
 Changed Files:
 %s
@@ -48,7 +49,8 @@ Changed Content:
 Please generate a commit message in the format of "type(scope): description".
 The type should be the most appropriate from the following choices: feat, fix, docs, style, refactor, perf, test, chore.
 The description should be concise (no more than 150 characters) and accurately reflect the changes.
-Do not add issue numbers like "#123" or "(#123)" in the commit message, this will be handled automatically by the tool.`, role, changedFilesStr, diff)
+Do not add issue numbers like "#123" or "(#123)" in the commit message, `+
+			`this will be handled automatically by the tool.`, role, changedFilesStr, diff)
 	}
 
 	return prompt
@@ -81,21 +83,22 @@ func formatToConventional(message string) string {
 	var commitType string
 
 	lowerMsg := strings.ToLower(message)
-	if strings.Contains(lowerMsg, "fix") || strings.Contains(lowerMsg, "bug") {
+	switch {
+	case strings.Contains(lowerMsg, "fix") || strings.Contains(lowerMsg, "bug"):
 		commitType = "fix"
-	} else if strings.Contains(lowerMsg, "add") || strings.Contains(lowerMsg, "feature") {
+	case strings.Contains(lowerMsg, "add") || strings.Contains(lowerMsg, "feature"):
 		commitType = "feat"
-	} else if strings.Contains(lowerMsg, "doc") || strings.Contains(lowerMsg, "document") {
+	case strings.Contains(lowerMsg, "doc") || strings.Contains(lowerMsg, "document"):
 		commitType = "docs"
-	} else if strings.Contains(lowerMsg, "style") || strings.Contains(lowerMsg, "style") {
+	case strings.Contains(lowerMsg, "style") || strings.Contains(lowerMsg, "format"):
 		commitType = "style"
-	} else if strings.Contains(lowerMsg, "refactor") || strings.Contains(lowerMsg, "refactor") {
+	case strings.Contains(lowerMsg, "refactor") || strings.Contains(lowerMsg, "restructure"):
 		commitType = "refactor"
-	} else if strings.Contains(lowerMsg, "perf") || strings.Contains(lowerMsg, "performance") {
+	case strings.Contains(lowerMsg, "perf") || strings.Contains(lowerMsg, "performance"):
 		commitType = "perf"
-	} else if strings.Contains(lowerMsg, "test") || strings.Contains(lowerMsg, "test") {
+	case strings.Contains(lowerMsg, "test") || strings.Contains(lowerMsg, "testing"):
 		commitType = "test"
-	} else {
+	default:
 		commitType = "chore"
 	}
 
