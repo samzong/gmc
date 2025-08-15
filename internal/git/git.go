@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -390,4 +391,276 @@ func parseCommitOutput(output string) ([]CommitInfo, error) {
 	}
 
 	return commits, nil
+}
+
+// ResolveFiles expands directories to individual files and validates file paths
+func ResolveFiles(paths []string) ([]string, error) {
+	if err := CheckGitRepository(); err != nil {
+		return nil, err
+	}
+
+	var resolvedFiles []string
+	for _, path := range paths {
+		// Clean path to prevent directory traversal
+		cleanPath := filepath.Clean(path)
+
+		// Check if file/directory exists
+		if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
+			return nil, fmt.Errorf("file or directory does not exist: %s", path)
+		}
+
+		// Check if it's a directory
+		info, err := os.Stat(cleanPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check path: %s: %w", path, err)
+		}
+
+		if info.IsDir() {
+			// Expand directory to git-tracked files
+			dirFiles, err := getGitTrackedFilesInDir(cleanPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get files in directory %s: %w", path, err)
+			}
+			resolvedFiles = append(resolvedFiles, dirFiles...)
+		} else {
+			resolvedFiles = append(resolvedFiles, cleanPath)
+		}
+	}
+
+	// Remove duplicates
+	fileMap := make(map[string]bool)
+	var uniqueFiles []string
+	for _, file := range resolvedFiles {
+		if !fileMap[file] {
+			fileMap[file] = true
+			uniqueFiles = append(uniqueFiles, file)
+		}
+	}
+
+	return uniqueFiles, nil
+}
+
+// getGitTrackedFilesInDir gets all git-tracked files in a directory
+func getGitTrackedFilesInDir(dir string) ([]string, error) {
+	cmd := exec.Command("git", "ls-files", dir)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+
+	if Verbose {
+		fmt.Fprintf(os.Stderr, "Running: git ls-files %s\n", dir)
+	}
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("failed to list git files in directory: %w", err)
+	}
+
+	output := strings.TrimSpace(out.String())
+	if output == "" {
+		return []string{}, nil
+	}
+
+	files := strings.Split(output, "\n")
+	var result []string
+	for _, file := range files {
+		if file != "" {
+			result = append(result, file)
+		}
+	}
+
+	return result, nil
+}
+
+// CheckFileStatus checks the git status of specified files
+// Returns: staged, modified, untracked files
+func CheckFileStatus(files []string) ([]string, []string, []string, error) {
+	if err := CheckGitRepository(); err != nil {
+		return nil, nil, nil, err
+	}
+
+	var staged, modified, untracked []string
+
+	for _, file := range files {
+		// Check if file is staged
+		isStaged, err := isFileStaged(file)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to check staged status for %s: %w", file, err)
+		}
+
+		// Check if file is modified
+		isModified, err := isFileModified(file)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to check modified status for %s: %w", file, err)
+		}
+
+		// Check if file is tracked
+		isTracked, err := isFileTracked(file)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to check tracked status for %s: %w", file, err)
+		}
+
+		if isStaged {
+			staged = append(staged, file)
+		} else if isModified {
+			modified = append(modified, file)
+		} else if !isTracked {
+			untracked = append(untracked, file)
+		}
+	}
+
+	return staged, modified, untracked, nil
+}
+
+// isFileStaged checks if a file is staged
+func isFileStaged(file string) (bool, error) {
+	cmd := exec.Command("git", "diff", "--cached", "--name-only", file)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+
+	if err := cmd.Run(); err != nil {
+		return false, err
+	}
+
+	return strings.TrimSpace(out.String()) != "", nil
+}
+
+// isFileModified checks if a file is modified (unstaged changes)
+func isFileModified(file string) (bool, error) {
+	cmd := exec.Command("git", "diff", "--name-only", file)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+
+	if err := cmd.Run(); err != nil {
+		return false, err
+	}
+
+	return strings.TrimSpace(out.String()) != "", nil
+}
+
+// isFileTracked checks if a file is tracked by git
+func isFileTracked(file string) (bool, error) {
+	cmd := exec.Command("git", "ls-files", file)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+
+	if err := cmd.Run(); err != nil {
+		return false, err
+	}
+
+	return strings.TrimSpace(out.String()) != "", nil
+}
+
+// StageFiles stages specific files
+func StageFiles(files []string) error {
+	if err := CheckGitRepository(); err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		cmd := exec.Command("git", "add", file)
+		var errBuf bytes.Buffer
+		cmd.Stderr = &errBuf
+
+		if Verbose {
+			fmt.Fprintf(os.Stderr, "Running: git add %s\n", file)
+		}
+
+		if err := cmd.Run(); err != nil {
+			errMsg := fmt.Sprintf("failed to stage file %s", file)
+			if errBuf.Len() > 0 {
+				errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(errBuf.String()))
+			}
+			return fmt.Errorf("%s: %w", errMsg, err)
+		}
+	}
+
+	return nil
+}
+
+// GetFilesDiff gets diff for specific files
+func GetFilesDiff(files []string) (string, error) {
+	if err := CheckGitRepository(); err != nil {
+		return "", err
+	}
+
+	if len(files) == 0 {
+		return "", nil
+	}
+
+	args := []string{"diff", "--cached"}
+	args = append(args, "--")
+	args = append(args, files...)
+
+	cmd := exec.Command("git", args...)
+	var out bytes.Buffer
+	var errBuf bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
+
+	if Verbose {
+		fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(args, " "))
+	}
+
+	if err := cmd.Run(); err != nil {
+		if Verbose && errBuf.Len() > 0 {
+			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
+		}
+		return "", fmt.Errorf("failed to get diff for files: %w", err)
+	}
+
+	return out.String(), nil
+}
+
+// CommitFiles commits specific files only
+func CommitFiles(message string, files []string, args ...string) error {
+	if err := CheckGitRepository(); err != nil {
+		return err
+	}
+
+	// Safety check: In test environment, prevent commits unless in temp directory
+	if os.Getenv("GO_TEST_ENV") == "1" {
+		cwd, _ := os.Getwd()
+		if !strings.Contains(cwd, "/tmp/") && !strings.Contains(cwd, "\\Temp\\") &&
+			!strings.Contains(cwd, "gmc_git_test") && !strings.Contains(cwd, "gmc_non_git_test") {
+			return errors.New("SAFETY: refusing to commit in non-temporary directory during tests")
+		}
+	}
+
+	commitArgs := []string{"commit", "-m", message}
+	commitArgs = append(commitArgs, args...)
+	commitArgs = append(commitArgs, "--")
+	commitArgs = append(commitArgs, files...)
+
+	cmd := exec.Command("git", commitArgs...)
+
+	var outBuf bytes.Buffer
+	var errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+
+	if Verbose {
+		fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(commitArgs, " "))
+	}
+
+	err := cmd.Run()
+
+	// Always show output in verbose mode
+	if Verbose {
+		if outBuf.Len() > 0 {
+			fmt.Fprintln(os.Stderr, "Git output:", outBuf.String())
+		}
+		if errBuf.Len() > 0 {
+			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
+		}
+	}
+
+	if err != nil {
+		// Include git error output in the error message
+		errMsg := "Failed to commit files"
+		if errBuf.Len() > 0 {
+			errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(errBuf.String()))
+		}
+		return fmt.Errorf("%s: %w", errMsg, err)
+	}
+
+	return nil
 }
