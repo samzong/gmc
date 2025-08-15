@@ -444,7 +444,7 @@ func TestGenerateAndCommit(t *testing.T) {
 	addAll = false
 	verbose = false
 
-	err := generateAndCommit()
+	err := generateAndCommit([]string{})
 
 	// We expect an error in test environment, but function should not panic
 	if err != nil {

@@ -32,11 +32,12 @@ var (
 		Long: `gmc is a CLI tool that accelerates Git commit efficiency by generating ` +
 			`high-quality commit messages using LLM.`,
 		Version: fmt.Sprintf("%s (built at %s)", Version, BuildTime),
+		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if configErr != nil {
 				return fmt.Errorf("configuration error: %w", configErr)
 			}
-			return handleErrors(generateAndCommit())
+			return handleErrors(generateAndCommit(args))
 		},
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -54,7 +55,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&noVerify, "no-verify", false, "Skip pre-commit hooks")
 	rootCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Generate message only, do not commit")
 	rootCmd.Flags().BoolVarP(&addAll, "all", "a", false,
-		"Automatically add all changes to the staging area before committing")
+		"Stage files before committing (all files if none specified, or only specified files)")
 	rootCmd.Flags().StringVar(&issueNum, "issue", "", "Optional issue number")
 	rootCmd.Flags().BoolVarP(&autoYes, "yes", "y", false, "Automatically confirm the commit message")
 	rootCmd.Flags().BoolVarP(&verbose, "verbose", "V", false, "Show detailed git command output")
@@ -84,12 +85,17 @@ func handleErrors(err error) error {
 	return nil
 }
 
-func generateAndCommit() error {
+func generateAndCommit(fileArgs []string) error {
 	git.Verbose = verbose
 
 	// Handle branch creation
 	if err := handleBranchCreation(); err != nil {
 		return err
+	}
+
+	// Check if selective file mode
+	if len(fileArgs) > 0 {
+		return handleSelectiveCommit(fileArgs)
 	}
 
 	// Handle staging
@@ -294,6 +300,121 @@ func getEditor() string {
 	return "vi"
 }
 
+func handleSelectiveCommit(fileArgs []string) error {
+	// Resolve and validate file paths
+	files, err := git.ResolveFiles(fileArgs)
+	if err != nil {
+		return fmt.Errorf("failed to resolve files: %w", err)
+	}
+
+	if len(files) == 0 {
+		return errors.New("no valid files found")
+	}
+
+	// Check mode based on -a flag
+	if addAll {
+		return stageAndCommitFiles(files)
+	} else {
+		return commitStagedFiles(files)
+	}
+}
+
+func stageAndCommitFiles(files []string) error {
+	// Check which files have changes
+	staged, modified, untracked, err := git.CheckFileStatus(files)
+	if err != nil {
+		return fmt.Errorf("failed to check file status: %w", err)
+	}
+
+	// Determine files to stage
+	toStage := append(modified, untracked...)
+	if len(toStage) == 0 && len(staged) == 0 {
+		return fmt.Errorf("no changes detected in specified files: %v", files)
+	}
+
+	// Stage files if needed
+	if len(toStage) > 0 {
+		if err := git.StageFiles(toStage); err != nil {
+			return fmt.Errorf("failed to stage files: %w", err)
+		}
+		fmt.Printf("Staged files: %v\n", toStage)
+	}
+
+	// Get all files to commit (staged + newly staged)
+	allFiles := append(staged, toStage...)
+
+	// Get diff and generate commit message
+	diff, err := git.GetFilesDiff(allFiles)
+	if err != nil {
+		return fmt.Errorf("failed to get diff: %w", err)
+	}
+
+	if diff == "" {
+		return errors.New("no changes detected in staged files")
+	}
+
+	// Generate and process commit message
+	return handleSelectiveCommitFlow(diff, allFiles)
+}
+
+func commitStagedFiles(files []string) error {
+	// Check which specified files are staged
+	staged, _, _, err := git.CheckFileStatus(files)
+	if err != nil {
+		return fmt.Errorf("failed to check file status: %w", err)
+	}
+
+	if len(staged) == 0 {
+		fileNames := strings.Join(files, " ")
+		return fmt.Errorf("none specified files staged: %v\nHint: Use 'gmc -a %s' to stage them first", files, fileNames)
+	}
+
+	// Get diff for staged files
+	diff, err := git.GetFilesDiff(staged)
+	if err != nil {
+		return fmt.Errorf("failed to get diff: %w", err)
+	}
+
+	if diff == "" {
+		return errors.New("no changes detected in staged files")
+	}
+
+	// Generate and process commit message
+	return handleSelectiveCommitFlow(diff, staged)
+}
+
+func handleSelectiveCommitFlow(diff string, files []string) error {
+	cfg := config.GetConfig()
+
+	for {
+		message, err := generateCommitMessage(cfg, files, diff)
+		if err != nil {
+			return err
+		}
+
+		// Get user confirmation
+		action, editedMessage, err := getUserConfirmation(message)
+		if err != nil {
+			return err
+		}
+
+		switch action {
+		case "cancel":
+			fmt.Println("Commit cancelled by user")
+			return nil
+		case "regenerate":
+			fmt.Println("Regenerating commit message...")
+			continue
+		case "commit":
+			finalMessage := message
+			if editedMessage != "" {
+				finalMessage = editedMessage
+			}
+			return performSelectiveCommit(finalMessage, files)
+		}
+	}
+}
+
 func performCommit(message string) error {
 	if dryRun {
 		fmt.Println("Dry run mode, no actual commit")
@@ -310,5 +431,25 @@ func performCommit(message string) error {
 	}
 
 	fmt.Println("Successfully committed changes!")
+	return nil
+}
+
+func performSelectiveCommit(message string, files []string) error {
+	if dryRun {
+		fmt.Println("Dry run mode, no actual commit")
+		fmt.Printf("Would commit files: %v\n", files)
+		return nil
+	}
+
+	commitArgs := []string{}
+	if noVerify {
+		commitArgs = append(commitArgs, "--no-verify")
+	}
+
+	if err := git.CommitFiles(message, files, commitArgs...); err != nil {
+		return fmt.Errorf("failed to commit files: %w", err)
+	}
+
+	fmt.Printf("Successfully committed files: %v!\n", files)
 	return nil
 }
