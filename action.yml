@@ -1,0 +1,130 @@
+name: "GMC - Git Message Commit"
+description: "Generate high-quality commit messages or analyze commit quality using LLM"
+author: "samzong"
+branding:
+  icon: "edit-3"
+  color: "purple"
+
+inputs:
+  mode:
+    description: "Operation mode: 'analyze' or 'generate'"
+    required: false
+    default: "analyze"
+  team:
+    description: "Analyze team commits (only for analyze mode)"
+    required: false
+    default: "false"
+  args:
+    description: "Extra args for generate mode (e.g. '-a --issue 123 --branch ""add auth""')"
+    required: false
+    default: ""
+  apikey:
+    description: "OpenAI API key for LLM"
+    required: false
+  apibase:
+    description: "OpenAI API Base URL (proxy)"
+    required: false
+  model:
+    description: "LLM model (e.g. gpt-4.1-mini)"
+    required: false
+  role:
+    description: "Role context for message generation"
+    required: false
+  prompt_template:
+    description: "Prompt template name (in prompts_dir)"
+    required: false
+  prompts_dir:
+    description: "Directory containing prompt templates"
+    required: false
+  working-directory:
+    description: "Working directory to run commands in"
+    required: false
+    default: "."
+  comment:
+    description: "If true on PRs, post analysis/generation output as a comment"
+    required: false
+    default: "false"
+
+outputs:
+  report:
+    description: "Full text output from 'analyze' or 'generate' run"
+    value: ${{ steps.run.outputs.report }}
+  commit_message:
+    description: "Generated commit message (from generate mode, typically with --dry-run)"
+    value: ${{ steps.run.outputs.commit_message }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+
+    - name: Build gmc
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+        echo "Building gmc binary..."
+        go build -trimpath -o gmc .
+
+    - name: Configure gmc
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+        if [ -n "${{ inputs.apikey }}" ]; then ./gmc config set apikey "${{ inputs.apikey }}"; fi
+        if [ -n "${{ inputs.apibase }}" ]; then ./gmc config set apibase "${{ inputs.apibase }}"; fi
+        if [ -n "${{ inputs.model }}" ]; then ./gmc config set model "${{ inputs.model }}"; fi
+        if [ -n "${{ inputs.role }}" ]; then ./gmc config set role "${{ inputs.role }}"; fi
+        if [ -n "${{ inputs.prompt_template }}" ]; then ./gmc config set prompt_template "${{ inputs.prompt_template }}"; fi
+        if [ -n "${{ inputs.prompts_dir }}" ]; then ./gmc config set prompts_dir "${{ inputs.prompts_dir }}"; fi
+
+    - name: Run GMC
+      id: run
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        # Ensure pager/editor don't block in CI
+        PAGER: cat
+        EDITOR: true
+        VISUAL: true
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP"
+        if [ "${{ inputs.mode }}" = "analyze" ]; then
+          TEAM_FLAG=""
+          if [ "${{ inputs.team }}" = "true" ]; then TEAM_FLAG="--team"; fi
+          echo "Running: ./gmc analyze ${TEAM_FLAG}"
+          # Capture output but do not fail the action if gmc exits non-zero
+          if ! OUT=$(./gmc analyze ${TEAM_FLAG} 2>&1); then
+            echo "gmc analyze returned non-zero; continuing and capturing output"
+          fi
+          printf "%s\n" "$OUT" | sed -e 's/\r$//' > "$RUNNER_TEMP/gmc_output.txt"
+          printf 'report<<EOF\n%s\nEOF\n' "$OUT" >> "$GITHUB_OUTPUT"
+        else
+          echo "Running: ./gmc -y --dry-run ${{ inputs.args }}"
+          if ! OUT=$(./gmc -y --dry-run ${{ inputs.args }} 2>&1); then
+            echo "gmc generate returned non-zero; continuing and capturing output"
+          fi
+          printf "%s\n" "$OUT" | sed -e 's/\r$//' > "$RUNNER_TEMP/gmc_output.txt"
+          printf 'report<<EOF\n%s\nEOF\n' "$OUT" >> "$GITHUB_OUTPUT"
+          printf 'commit_message<<EOF\n%s\nEOF\n' "$OUT" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Comment on PR with output
+      if: ${{ inputs.comment == 'true' && startsWith(github.event_name, 'pull_request') }}
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const path = process.env.RUNNER_TEMP + '/gmc_output.txt';
+          const body = fs.readFileSync(path, 'utf8');
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body: body.length > 65000 ? body.slice(0, 65000) + '\n\n…(truncated)…' : body,
+          });
+
