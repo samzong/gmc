@@ -293,6 +293,60 @@ func TestPerformSelectiveCommit_WithNoSignoff(t *testing.T) {
 	dryRun = false
 }
 
+func TestBuildCommitArgs(t *testing.T) {
+	tests := []struct {
+		name      string
+		noVerify  bool
+		noSignoff bool
+		expected  []string
+	}{
+		{
+			name:      "Default (with signoff)",
+			noVerify:  false,
+			noSignoff: false,
+			expected:  []string{"-s"},
+		},
+		{
+			name:      "No signoff",
+			noVerify:  false,
+			noSignoff: true,
+			expected:  []string{},
+		},
+		{
+			name:      "No verify with signoff",
+			noVerify:  true,
+			noSignoff: false,
+			expected:  []string{"--no-verify", "-s"},
+		},
+		{
+			name:      "No verify and no signoff",
+			noVerify:  true,
+			noSignoff: true,
+			expected:  []string{"--no-verify"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Save original values
+			originalNoVerify := noVerify
+			originalNoSignoff := noSignoff
+			defer func() {
+				noVerify = originalNoVerify
+				noSignoff = originalNoSignoff
+			}()
+
+			// Set test values
+			noVerify = tt.noVerify
+			noSignoff = tt.noSignoff
+
+			// Test
+			args := buildCommitArgs()
+			assert.Equal(t, tt.expected, args, "Expected commit args to match")
+		})
+	}
+}
+
 func TestGetUserConfirmation_AutoYes(t *testing.T) {
 	// Test auto-yes flag
 	originalAutoYes := autoYes

@@ -498,11 +498,12 @@ func CheckFileStatus(files []string) ([]string, []string, []string, error) {
 			return nil, nil, nil, fmt.Errorf("failed to check tracked status for %s: %w", file, err)
 		}
 
-		if isStaged {
+		switch {
+		case isStaged:
 			staged = append(staged, file)
-		} else if isModified {
+		case isModified:
 			modified = append(modified, file)
-		} else if !isTracked {
+		case !isTracked:
 			untracked = append(untracked, file)
 		}
 	}

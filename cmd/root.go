@@ -417,12 +417,8 @@ func handleSelectiveCommitFlow(diff string, files []string) error {
 	}
 }
 
-func performCommit(message string) error {
-	if dryRun {
-		fmt.Println("Dry run mode, no actual commit")
-		return nil
-	}
-
+// buildCommitArgs constructs the git commit arguments based on flags
+func buildCommitArgs() []string {
 	commitArgs := []string{}
 	if noVerify {
 		commitArgs = append(commitArgs, "--no-verify")
@@ -430,6 +426,16 @@ func performCommit(message string) error {
 	if !noSignoff {
 		commitArgs = append(commitArgs, "-s")
 	}
+	return commitArgs
+}
+
+func performCommit(message string) error {
+	if dryRun {
+		fmt.Println("Dry run mode, no actual commit")
+		return nil
+	}
+
+	commitArgs := buildCommitArgs()
 
 	if err := git.Commit(message, commitArgs...); err != nil {
 		return fmt.Errorf("failed to commit changes: %w", err)
@@ -446,13 +452,7 @@ func performSelectiveCommit(message string, files []string) error {
 		return nil
 	}
 
-	commitArgs := []string{}
-	if noVerify {
-		commitArgs = append(commitArgs, "--no-verify")
-	}
-	if !noSignoff {
-		commitArgs = append(commitArgs, "-s")
-	}
+	commitArgs := buildCommitArgs()
 
 	if err := git.CommitFiles(message, files, commitArgs...); err != nil {
 		return fmt.Errorf("failed to commit files: %w", err)
