@@ -19,6 +19,7 @@ import (
 var (
 	cfgFile    string
 	noVerify   bool
+	noSignoff  bool
 	dryRun     bool
 	addAll     bool
 	issueNum   string
@@ -53,6 +54,7 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "Configuration file path (default is $HOME/.gmc.yaml)")
 	rootCmd.Flags().BoolVar(&noVerify, "no-verify", false, "Skip pre-commit hooks")
+	rootCmd.Flags().BoolVar(&noSignoff, "no-signoff", false, "Skip signing the commit (DCO signoff)")
 	rootCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Generate message only, do not commit")
 	rootCmd.Flags().BoolVarP(&addAll, "all", "a", false,
 		"Stage files before committing (all files if none specified, or only specified files)")
@@ -425,6 +427,9 @@ func performCommit(message string) error {
 	if noVerify {
 		commitArgs = append(commitArgs, "--no-verify")
 	}
+	if !noSignoff {
+		commitArgs = append(commitArgs, "-s")
+	}
 
 	if err := git.Commit(message, commitArgs...); err != nil {
 		return fmt.Errorf("failed to commit changes: %w", err)
@@ -444,6 +449,9 @@ func performSelectiveCommit(message string, files []string) error {
 	commitArgs := []string{}
 	if noVerify {
 		commitArgs = append(commitArgs, "--no-verify")
+	}
+	if !noSignoff {
+		commitArgs = append(commitArgs, "-s")
 	}
 
 	if err := git.CommitFiles(message, files, commitArgs...); err != nil {

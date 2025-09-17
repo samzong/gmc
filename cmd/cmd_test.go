@@ -253,6 +253,46 @@ func TestPerformCommit_WithNoVerify(t *testing.T) {
 	dryRun = false
 }
 
+func TestPerformCommit_WithNoSignoff(t *testing.T) {
+	// Test commit with no-signoff flag
+	originalNoSignoff := noSignoff
+	originalDryRun := dryRun
+	defer func() {
+		noSignoff = originalNoSignoff
+		dryRun = originalDryRun
+	}()
+
+	dryRun = true // Enable dry run to avoid actual commit
+	noSignoff = true
+
+	err := performCommit("test commit message")
+	assert.NoError(t, err)
+
+	// Reset
+	noSignoff = false
+	dryRun = false
+}
+
+func TestPerformSelectiveCommit_WithNoSignoff(t *testing.T) {
+	// Test selective commit with no-signoff flag
+	originalNoSignoff := noSignoff
+	originalDryRun := dryRun
+	defer func() {
+		noSignoff = originalNoSignoff
+		dryRun = originalDryRun
+	}()
+
+	dryRun = true // Enable dry run to avoid actual commit
+	noSignoff = true
+
+	err := performSelectiveCommit("test commit message", []string{"test.go"})
+	assert.NoError(t, err)
+
+	// Reset
+	noSignoff = false
+	dryRun = false
+}
+
 func TestGetUserConfirmation_AutoYes(t *testing.T) {
 	// Test auto-yes flag
 	originalAutoYes := autoYes
@@ -327,6 +367,10 @@ func TestCommandFlags(t *testing.T) {
 	noVerifyFlag := flags.Lookup("no-verify")
 	assert.NotNil(t, noVerifyFlag)
 	assert.Equal(t, "bool", noVerifyFlag.Value.Type())
+
+	noSignoffFlag := flags.Lookup("no-signoff")
+	assert.NotNil(t, noSignoffFlag)
+	assert.Equal(t, "bool", noSignoffFlag.Value.Type())
 
 	dryRunFlag := flags.Lookup("dry-run")
 	assert.NotNil(t, dryRunFlag)
