@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
@@ -12,6 +12,8 @@ permissions:
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,7 +23,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '>=1.21.0'
+          go-version: ">=1.21.0"
           cache: true
 
       - name: Install git-chglog
@@ -35,13 +37,47 @@ jobs:
           distribution: goreleaser
           version: latest
           args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
-      
+
       - name: Trigger Homebrew Update
         if: success()
         uses: peter-evans/repository-dispatch@v2
         with:
           token: ${{ secrets.GH_PAT }}
           event-type: trigger-homebrew-update
-          client-payload: '{"version": "${{ github.ref_name }}"}' 
+          client-payload: '{"version": "${{ github.ref_name }}"}'
+
+      - name: Update CHANGELOG.md via PR
+        if: success()
+        run: |
+          BRANCH_NAME="chore/update-changelog-${{ github.ref_name }}"
+
+          # Ensure we're on main branch and have latest changes
+          git fetch origin main
+          git checkout main
+          git pull origin main
+
+          # Configure git
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          # Generate changelog
+          git-chglog -o CHANGELOG.md
+
+          # Check if there are changes
+          if git diff --quiet CHANGELOG.md; then
+            echo "No changes to CHANGELOG.md"
+            exit 0
+          fi
+
+          # Create branch and commit
+          git checkout -b "${BRANCH_NAME}"
+          git add CHANGELOG.md
+          git commit -m "chore: update CHANGELOG.md for ${{ github.ref_name }}"
+          git push origin "${BRANCH_NAME}"
+
+          # Create PR
+          gh pr create \
+            --title "chore: update CHANGELOG.md for ${{ github.ref_name }}" \
+            --body "Auto-generated PR to update CHANGELOG.md for release ${{ github.ref_name }}" \
+            --base main \
+            --head "${BRANCH_NAME}"
