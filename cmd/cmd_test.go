@@ -385,7 +385,7 @@ func TestGenerateCommitMessage_IssueNumber(t *testing.T) {
 	cfg := config.GetConfig()
 
 	// The function will fail at LLM call, but issue number formatting logic will be exercised
-	_, err := generateCommitMessage(cfg, changedFiles, diff)
+	_, err := generateCommitMessage(cfg, changedFiles, diff, "")
 
 	// We expect an error due to fake API key
 	if err != nil {
@@ -637,14 +637,14 @@ index 1234567..abcdefg 100644
 
 	// Test without issue number
 	issueNum = ""
-	_, err := generateCommitMessage(cfg, changedFiles, diff)
+	_, err := generateCommitMessage(cfg, changedFiles, diff, "")
 	if err != nil {
 		assert.Contains(t, err.Error(), "failed to generate commit message")
 	}
 
 	// Test with issue number
 	issueNum = "456"
-	_, err = generateCommitMessage(cfg, changedFiles, diff)
+	_, err = generateCommitMessage(cfg, changedFiles, diff, "")
 	if err != nil {
 		assert.Contains(t, err.Error(), "failed to generate commit message")
 	}

@@ -27,6 +27,7 @@ var (
 	configErr  error
 	verbose    bool
 	branchDesc string
+	userPrompt string
 	rootCmd    = &cobra.Command{
 		Use:   "gmc",
 		Short: "gmc - Git Message Assistant",
@@ -62,6 +63,7 @@ func init() {
 	rootCmd.Flags().BoolVarP(&autoYes, "yes", "y", false, "Automatically confirm the commit message")
 	rootCmd.Flags().BoolVarP(&verbose, "verbose", "V", false, "Show detailed git command output")
 	rootCmd.Flags().StringVarP(&branchDesc, "branch", "b", "", "Create and switch to a new branch with generated name")
+	rootCmd.Flags().StringVarP(&userPrompt, "prompt", "p", "", "Additional context or instructions for commit message generation")
 
 	rootCmd.AddCommand(configCmd)
 }
@@ -167,7 +169,7 @@ func handleCommitFlow(diff string, changedFiles []string) error {
 	cfg := config.GetConfig()
 
 	for {
-		message, err := generateCommitMessage(cfg, changedFiles, diff)
+		message, err := generateCommitMessage(cfg, changedFiles, diff, userPrompt)
 		if err != nil {
 			return err
 		}
@@ -195,8 +197,8 @@ func handleCommitFlow(diff string, changedFiles []string) error {
 	}
 }
 
-func generateCommitMessage(cfg *config.Config, changedFiles []string, diff string) (string, error) {
-	prompt := formatter.BuildPrompt(cfg.Role, changedFiles, diff)
+func generateCommitMessage(cfg *config.Config, changedFiles []string, diff string, userPrompt string) (string, error) {
+	prompt := formatter.BuildPrompt(cfg.Role, changedFiles, diff, userPrompt)
 	message, err := llm.GenerateCommitMessage(prompt, cfg.Model)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate commit message: %w", err)
@@ -389,7 +391,7 @@ func handleSelectiveCommitFlow(diff string, files []string) error {
 	cfg := config.GetConfig()
 
 	for {
-		message, err := generateCommitMessage(cfg, files, diff)
+		message, err := generateCommitMessage(cfg, files, diff, userPrompt)
 		if err != nil {
 			return err
 		}

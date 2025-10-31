@@ -8,7 +8,7 @@ import (
 	"github.com/samzong/gmc/internal/config"
 )
 
-func BuildPrompt(role string, changedFiles []string, diff string) string {
+func BuildPrompt(role string, changedFiles []string, diff string, userPrompt string) string {
 	// Limit the content size of the diff to avoid exceeding the token limit.
 	if len(diff) > 4000 {
 		diff = diff[:4000] + "...(content is too long, truncated)"
@@ -37,7 +37,7 @@ func BuildPrompt(role string, changedFiles []string, diff string) string {
 	prompt, err := RenderTemplate(templateContent, data)
 	if err != nil {
 		fmt.Printf("Warning: %v, using simple format\n", err)
-		return fmt.Sprintf(`You are a professional %s, please generate a commit message that follows the `+
+		prompt = fmt.Sprintf(`You are a professional %s, please generate a commit message that follows the `+
 			`Conventional Commits specification based on the following Git changes:
 
 Changed Files:
@@ -51,6 +51,11 @@ The type should be the most appropriate from the following choices: feat, fix, d
 The description should be concise (no more than 150 characters) and accurately reflect the changes.
 Do not add issue numbers like "#123" or "(#123)" in the commit message, `+
 			`this will be handled automatically by the tool.`, role, changedFilesStr, diff)
+	}
+
+	// Append user prompt if provided
+	if userPrompt != "" {
+		prompt += "\n\nAdditional Context:\n" + userPrompt
 	}
 
 	return prompt
