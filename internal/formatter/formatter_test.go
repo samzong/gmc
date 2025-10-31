@@ -74,7 +74,7 @@ func TestBuildPrompt(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := BuildPrompt(tt.role, tt.changedFiles, tt.diff)
+			result := BuildPrompt(tt.role, tt.changedFiles, tt.diff, "")
 
 			assert.NotEmpty(t, result)
 			for _, expected := range tt.expectContain {
@@ -306,7 +306,7 @@ template: |
 	_ = config.GetConfig() // Just to ensure config is initialized
 
 	// Test that custom template path works
-	result := BuildPrompt("Test Developer", []string{"file.go"}, "diff content")
+	result := BuildPrompt("Test Developer", []string{"file.go"}, "diff content", "")
 	assert.Contains(t, result, "Test Developer")
 	assert.Contains(t, result, "file.go")
 	assert.Contains(t, result, "diff content")
@@ -318,11 +318,84 @@ func TestBuildPromptFallbackToBuiltinOnError(t *testing.T) {
 	files := []string{"main.go"}
 	diff := "some diff"
 
-	result := BuildPrompt(role, files, diff)
+	result := BuildPrompt(role, files, diff, "")
 
 	// Should contain the expected content even when template fails
 	assert.Contains(t, result, role)
 	assert.Contains(t, result, "main.go")
 	assert.Contains(t, result, "some diff")
 	assert.Contains(t, result, "Conventional Commits")
+}
+
+func TestBuildPromptWithUserPrompt(t *testing.T) {
+	tests := []struct {
+		name             string
+		role             string
+		changedFiles     []string
+		diff             string
+		userPrompt       string
+		expectContain    []string
+		expectNotContain []string
+	}{
+		{
+			name:         "User prompt included when provided",
+			role:         "Developer",
+			changedFiles: []string{"file.go"},
+			diff:         "some diff",
+			userPrompt:   "This is a critical bug fix",
+			expectContain: []string{
+				"Developer",
+				"file.go",
+				"some diff",
+				"Additional Context:",
+				"This is a critical bug fix",
+			},
+			expectNotContain: []string{},
+		},
+		{
+			name:         "User prompt not included when empty",
+			role:         "Developer",
+			changedFiles: []string{"file.go"},
+			diff:         "some diff",
+			userPrompt:   "",
+			expectContain: []string{
+				"Developer",
+				"file.go",
+				"some diff",
+			},
+			expectNotContain: []string{
+				"Additional Context:",
+			},
+		},
+		{
+			name:         "User prompt with multiline content",
+			role:         "Developer",
+			changedFiles: []string{"file.go"},
+			diff:         "some diff",
+			userPrompt:   "This change:\n- Fixes issue #123\n- Improves performance",
+			expectContain: []string{
+				"Additional Context:",
+				"This change:",
+				"Fixes issue #123",
+				"Improves performance",
+			},
+			expectNotContain: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := BuildPrompt(tt.role, tt.changedFiles, tt.diff, tt.userPrompt)
+
+			assert.NotEmpty(t, result)
+			for _, expected := range tt.expectContain {
+				assert.Contains(t, result, expected,
+					"Prompt should contain: %s", expected)
+			}
+			for _, notExpected := range tt.expectNotContain {
+				assert.NotContains(t, result, notExpected,
+					"Prompt should not contain: %s", notExpected)
+			}
+		})
+	}
 }
