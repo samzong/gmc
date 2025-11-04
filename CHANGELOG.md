@@ -1,6 +1,14 @@
 # Changelog
 
 
+## [v0.1.3] - 2025-11-04
+### Code Refactoring
+- **cmd:** replace unused command arguments with underscores for clarity
+
+### Features
+- **ci:** add multi-arch Docker build and GitHub Container Registry support
+
+
 ## [v0.1.2] - 2025-10-31
 ### Features
 - **core:** add user prompt support for commit message generation
@@ -85,7 +93,8 @@
 - **gma:** add option to automatically stage all changes ([#123](https://github.com/samzong/gmc/issues/123))
 
 
-[Unreleased]: https://github.com/samzong/gmc/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/samzong/gmc/compare/v0.1.3...HEAD
+[v0.1.3]: https://github.com/samzong/gmc/compare/v0.1.2...v0.1.3
 [v0.1.2]: https://github.com/samzong/gmc/compare/v0.1.1...v0.1.2
 [v0.1.1]: https://github.com/samzong/gmc/compare/v0.1.0...v0.1.1
 [v0.1.0]: https://github.com/samzong/gmc/compare/v0.0.8...v0.1.0
