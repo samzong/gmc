@@ -17,25 +17,26 @@ import (
 )
 
 var (
-	cfgFile    string
-	noVerify   bool
-	noSignoff  bool
-	dryRun     bool
-	addAll     bool
-	issueNum   string
-	autoYes    bool
-	configErr  error
-	verbose    bool
-	branchDesc string
-	userPrompt string
-	rootCmd    = &cobra.Command{
+	cfgFile              string
+	noVerify             bool
+	noSignoff            bool
+	dryRun               bool
+	addAll               bool
+	issueNum             string
+	autoYes              bool
+	configErr            error
+	verbose              bool
+	branchDesc           string
+	userPrompt           string
+	errNoChangesDetected = errors.New("no changes detected in the staging area files")
+	rootCmd              = &cobra.Command{
 		Use:   "gmc",
 		Short: "gmc - Git Message Assistant",
 		Long: `gmc is a CLI tool that accelerates Git commit efficiency by generating ` +
 			`high-quality commit messages using LLM.`,
 		Version: fmt.Sprintf("%s (built at %s)", Version, BuildTime),
 		Args:    cobra.ArbitraryArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			if configErr != nil {
 				return fmt.Errorf("configuration error: %w", configErr)
 			}
@@ -63,7 +64,8 @@ func init() {
 	rootCmd.Flags().BoolVarP(&autoYes, "yes", "y", false, "Automatically confirm the commit message")
 	rootCmd.Flags().BoolVarP(&verbose, "verbose", "V", false, "Show detailed git command output")
 	rootCmd.Flags().StringVarP(&branchDesc, "branch", "b", "", "Create and switch to a new branch with generated name")
-	rootCmd.Flags().StringVarP(&userPrompt, "prompt", "p", "", "Additional context or instructions for commit message generation")
+	rootCmd.Flags().StringVarP(&userPrompt, "prompt", "p", "",
+		"Additional context or instructions for commit message generation")
 
 	rootCmd.AddCommand(configCmd)
 }
@@ -77,7 +79,7 @@ func handleErrors(err error) error {
 		return nil
 	}
 
-	if err.Error() == "No changes detected in the staging area files." {
+	if errors.Is(err, errNoChangesDetected) {
 		fmt.Println("No changes detected in the staging area files.")
 		if !addAll {
 			fmt.Println("Hint: You can use -a or --all to automatically add all changes to the staging area")
@@ -154,7 +156,7 @@ func getStagedChanges() (string, []string, error) {
 	}
 
 	if diff == "" {
-		return "", nil, errors.New("no changes detected in the staging area files")
+		return "", nil, errNoChangesDetected
 	}
 
 	changedFiles, err := git.ParseStagedFiles()
@@ -168,33 +170,7 @@ func getStagedChanges() (string, []string, error) {
 func handleCommitFlow(diff string, changedFiles []string) error {
 	cfg := config.GetConfig()
 
-	for {
-		message, err := generateCommitMessage(cfg, changedFiles, diff, userPrompt)
-		if err != nil {
-			return err
-		}
-
-		// Get user confirmation
-		action, editedMessage, err := getUserConfirmation(message)
-		if err != nil {
-			return err
-		}
-
-		switch action {
-		case "cancel":
-			fmt.Println("Commit cancelled by user")
-			return nil
-		case "regenerate":
-			fmt.Println("Regenerating commit message...")
-			continue
-		case "commit":
-			finalMessage := message
-			if editedMessage != "" {
-				finalMessage = editedMessage
-			}
-			return performCommit(finalMessage)
-		}
-	}
+	return runCommitFlow(cfg, changedFiles, diff, performCommit)
 }
 
 func generateCommitMessage(cfg *config.Config, changedFiles []string, diff string, userPrompt string) (string, error) {
@@ -318,9 +294,8 @@ func handleSelectiveCommit(fileArgs []string) error {
 	// Check mode based on -a flag
 	if addAll {
 		return stageAndCommitFiles(files)
-	} else {
-		return commitStagedFiles(files)
 	}
+	return commitStagedFiles(files)
 }
 
 func stageAndCommitFiles(files []string) error {
@@ -331,7 +306,9 @@ func stageAndCommitFiles(files []string) error {
 	}
 
 	// Determine files to stage
-	toStage := append(modified, untracked...)
+	toStage := make([]string, 0, len(modified)+len(untracked))
+	toStage = append(toStage, modified...)
+	toStage = append(toStage, untracked...)
 	if len(toStage) == 0 && len(staged) == 0 {
 		return fmt.Errorf("no changes detected in specified files: %v", files)
 	}
@@ -345,7 +322,9 @@ func stageAndCommitFiles(files []string) error {
 	}
 
 	// Get all files to commit (staged + newly staged)
-	allFiles := append(staged, toStage...)
+	allFiles := make([]string, 0, len(staged)+len(toStage))
+	allFiles = append(allFiles, staged...)
+	allFiles = append(allFiles, toStage...)
 
 	// Get diff and generate commit message
 	diff, err := git.GetFilesDiff(allFiles)
@@ -354,7 +333,7 @@ func stageAndCommitFiles(files []string) error {
 	}
 
 	if diff == "" {
-		return errors.New("no changes detected in staged files")
+		return errNoChangesDetected
 	}
 
 	// Generate and process commit message
@@ -380,7 +359,7 @@ func commitStagedFiles(files []string) error {
 	}
 
 	if diff == "" {
-		return errors.New("no changes detected in staged files")
+		return errNoChangesDetected
 	}
 
 	// Generate and process commit message
@@ -390,33 +369,9 @@ func commitStagedFiles(files []string) error {
 func handleSelectiveCommitFlow(diff string, files []string) error {
 	cfg := config.GetConfig()
 
-	for {
-		message, err := generateCommitMessage(cfg, files, diff, userPrompt)
-		if err != nil {
-			return err
-		}
-
-		// Get user confirmation
-		action, editedMessage, err := getUserConfirmation(message)
-		if err != nil {
-			return err
-		}
-
-		switch action {
-		case "cancel":
-			fmt.Println("Commit cancelled by user")
-			return nil
-		case "regenerate":
-			fmt.Println("Regenerating commit message...")
-			continue
-		case "commit":
-			finalMessage := message
-			if editedMessage != "" {
-				finalMessage = editedMessage
-			}
-			return performSelectiveCommit(finalMessage, files)
-		}
-	}
+	return runCommitFlow(cfg, files, diff, func(message string) error {
+		return performSelectiveCommit(message, files)
+	})
 }
 
 // buildCommitArgs constructs the git commit arguments based on flags
@@ -462,4 +417,33 @@ func performSelectiveCommit(message string, files []string) error {
 
 	fmt.Printf("Successfully committed files: %v!\n", files)
 	return nil
+}
+
+func runCommitFlow(cfg *config.Config, files []string, diff string, commitExec func(string) error) error {
+	for {
+		message, err := generateCommitMessage(cfg, files, diff, userPrompt)
+		if err != nil {
+			return err
+		}
+
+		action, editedMessage, err := getUserConfirmation(message)
+		if err != nil {
+			return err
+		}
+
+		switch action {
+		case "cancel":
+			fmt.Println("Commit cancelled by user")
+			return nil
+		case "regenerate":
+			fmt.Println("Regenerating commit message...")
+			continue
+		case "commit":
+			finalMessage := message
+			if editedMessage != "" {
+				finalMessage = editedMessage
+			}
+			return commitExec(finalMessage)
+		}
+	}
 }

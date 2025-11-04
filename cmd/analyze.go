@@ -20,7 +20,7 @@ var (
 Examples:
   gmc analyze           # Analyze personal commits (last 50)
   gmc analyze --team    # Analyze team commits (last 200)`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			return runAnalyze()
 		},
 	}

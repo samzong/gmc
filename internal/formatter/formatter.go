@@ -4,14 +4,17 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/samzong/gmc/internal/config"
 )
 
+const diffPromptLimit = 4000
+
 func BuildPrompt(role string, changedFiles []string, diff string, userPrompt string) string {
 	// Limit the content size of the diff to avoid exceeding the token limit.
-	if len(diff) > 4000 {
-		diff = diff[:4000] + "...(content is too long, truncated)"
+	if len(diff) > diffPromptLimit {
+		diff = truncateToValidUTF8(diff, diffPromptLimit) + "...(content is too long, truncated)"
 	}
 
 	changedFilesStr := strings.Join(changedFiles, "\n")
@@ -119,4 +122,21 @@ func formatToConventional(message string) string {
 	cleanMessage = strings.TrimSpace(cleanMessage)
 
 	return fmt.Sprintf("%s: %s", commitType, cleanMessage)
+}
+
+func truncateToValidUTF8(input string, maxBytes int) string {
+	if len(input) <= maxBytes {
+		return input
+	}
+
+	end := maxBytes
+	for end > 0 && !utf8.ValidString(input[:end]) {
+		end--
+	}
+
+	if end == 0 {
+		return ""
+	}
+
+	return input[:end]
 }

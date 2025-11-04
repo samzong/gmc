@@ -18,7 +18,7 @@ var (
 	configSetCmd = &cobra.Command{
 		Use:   "set",
 		Short: "Set configuration item",
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 		},
 	}
 
@@ -26,7 +26,7 @@ var (
 		Use:   "role [Role Name]",
 		Short: "Set Current Role",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			role := args[0]
 			if !config.IsValidRole(role) {
 				return fmt.Errorf("invalid role: %s", role)
@@ -47,7 +47,7 @@ var (
 		Use:   "model [Model Name]",
 		Short: "Set up the LLM model",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			model := args[0]
 			if !config.IsValidModel(model) {
 				return fmt.Errorf("invalid model: %s", model)
@@ -68,7 +68,7 @@ var (
 		Use:   "apikey [API Key]",
 		Short: "Set OpenAI API Key",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			apiKey := args[0]
 
 			config.SetConfigValue("api_key", apiKey)
@@ -86,7 +86,7 @@ var (
 		Use:   "apibase [API Base URL]",
 		Short: "Set OpenAI API Base URL",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			apiBase := args[0]
 
 			config.SetConfigValue("api_base", apiBase)
@@ -105,7 +105,7 @@ var (
 		Use:   "prompt_template [Template Name or Path]",
 		Short: "Set Prompt Template",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			templateName := args[0]
 
 			_, err := formatter.GetPromptTemplate(templateName)
@@ -128,7 +128,7 @@ var (
 		Use:   "prompts_dir [Directory Path]",
 		Short: "Set Prompt Template Directory",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			dir := args[0]
 
 			config.SetConfigValue("prompts_dir", dir)
@@ -145,7 +145,7 @@ var (
 	configGetCmd = &cobra.Command{
 		Use:   "get",
 		Short: "Get Current Configuration",
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			cfg := config.GetConfig()
 			fmt.Println("Current Configuration:")
 			fmt.Printf("Role: %s\n", cfg.Role)
@@ -164,7 +164,7 @@ var (
 	configListTemplatesCmd = &cobra.Command{
 		Use:   "list_templates",
 		Short: "List All Available Prompt Templates",
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			fmt.Println("Built-in Templates:")
 			for name := range formatter.GetBuiltinTemplates() {
 				fmt.Printf("- %s\n", name)

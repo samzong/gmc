@@ -7,20 +7,20 @@ import (
 	"github.com/samzong/gmc/internal/git"
 )
 
-// AnalyzerImpl implements the Analyzer interface
-type AnalyzerImpl struct {
+// Impl implements the Analyzer interface
+type Impl struct {
 	qualityEvaluator QualityEvaluator
 }
 
 // NewAnalyzer creates a new analyzer instance
 func NewAnalyzer() Analyzer {
-	return &AnalyzerImpl{
+	return &Impl{
 		qualityEvaluator: NewQualityEvaluator(),
 	}
 }
 
 // Analyze performs the analysis based on the mode
-func (a *AnalyzerImpl) Analyze(teamMode bool) (*AnalysisResult, error) {
+func (a *Impl) Analyze(teamMode bool) (*AnalysisResult, error) {
 	// Determine commit limit based on mode
 	limit := 50 // Personal mode
 	if teamMode {
@@ -79,7 +79,7 @@ func (a *AnalyzerImpl) Analyze(teamMode bool) (*AnalysisResult, error) {
 }
 
 // analyzeTypeDistribution analyzes the distribution of commit types
-func (a *AnalyzerImpl) analyzeTypeDistribution(commits []git.CommitInfo) map[string]int {
+func (a *Impl) analyzeTypeDistribution(commits []git.CommitInfo) map[string]int {
 	distribution := make(map[string]int)
 
 	// Conventional commit type pattern
@@ -101,7 +101,7 @@ func (a *AnalyzerImpl) analyzeTypeDistribution(commits []git.CommitInfo) map[str
 }
 
 // inferCommitType tries to infer commit type from message content
-func (a *AnalyzerImpl) inferCommitType(message string) string {
+func (a *Impl) inferCommitType(message string) string {
 	message = strings.ToLower(message)
 
 	if strings.Contains(message, "fix") || strings.Contains(message, "bug") {
@@ -130,7 +130,7 @@ func (a *AnalyzerImpl) inferCommitType(message string) string {
 }
 
 // identifyPoorCommits identifies commits with low quality scores
-func (a *AnalyzerImpl) identifyPoorCommits(commits []git.CommitInfo, metrics []QualityMetrics) []git.CommitInfo {
+func (a *Impl) identifyPoorCommits(commits []git.CommitInfo, metrics []QualityMetrics) []git.CommitInfo {
 	var poorCommits []git.CommitInfo
 
 	for i, metric := range metrics {
@@ -148,7 +148,7 @@ func (a *AnalyzerImpl) identifyPoorCommits(commits []git.CommitInfo, metrics []Q
 }
 
 // analyzeAuthorStats analyzes statistics for each author in team mode
-func (a *AnalyzerImpl) analyzeAuthorStats(commits []git.CommitInfo, metrics []QualityMetrics) map[string]AuthorStats {
+func (a *Impl) analyzeAuthorStats(commits []git.CommitInfo, metrics []QualityMetrics) map[string]AuthorStats {
 	authorStats := make(map[string]AuthorStats)
 	authorCommits := make(map[string][]int) // author -> commit indices
 
@@ -199,7 +199,7 @@ func (a *AnalyzerImpl) analyzeAuthorStats(commits []git.CommitInfo, metrics []Qu
 }
 
 // getUniqueIssues returns unique issues, limited to maxCount
-func (a *AnalyzerImpl) getUniqueIssues(issues []string, maxCount int) []string {
+func (a *Impl) getUniqueIssues(issues []string, maxCount int) []string {
 	seen := make(map[string]bool)
 	unique := []string{}
 

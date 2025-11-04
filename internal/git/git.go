@@ -324,7 +324,7 @@ func GetCommitHistory(limit int, teamMode bool) ([]CommitInfo, error) {
 			return nil, fmt.Errorf("failed to get current git user: %w", err)
 		}
 		cmd = exec.Command("git", "log", "--pretty=format:%h|%an|%ad|%s", "--date=short",
-			fmt.Sprintf("--author=%s", currentUser), fmt.Sprintf("-n%d", limit))
+			"--author="+currentUser, fmt.Sprintf("-n%d", limit))
 	}
 
 	var out bytes.Buffer
@@ -404,14 +404,19 @@ func ResolveFiles(paths []string) ([]string, error) {
 		// Clean path to prevent directory traversal
 		cleanPath := filepath.Clean(path)
 
-		// Check if file/directory exists
-		if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
-			return nil, fmt.Errorf("file or directory does not exist: %s", path)
-		}
-
-		// Check if it's a directory
 		info, err := os.Stat(cleanPath)
 		if err != nil {
+			if os.IsNotExist(err) {
+				inIndex, indexErr := isPathInStagedDiff(cleanPath)
+				if indexErr != nil {
+					return nil, fmt.Errorf("failed to resolve path %s: %w", path, indexErr)
+				}
+				if inIndex {
+					resolvedFiles = append(resolvedFiles, cleanPath)
+					continue
+				}
+				return nil, fmt.Errorf("file or directory does not exist: %s", path)
+			}
 			return nil, fmt.Errorf("failed to check path: %s: %w", path, err)
 		}
 
@@ -438,6 +443,44 @@ func ResolveFiles(paths []string) ([]string, error) {
 	}
 
 	return uniqueFiles, nil
+}
+
+func isPathInStagedDiff(path string) (bool, error) {
+	gitPath := filepath.ToSlash(path)
+
+	cmd := exec.Command("git", "diff", "--cached", "--name-only", "--", gitPath)
+	var out bytes.Buffer
+	var errBuf bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
+
+	if Verbose {
+		fmt.Fprintf(os.Stderr, "Running: git diff --cached --name-only -- %s\n", gitPath)
+	}
+
+	if err := cmd.Run(); err != nil {
+		if Verbose && errBuf.Len() > 0 {
+			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
+		}
+		return false, fmt.Errorf("failed to inspect staged diff: %w", err)
+	}
+
+	output := strings.TrimSpace(out.String())
+	if output == "" {
+		return false, nil
+	}
+
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if line == gitPath {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // getGitTrackedFilesInDir gets all git-tracked files in a directory
@@ -566,7 +609,7 @@ func StageFiles(files []string) error {
 		}
 
 		if err := cmd.Run(); err != nil {
-			errMsg := fmt.Sprintf("failed to stage file %s", file)
+			errMsg := "failed to stage file " + file
 			if errBuf.Len() > 0 {
 				errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(errBuf.String()))
 			}
