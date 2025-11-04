@@ -1,0 +1,16 @@
+FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates git
+
+WORKDIR /root
+
+# Copy the binary from goreleaser
+COPY gmc /usr/local/bin/gmc
+
+# Make sure gmc is executable
+RUN chmod +x /usr/local/bin/gmc
+
+# Set the entrypoint
+ENTRYPOINT ["gmc"]
+CMD ["--help"]
+

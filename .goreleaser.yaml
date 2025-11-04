@@ -45,4 +45,33 @@ checksum:
   name_template: 'checksums.txt'
 
 snapshot:
-  name_template: "{{ incpatch .Version }}-next" 
+  name_template: "{{ incpatch .Version }}-next"
+
+dockers:
+  - goos: linux
+    goarch: amd64
+    image_templates:
+      - "ghcr.io/{{ if .Env.IMAGE_REGISTRY_OWNER }}{{ .Env.IMAGE_REGISTRY_OWNER }}{{ else }}samzong{{ end }}/{{ .ProjectName }}:{{ .Tag }}"
+      - "ghcr.io/{{ if .Env.IMAGE_REGISTRY_OWNER }}{{ .Env.IMAGE_REGISTRY_OWNER }}{{ else }}samzong{{ end }}/{{ .ProjectName }}:latest"
+    dockerfile: Dockerfile.goreleaser
+    skip_push: false
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+  - goos: linux
+    goarch: arm64
+    image_templates:
+      - "ghcr.io/{{ if .Env.IMAGE_REGISTRY_OWNER }}{{ .Env.IMAGE_REGISTRY_OWNER }}{{ else }}samzong{{ end }}/{{ .ProjectName }}:{{ .Tag }}-arm64"
+    dockerfile: Dockerfile.goreleaser
+    skip_push: false
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}" 
