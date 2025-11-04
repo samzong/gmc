@@ -5,11 +5,16 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestGetBuiltinTemplates(t *testing.T) {
+	// Enable emoji for testing to match expected behavior
+	viper.Set("enable_emoji", true)
+	defer viper.Set("enable_emoji", false)
+
 	templates := GetBuiltinTemplates()
 
 	assert.NotEmpty(t, templates)

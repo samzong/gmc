@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/samzong/gmc/internal/config"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -91,6 +92,10 @@ func TestBuildPrompt(t *testing.T) {
 }
 
 func TestFormatCommitMessage(t *testing.T) {
+	// Enable emoji for these tests to match expected behavior
+	viper.Set("enable_emoji", true)
+	defer viper.Set("enable_emoji", false)
+
 	tests := []struct {
 		name     string
 		input    string
@@ -99,184 +104,188 @@ func TestFormatCommitMessage(t *testing.T) {
 		{
 			name:     "Valid conventional commit",
 			input:    "feat(auth): implement user authentication",
-			expected: "feat(auth): implement user authentication",
+			expected: "✨ feat(auth): implement user authentication",
 		},
 		{
 			name:     "Valid conventional commit without scope",
 			input:    "fix: resolve parsing error",
-			expected: "fix: resolve parsing error",
+			expected: "🐛 fix: resolve parsing error",
 		},
 		{
 			name:     "Remove issue number with parentheses",
 			input:    "feat(auth): implement user auth (#123)",
-			expected: "feat(auth): implement user auth",
+			expected: "✨ feat(auth): implement user auth",
 		},
 		{
 			name:     "Remove issue number with hash",
 			input:    "fix: resolve bug #456",
-			expected: "fix: resolve bug",
+			expected: "🐛 fix: resolve bug",
 		},
 		{
 			name:     "Remove multiple issue numbers",
 			input:    "feat: add feature #123 (#456)",
-			expected: "feat: add feature",
+			expected: "✨ feat: add feature",
 		},
 		{
-			name:     "Non-conventional commit with fix keyword",
+			name:     "Non-conventional message without prefix returns as-is",
 			input:    "fix the authentication bug",
-			expected: "fix: fix the authentication bug",
+			expected: "fix the authentication bug",
 		},
 		{
-			name:     "Non-conventional commit with add keyword",
+			name:     "Non-conventional message without prefix returns as-is",
 			input:    "add new user management feature",
-			expected: "feat: add new user management feature",
+			expected: "add new user management feature",
 		},
 		{
-			name:     "Non-conventional commit with doc keyword",
+			name:     "Non-conventional message without prefix returns as-is",
 			input:    "update documentation for API",
-			expected: "docs: update documentation for API",
+			expected: "update documentation for API",
 		},
 		{
 			name:     "Non-conventional commit generic",
 			input:    "update some functionality",
-			expected: "chore: update some functionality",
+			expected: "update some functionality",
 		},
 		{
 			name:     "Multi-line message (only first line used)",
 			input:    "feat: add feature\n\nThis is a detailed description",
-			expected: "feat: add feature",
+			expected: "✨ feat: add feature",
 		},
 		{
 			name:     "Message with whitespace",
 			input:    "  feat: add feature  ",
-			expected: "feat: add feature",
+			expected: "✨ feat: add feature",
 		},
 		{
 			name:     "Remove existing prefix",
 			input:    "fix: fix the parsing issue",
-			expected: "fix: fix the parsing issue",
+			expected: "🐛 fix: fix the parsing issue",
+		},
+		{
+			name:     "Message already has emoji",
+			input:    "✨ feat: add feature",
+			expected: "✨ feat: add feature",
+		},
+		{
+			name:     "All commit types with emoji",
+			input:    "docs: update README",
+			expected: "📝 docs: update README",
+		},
+		{
+			name:     "Style commit type",
+			input:    "style: format code",
+			expected: "💄 style: format code",
+		},
+		{
+			name:     "Refactor commit type",
+			input:    "refactor: restructure code",
+			expected: "♻️ refactor: restructure code",
+		},
+		{
+			name:     "Perf commit type",
+			input:    "perf: optimize queries",
+			expected: "⚡ perf: optimize queries",
+		},
+		{
+			name:     "Test commit type",
+			input:    "test: add unit tests",
+			expected: "✅ test: add unit tests",
+		},
+		{
+			name:     "Chore commit type",
+			input:    "chore: update dependencies",
+			expected: "🔧 chore: update dependencies",
+		},
+		{
+			name:     "Other commit type - regression test",
+			input:    "other: tweak docs",
+			expected: "🔧 other: tweak docs",
+		},
+		{
+			name:     "Other commit type with scope",
+			input:    "other(utils): some change",
+			expected: "🔧 other(utils): some change",
+		},
+		{
+			name:     "Other commit type with emoji already present",
+			input:    "🔧 other: tweak docs",
+			expected: "🔧 other: tweak docs",
+		},
+		{
+			name:     "Case insensitive - uppercase CI",
+			input:    "CI: refresh workflows",
+			expected: "🤖 ci: refresh workflows",
+		},
+		{
+			name:     "Case insensitive - uppercase BUILD",
+			input:    "BUILD: update dependencies",
+			expected: "🏗️ build: update dependencies",
+		},
+		{
+			name:     "Case insensitive - mixed case FeAt",
+			input:    "FeAt: add new feature",
+			expected: "✨ feat: add new feature",
+		},
+		{
+			name:     "Case insensitive - uppercase DEPS",
+			input:    "DEPS: update packages",
+			expected: "🔗 deps: update packages",
+		},
+		{
+			name:     "Case insensitive - uppercase with scope",
+			input:    "CI(workflows): refresh config",
+			expected: "🤖 ci(workflows): refresh config",
+		},
+		{
+			name:     "Case insensitive - uppercase CI with emoji already present",
+			input:    "🤖 CI: refresh workflows",
+			expected: "🤖 ci: refresh workflows",
+		},
+		{
+			name:     "Hotfix message with type prefix",
+			input:    "hotfix: critical bug fix",
+			expected: "🔥 hotfix: critical bug fix",
+		},
+		{
+			name:     "Security message with type prefix",
+			input:    "security: fix vulnerability",
+			expected: "🔒 security: fix vulnerability",
+		},
+		{
+			name:     "Release message with type prefix",
+			input:    "release: new version",
+			expected: "🚀 release: new version",
+		},
+		{
+			name:     "CI workflow with dependencies",
+			input:    "ci: configure workflow dependencies",
+			expected: "🤖 ci: configure workflow dependencies",
+		},
+		{
+			name:     "Non-conventional message without prefix returns as-is",
+			input:    "circular buffer fix",
+			expected: "circular buffer fix",
+		},
+		{
+			name:     "Non-conventional message without prefix returns as-is",
+			input:    "city planning update",
+			expected: "city planning update",
+		},
+		{
+			name:     "Non-conventional message without prefix returns as-is",
+			input:    "swipe gesture bug",
+			expected: "swipe gesture bug",
+		},
+		{
+			name:     "Non-conventional message without prefix returns as-is",
+			input:    "whip action fix",
+			expected: "whip action fix",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := FormatCommitMessage(tt.input)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestFormatToConventional(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "Fix keyword detected",
-			input:    "fix the authentication bug",
-			expected: "fix: fix the authentication bug",
-		},
-		{
-			name:     "Bug keyword detected",
-			input:    "resolve critical bug in parser",
-			expected: "fix: resolve critical bug in parser",
-		},
-		{
-			name:     "Add keyword detected",
-			input:    "add user management functionality",
-			expected: "feat: add user management functionality",
-		},
-		{
-			name:     "Feature keyword detected",
-			input:    "implement new feature for auth",
-			expected: "feat: implement new feature for auth",
-		},
-		{
-			name:     "Doc keyword detected",
-			input:    "update documentation",
-			expected: "docs: update documentation",
-		},
-		{
-			name:     "Document keyword detected",
-			input:    "document the new API",
-			expected: "docs: document the new API",
-		},
-		{
-			name:     "Style keyword detected",
-			input:    "improve code style consistency",
-			expected: "style: improve code style consistency",
-		},
-		{
-			name:     "Format keyword detected",
-			input:    "format code according to standards",
-			expected: "style: format code according to standards",
-		},
-		{
-			name:     "Refactor keyword detected",
-			input:    "refactor authentication logic",
-			expected: "refactor: refactor authentication logic",
-		},
-		{
-			name:     "Restructure keyword detected",
-			input:    "restructure project layout",
-			expected: "refactor: restructure project layout",
-		},
-		{
-			name:     "Perf keyword detected",
-			input:    "improve perf of database queries",
-			expected: "perf: improve perf of database queries",
-		},
-		{
-			name:     "Performance keyword detected",
-			input:    "optimize performance bottlenecks",
-			expected: "perf: optimize performance bottlenecks",
-		},
-		{
-			name:     "Test keyword detected",
-			input:    "improve test coverage",
-			expected: "test: improve test coverage",
-		},
-		{
-			name:     "Testing keyword detected",
-			input:    "improve testing coverage",
-			expected: "test: improve testing coverage",
-		},
-		{
-			name:     "Default to chore",
-			input:    "update dependencies",
-			expected: "chore: update dependencies",
-		},
-		{
-			name:     "Remove existing prefix - fix:",
-			input:    "fix: the authentication bug",
-			expected: "fix: the authentication bug",
-		},
-		{
-			name:     "Remove existing prefix - feat:",
-			input:    "feat: new user management",
-			expected: "chore: new user management",
-		},
-		{
-			name:     "Case insensitive detection",
-			input:    "Fix Authentication Bug",
-			expected: "fix: Fix Authentication Bug",
-		},
-		{
-			name:     "Empty message",
-			input:    "",
-			expected: "chore: ",
-		},
-		{
-			name:     "Whitespace handling",
-			input:    "  fix authentication bug  ",
-			expected: "fix: fix authentication bug",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := formatToConventional(tt.input)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

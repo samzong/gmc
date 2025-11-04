@@ -15,6 +15,7 @@ type Config struct {
 	APIBase        string `mapstructure:"api_base"`
 	PromptTemplate string `mapstructure:"prompt_template"`
 	PromptsDir     string `mapstructure:"prompts_dir"`
+	EnableEmoji    bool   `mapstructure:"enable_emoji"`
 }
 
 const (
@@ -58,6 +59,7 @@ func InitConfig(cfgFile string) error {
 	viper.SetDefault("api_key", "")
 	viper.SetDefault("api_base", "")
 	viper.SetDefault("prompt_template", DefaultPromptTemplate)
+	viper.SetDefault("enable_emoji", false)
 
 	home, _ := os.UserHomeDir()
 	defaultPromptsDir := filepath.Join(home, ".gmc", "prompts")
@@ -116,6 +118,7 @@ func GetConfig() *Config {
 			APIBase:        "",
 			PromptTemplate: DefaultPromptTemplate,
 			PromptsDir:     filepath.Join(os.Getenv("HOME"), ".gmc", "prompts"),
+			EnableEmoji:    false,
 		}
 	}
 	return cfg
