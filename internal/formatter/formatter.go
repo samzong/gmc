@@ -7,9 +7,26 @@ import (
 	"unicode/utf8"
 
 	"github.com/samzong/gmc/internal/config"
+	"github.com/samzong/gmc/internal/emoji"
 )
 
 const diffPromptLimit = 4000
+
+var (
+	// Pre-compiled regex patterns for performance
+	issuePattern        *regexp.Regexp
+	conventionalPattern *regexp.Regexp
+	prefixPattern       *regexp.Regexp
+)
+
+func init() {
+	// Compile regex patterns once at package initialization
+	issuePattern = regexp.MustCompile(`\s*\(#\d+\)|\s*#\d+`)
+
+	typePattern := emoji.GetCommitTypesRegexPattern()
+	conventionalPattern = regexp.MustCompile(`(?i)^(?:[^\s]*\s)?(` + typePattern + `)(\([^\)]+\))?: (.+)`)
+	prefixPattern = regexp.MustCompile(`(?i)^(` + typePattern + `):\s*(.+)`)
+}
 
 func BuildPrompt(role string, changedFiles []string, diff string, userPrompt string) string {
 	// Limit the content size of the diff to avoid exceeding the token limit.
@@ -34,12 +51,22 @@ func BuildPrompt(role string, changedFiles []string, diff string, userPrompt str
 	templateContent, err := GetPromptTemplate(templateName)
 	if err != nil {
 		fmt.Printf("Warning: %v, using default template\n", err)
-		templateContent = builtinTemplates["default"]
+		templateContent = buildTemplateContent("default")
 	}
 
 	prompt, err := RenderTemplate(templateContent, data)
 	if err != nil {
 		fmt.Printf("Warning: %v, using simple format\n", err)
+		cfg := config.GetConfig()
+		formatMsg := `in the format of "type(scope): description"`
+		emojiInstruction := ""
+		if cfg.EnableEmoji {
+			formatMsg = `in the format of "emoji type(scope): description"`
+			emojiInstruction = fmt.Sprintf(
+				"Add an appropriate emoji at the beginning based on the commit type (%s).\n",
+				emoji.GetEmojiDescription(),
+			)
+		}
 		prompt = fmt.Sprintf(`You are a professional %s, please generate a commit message that follows the `+
 			`Conventional Commits specification based on the following Git changes:
 
@@ -49,11 +76,12 @@ Changed Files:
 Changed Content:
 %s
 
-Please generate a commit message in the format of "type(scope): description".
-The type should be the most appropriate from the following choices: feat, fix, docs, style, refactor, perf, test, chore.
-The description should be concise (no more than 150 characters) and accurately reflect the changes.
+Please generate a commit message %s.
+The type should be the most appropriate from the following choices: %s.
+%sThe description should be concise (no more than 150 characters) and accurately reflect the changes.
 Do not add issue numbers like "#123" or "(#123)" in the commit message, `+
-			`this will be handled automatically by the tool.`, role, changedFilesStr, diff)
+			`this will be handled automatically by the tool.`, role, changedFilesStr, diff,
+			formatMsg, strings.Join(emoji.GetAllCommitTypes(), ", "), emojiInstruction)
 	}
 
 	// Append user prompt if provided
@@ -65,63 +93,63 @@ Do not add issue numbers like "#123" or "(#123)" in the commit message, `+
 }
 
 func FormatCommitMessage(message string) string {
+	cfg := config.GetConfig()
 	message = strings.TrimSpace(message)
 
 	lines := strings.Split(message, "\n")
 	if len(lines) > 0 {
 		firstLine := lines[0]
 
-		issuePattern := regexp.MustCompile(`\s*\(#\d+\)|\s*#\d+`)
 		firstLine = issuePattern.ReplaceAllString(firstLine, "")
 
-		conventionalPattern := regexp.MustCompile(`^(feat|fix|docs|style|refactor|perf|test|chore)(\([^\)]+\))?: .+`)
-		if !conventionalPattern.MatchString(firstLine) {
-			return formatToConventional(firstLine)
+		// Check if message already follows conventional format (with or without emoji)
+		// LLM should return messages in conventional format, so we just need to match and normalize
+		matches := conventionalPattern.FindStringSubmatch(firstLine)
+		if len(matches) >= 4 {
+			// Normalize the commit type to lowercase
+			commitType := strings.ToLower(matches[1])
+			scope := matches[2]
+			description := matches[3]
+			// Reconstruct the message with normalized type
+			firstLine = commitType + scope + ": " + description
+		} else {
+			// If not in conventional format, try to normalize type prefix if present
+			// Otherwise, return as-is without adding any prefix
+			firstLine = normalizeTypePrefix(firstLine)
+		}
+
+		// Add emoji if enabled and not already present
+		if cfg.EnableEmoji {
+			firstLine = emoji.AddEmojiToMessage(firstLine)
 		}
 
 		return firstLine
 	}
 
+	if cfg.EnableEmoji {
+		return emoji.AddEmojiToMessage(message)
+	}
 	return message
 }
 
-func formatToConventional(message string) string {
+// normalizeTypePrefix normalizes the type prefix if present, otherwise returns the message as-is.
+func normalizeTypePrefix(message string) string {
 	message = strings.TrimSpace(message)
-
-	var commitType string
-
-	lowerMsg := strings.ToLower(message)
-	switch {
-	case strings.Contains(lowerMsg, "fix") || strings.Contains(lowerMsg, "bug"):
-		commitType = "fix"
-	case strings.Contains(lowerMsg, "add") || strings.Contains(lowerMsg, "feature"):
-		commitType = "feat"
-	case strings.Contains(lowerMsg, "doc") || strings.Contains(lowerMsg, "document"):
-		commitType = "docs"
-	case strings.Contains(lowerMsg, "style") || strings.Contains(lowerMsg, "format"):
-		commitType = "style"
-	case strings.Contains(lowerMsg, "refactor") || strings.Contains(lowerMsg, "restructure"):
-		commitType = "refactor"
-	case strings.Contains(lowerMsg, "perf") || strings.Contains(lowerMsg, "performance"):
-		commitType = "perf"
-	case strings.Contains(lowerMsg, "test") || strings.Contains(lowerMsg, "testing"):
-		commitType = "test"
-	default:
-		commitType = "chore"
+	if message == "" {
+		return message
 	}
 
-	cleanMessage := message
-	prefixes := []string{"fix:", "bug:", "feat:", "feature:", "docs:", "style:", "refactor:", "perf:", "test:", "chore:"}
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(lowerMsg, prefix) {
-			cleanMessage = message[len(prefix):]
-			break
-		}
+	// Check if message starts with a known type prefix (case-insensitive)
+	matches := prefixPattern.FindStringSubmatch(message)
+	if len(matches) >= 3 {
+		// Normalize type and return
+		commitType := strings.ToLower(matches[1])
+		description := strings.TrimSpace(matches[2])
+		return commitType + ": " + description
 	}
 
-	cleanMessage = strings.TrimSpace(cleanMessage)
-
-	return fmt.Sprintf("%s: %s", commitType, cleanMessage)
+	// If no type prefix found, return as-is
+	return message
 }
 
 func truncateToValidUTF8(input string, maxBytes int) string {

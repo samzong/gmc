@@ -124,6 +124,37 @@ var (
 		},
 	}
 
+	configSetEnableEmojiCmd = &cobra.Command{
+		Use:   "enable_emoji [true|false]",
+		Short: "Enable or disable emoji in commit messages",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			value := args[0]
+			var enableEmoji bool
+			switch value {
+			case "true":
+				enableEmoji = true
+			case "false":
+				enableEmoji = false
+			default:
+				return fmt.Errorf("invalid value: %s (must be 'true' or 'false')", value)
+			}
+
+			config.SetConfigValue("enable_emoji", enableEmoji)
+
+			if err := config.SaveConfig(); err != nil {
+				return fmt.Errorf("failed to save configuration: %w", err)
+			}
+
+			if enableEmoji {
+				fmt.Println("Emoji support has been enabled")
+			} else {
+				fmt.Println("Emoji support has been disabled")
+			}
+			return nil
+		},
+	}
+
 	configSetPromptsDirCmd = &cobra.Command{
 		Use:   "prompts_dir [Directory Path]",
 		Short: "Set Prompt Template Directory",
@@ -158,6 +189,7 @@ var (
 			}
 			fmt.Printf("Prompt Template: %s\n", cfg.PromptTemplate)
 			fmt.Printf("Prompt Template Directory: %s\n", cfg.PromptsDir)
+			fmt.Printf("Enable Emoji: %v\n", cfg.EnableEmoji)
 		},
 	}
 
@@ -197,6 +229,7 @@ func init() {
 	configSetCmd.AddCommand(configSetAPIBaseCmd)
 	configSetCmd.AddCommand(configSetPromptTemplateCmd)
 	configSetCmd.AddCommand(configSetPromptsDirCmd)
+	configSetCmd.AddCommand(configSetEnableEmojiCmd)
 
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configGetCmd)
