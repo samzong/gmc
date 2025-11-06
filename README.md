@@ -20,6 +20,7 @@
 5. **Conventional Commits**：The generated message follows the Conventional Commits specification
 6. **Branch Creation**：Automatically create feature branches with generated names based on description
 7. **Commit History Analysis**：Analyze commit quality and get AI-powered improvement suggestions
+8. **Auto Version Tagging**：Recommend the next semantic version and create annotated git tags on demand
 
 ## Usage
 
@@ -73,6 +74,12 @@ gmc analyze
 
 # Analyze team commit history quality
 gmc analyze --team
+
+# Suggest next semantic version and create a tag
+gmc tag
+
+# Auto-confirm the suggested tag without prompting
+gmc tag --yes
 ```
 
 ## Prompt template
