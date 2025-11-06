@@ -268,6 +268,12 @@ func TestWithTempGitRepo(t *testing.T) {
 		assert.Equal(t, "Test User", commits[0].Author)
 	})
 
+	t.Run("GetLatestTag_NoTags", func(t *testing.T) {
+		tag, err := GetLatestTag()
+		assert.NoError(t, err)
+		assert.Equal(t, "", tag)
+	})
+
 	// Test with more changes
 	t.Run("GetDiff_WithUnstagedChanges", func(t *testing.T) {
 		// Modify the file
@@ -283,6 +289,46 @@ func TestWithTempGitRepo(t *testing.T) {
 	t.Run("CreateAndSwitchBranch", func(t *testing.T) {
 		err := CreateAndSwitchBranch("feature/test-branch")
 		assert.NoError(t, err, "Should create and switch to new branch")
+	})
+
+	t.Run("CreateAnnotatedTag", func(t *testing.T) {
+		err := CreateAnnotatedTag("v0.1.0", "Release v0.1.0")
+		assert.NoError(t, err)
+	})
+
+	t.Run("GetLatestTag_WithTag", func(t *testing.T) {
+		tag, err := GetLatestTag()
+		assert.NoError(t, err)
+		assert.Equal(t, "v0.1.0", tag)
+	})
+
+	t.Run("GetCommitsSinceTag_NoNewCommits", func(t *testing.T) {
+		commits, err := GetCommitsSinceTag("v0.1.0")
+		assert.NoError(t, err)
+		assert.Len(t, commits, 0)
+	})
+
+	t.Run("GetCommitsSinceTag_WithCommits", func(t *testing.T) {
+		err := os.WriteFile("feature.txt", []byte("new feature"), 0644)
+		require.NoError(t, err)
+
+		err = AddAll()
+		require.NoError(t, err)
+
+		err = Commit("feat: add new capability", "-m", "Additional context for feature")
+		assert.NoError(t, err)
+
+		commits, err := GetCommitsSinceTag("v0.1.0")
+		assert.NoError(t, err)
+		require.Len(t, commits, 1)
+		assert.Equal(t, "feat: add new capability", commits[0].Message)
+		assert.Equal(t, "Additional context for feature", commits[0].Body)
+	})
+
+	t.Run("GetCommitsSinceTag_UnknownTag", func(t *testing.T) {
+		commits, err := GetCommitsSinceTag("v9.9.9")
+		assert.NoError(t, err)
+		assert.GreaterOrEqual(t, len(commits), 2)
 	})
 }
 

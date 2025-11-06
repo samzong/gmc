@@ -215,6 +215,73 @@ func TestGenerateCommitMessage_ConfigValidation(t *testing.T) {
 	}
 }
 
+func TestParseVersionSuggestion(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		wantVersion string
+		wantReason  string
+		wantErr     bool
+	}{
+		{
+			name:        "Valid uppercase fields",
+			input:       "VERSION: v1.2.3\nREASON: Minor improvements",
+			wantVersion: "v1.2.3",
+			wantReason:  "Minor improvements",
+		},
+		{
+			name:        "Missing v prefix",
+			input:       "Version: 0.2.0\nReason: Feature release",
+			wantVersion: "v0.2.0",
+			wantReason:  "Feature release",
+		},
+		{
+			name:    "Invalid format",
+			input:   "Unexpected response",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			version, reason, err := parseVersionSuggestion(tt.input)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantVersion, version)
+			assert.Equal(t, tt.wantReason, reason)
+		})
+	}
+}
+
+func TestSuggestVersion_MissingAPIKey(t *testing.T) {
+	viper.Reset()
+	viper.Set("api_key", "")
+
+	version, reason, err := SuggestVersion("v0.1.0", []string{"feat: example"}, "")
+
+	assert.Error(t, err)
+	assert.Empty(t, version)
+	assert.Empty(t, reason)
+	assert.Contains(t, err.Error(), "API key not set")
+}
+
+func TestSuggestVersion_NoCommits(t *testing.T) {
+	viper.Reset()
+	viper.Set("api_key", "test")
+
+	version, reason, err := SuggestVersion("v0.1.0", nil, "")
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no commits")
+	assert.Empty(t, version)
+	assert.Empty(t, reason)
+}
+
 // Test message building and context handling
 func TestGenerateCommitMessage_MessageConstruction(t *testing.T) {
 	// Test that we can validate the message construction logic

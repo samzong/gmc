@@ -18,6 +18,7 @@ type CommitInfo struct {
 	Author  string `json:"author"`
 	Date    string `json:"date"`
 	Message string `json:"message"`
+	Body    string `json:"body"`
 }
 
 // IsGitRepository checks if the current directory is a git repository
@@ -305,6 +306,156 @@ func createAndSwitchBranch(branchName string) error {
 	}
 
 	return nil
+}
+
+// GetLatestTag returns the most recently created tag in the repository.
+func GetLatestTag() (string, error) {
+	if err := CheckGitRepository(); err != nil {
+		return "", err
+	}
+
+	cmd := exec.Command("git", "tag", "--sort=-creatordate")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+
+	if Verbose {
+		fmt.Fprintln(os.Stderr, "Running: git tag --sort=-creatordate")
+	}
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to list tags: %w", err)
+	}
+
+	output := strings.TrimSpace(out.String())
+	if output == "" {
+		return "", nil
+	}
+
+	tags := strings.Split(output, "\n")
+	return strings.TrimSpace(tags[0]), nil
+}
+
+// GetCommitsSinceTag returns the commits between the given tag (exclusive) and HEAD.
+// If the tag is empty or not found, all commits up to HEAD are returned.
+func GetCommitsSinceTag(tag string) ([]CommitInfo, error) {
+	if err := CheckGitRepository(); err != nil {
+		return nil, err
+	}
+
+	format := "%H%x1f%an%x1f%ad%x1f%s%x1f%b%x1e"
+	args := []string{"log", "--pretty=format:" + format, "--date=short"}
+
+	if tag != "" {
+		exists, err := tagExists(tag)
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			args = append(args, tag+"..HEAD")
+		}
+	}
+
+	cmd := exec.Command("git", args...)
+	var out bytes.Buffer
+	var errBuf bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
+
+	if Verbose {
+		fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(args, " "))
+	}
+
+	if err := cmd.Run(); err != nil {
+		if errBuf.Len() > 0 {
+			return nil, fmt.Errorf("failed to run git log: %s", strings.TrimSpace(errBuf.String()))
+		}
+		return nil, fmt.Errorf("failed to run git log: %w", err)
+	}
+
+	data := out.Bytes()
+	if len(bytes.TrimSpace(data)) == 0 {
+		return []CommitInfo{}, nil
+	}
+
+	records := bytes.Split(data, []byte{0x1e})
+	commits := make([]CommitInfo, 0, len(records))
+
+	for _, record := range records {
+		record = bytes.TrimSpace(record)
+		if len(record) == 0 {
+			continue
+		}
+
+		fields := bytes.Split(record, []byte{0x1f})
+		if len(fields) < 5 {
+			continue
+		}
+
+		commit := CommitInfo{
+			Hash:    strings.TrimSpace(string(fields[0])),
+			Author:  strings.TrimSpace(string(fields[1])),
+			Date:    strings.TrimSpace(string(fields[2])),
+			Message: strings.TrimSpace(string(fields[3])),
+			Body:    strings.TrimSpace(string(fields[4])),
+		}
+
+		commits = append(commits, commit)
+	}
+
+	return commits, nil
+}
+
+// CreateAnnotatedTag creates an annotated tag with the provided message.
+func CreateAnnotatedTag(tag string, message string) error {
+	if err := CheckGitRepository(); err != nil {
+		return err
+	}
+
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return errors.New("tag name cannot be empty")
+	}
+
+	if message == "" {
+		message = "Release " + tag
+	}
+
+	cmd := exec.Command("git", "tag", "-a", tag, "-m", message)
+	var errBuf bytes.Buffer
+	cmd.Stderr = &errBuf
+
+	if Verbose {
+		fmt.Fprintf(os.Stderr, "Running: git tag -a %s -m %q\n", tag, message)
+	}
+
+	if err := cmd.Run(); err != nil {
+		errMsg := fmt.Sprintf("failed to create tag '%s'", tag)
+		if errBuf.Len() > 0 {
+			errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(errBuf.String()))
+		}
+		return fmt.Errorf("%s: %w", errMsg, err)
+	}
+
+	return nil
+}
+
+func tagExists(tag string) (bool, error) {
+	if tag == "" {
+		return false, nil
+	}
+
+	ref := "refs/tags/" + tag
+	cmd := exec.Command("git", "rev-parse", "--verify", ref)
+	cmd.Stderr = nil
+
+	if err := cmd.Run(); err != nil {
+		if _, ok := err.(*exec.ExitError); ok {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to verify tag %s: %w", tag, err)
+	}
+
+	return true, nil
 }
 
 // GetCommitHistory retrieves commit history with different modes
