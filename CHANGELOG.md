@@ -1,6 +1,13 @@
 # Changelog
 
 
+## [v0.2.0] - 2025-11-06
+
+## [v0.1.4] - 2025-11-04
+### Features
+- **emoji:** commit message add emoji support
+
+
 ## [v0.1.3] - 2025-11-04
 ### Code Refactoring
 - **cmd:** replace unused command arguments with underscores for clarity
@@ -93,7 +100,9 @@
 - **gma:** add option to automatically stage all changes ([#123](https://github.com/samzong/gmc/issues/123))
 
 
-[Unreleased]: https://github.com/samzong/gmc/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/samzong/gmc/compare/v0.2.0...HEAD
+[v0.2.0]: https://github.com/samzong/gmc/compare/v0.1.4...v0.2.0
+[v0.1.4]: https://github.com/samzong/gmc/compare/v0.1.3...v0.1.4
 [v0.1.3]: https://github.com/samzong/gmc/compare/v0.1.2...v0.1.3
 [v0.1.2]: https://github.com/samzong/gmc/compare/v0.1.1...v0.1.2
 [v0.1.1]: https://github.com/samzong/gmc/compare/v0.1.0...v0.1.1
