@@ -80,15 +80,15 @@ func handleErrors(err error) error {
 	}
 
 	if errors.Is(err, errNoChangesDetected) {
-		fmt.Println("No changes detected in the staging area files.")
+		fmt.Fprintln(os.Stderr, "No changes detected in the staging area files.")
 		if !addAll {
-			fmt.Println("Hint: You can use -a or --all to automatically add all changes to the staging area")
+			fmt.Fprintln(os.Stderr, "Hint: You can use -a or --all to automatically add all changes to the staging area.")
 		}
-		return nil
+		return err
 	}
 
-	fmt.Fprintln(os.Stderr, "Error:", err)
-	return nil
+	fmt.Fprintf(os.Stderr, "gmc: %v\n", err)
+	return err
 }
 
 func generateAndCommit(fileArgs []string) error {
