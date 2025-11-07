@@ -332,6 +332,54 @@ func TestWithTempGitRepo(t *testing.T) {
 	})
 }
 
+func TestResolveFilesIncludesUntracked(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "gmc_git_dir_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	runGitCommand(t, tempDir, "init")
+	runGitCommand(t, tempDir, "config", "user.email", "test@example.com")
+	runGitCommand(t, tempDir, "config", "user.name", "gmc tester")
+
+	pkgDir := filepath.Join(tempDir, "pkg")
+	require.NoError(t, os.MkdirAll(pkgDir, 0o755))
+
+	trackedFile := filepath.Join(pkgDir, "tracked.txt")
+	require.NoError(t, os.WriteFile(trackedFile, []byte("tracked"), 0644))
+	runGitCommand(t, tempDir, "add", ".")
+	runGitCommand(t, tempDir, "commit", "-m", "initial commit")
+
+	untrackedFile := filepath.Join(pkgDir, "draft.txt")
+	require.NoError(t, os.WriteFile(untrackedFile, []byte("draft"), 0644))
+
+	originalDir, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+
+	require.NoError(t, os.Chdir(tempDir))
+	AssertNotInRealRepo(t)
+
+	files, err := ResolveFiles([]string{"pkg"})
+	require.NoError(t, err)
+
+	assert.Contains(t, files, "pkg/tracked.txt")
+	assert.Contains(t, files, "pkg/draft.txt")
+}
+
+func runGitCommand(t *testing.T, dir string, args ...string) {
+	t.Helper()
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(output))
+	}
+}
+
 // Test functions outside of git repository
 func TestOutsideGitRepo(t *testing.T) {
 	// Create a temporary directory that's not a git repo

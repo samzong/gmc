@@ -34,18 +34,18 @@ var templateParts = struct {
 	NoIssues string
 	Emoji    string
 }{
-	Header:   "{{.Role}}, please generate a commit message that follows the Conventional Commits specification",
-	Files:    "Changed Files:\n{{.Files}}",
-	Content:  "Changed Content:\n{{.Diff}}",
-	Format:   "in the format of \"type(scope): description\"",
-	NoIssues: "Do not include issue numbers, the system will handle them automatically.",
+	Header:   "{{.Role}}, craft a Conventional Commits-style summary for the changes below.",
+	Files:    "Files touched:\n{{.Files}}",
+	Content:  "Diff excerpt:\n{{.Diff}}",
+	Format:   "Use the \"type(scope): description\" syntax",
+	NoIssues: "Skip issue references; gmc appends them automatically.",
 	Emoji:    "", // Will be initialized by initTemplateParts()
 }
 
 // initTemplateParts initializes template parts with dynamic content from emoji module
 func initTemplateParts() {
 	templateParts.Emoji = fmt.Sprintf(
-		"Add an appropriate emoji at the beginning of the commit message based on the commit type (%s).",
+		"Lead with an emoji that matches the commit type (%s).",
 		emoji.GetEmojiDescription(),
 	)
 }
@@ -71,25 +71,25 @@ func buildTemplateContent(templateName string) string {
 	cfg := config.GetConfig()
 	enableEmoji := cfg.EnableEmoji
 
-	formatMsg := `in the format of "type(scope): description"`
+	formatMsg := templateParts.Format
 	emojiInstruction := ""
 	if enableEmoji {
-		formatMsg = `in the format of "emoji type(scope): description"`
+		formatMsg = `Use the "emoji type(scope): description" syntax`
 		emojiInstruction = templateParts.Emoji + "\n"
 	}
 
 	switch templateName {
 	case "default":
 		return fmt.Sprintf(
-			`You are a professional %s based on the following Git changes:
+			`%s
 
 %s
 
 %s
 
-Please generate a commit message %s.
-The type should be the most appropriate from the following choices: %s.
-%sThe description should be concise (no more than 150 characters) and accurately reflect the changes.
+Reply with one line. %s.
+Select the most fitting type from: %s.
+%sKeep the description under 150 characters and describe the behavior change.
 %s`,
 			templateParts.Header,
 			templateParts.Files,
@@ -103,21 +103,20 @@ The type should be the most appropriate from the following choices: %s.
 		emojiSection := ""
 		if enableEmoji {
 			emojiSection = fmt.Sprintf(
-				"1. Add an appropriate emoji at the beginning based on the commit type:\n%s\n\n",
+				"1. Lead with an emoji that matches the commit type:\n%s\n\n",
 				buildDetailedEmojiList(),
 			)
 		}
 		return fmt.Sprintf(
-			`As a seasoned %s:
+			`As a seasoned %s
 
 %s
 
 %s
 
-Please provide a commit message %s, where:
-%s2. The scope (optional): should clearly identify the component or module that has been changed
-3. The description: must be concise (no more than 150 characters) and accurately reflect the changes, `+
-				`using an imperative sentence starting with a verb
+Provide a one-line summary. %s.
+%s2. Scope (optional) should identify the impacted component.
+3. Description must stay under 150 characters, start with an imperative verb, and explain the change.
 
 %s`,
 			templateParts.Header,
@@ -218,7 +217,7 @@ func GetPromptTemplate(templateName string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("could not find cue template: %s", templateName)
+	return "", fmt.Errorf("could not find prompt template: %s", templateName)
 }
 
 func RenderTemplate(templateContent string, data TemplateData) (string, error) {

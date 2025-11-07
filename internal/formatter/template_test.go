@@ -152,7 +152,7 @@ template: "Custom dir template: {{.Role}}"`
 	// This test requires config mock, but for now just test the error path
 	result, err := GetPromptTemplate("custom")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "could not find cue template")
+	assert.Contains(t, err.Error(), "could not find prompt template")
 	assert.Empty(t, result)
 }
 
@@ -160,7 +160,7 @@ func TestGetPromptTemplate_FileReadError(t *testing.T) {
 	// Test with non-existent file
 	result, err := GetPromptTemplate("/non/existent/path/template.yaml")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "could not find cue template")
+	assert.Contains(t, err.Error(), "could not find prompt template")
 	assert.Empty(t, result)
 
 	// Test file that exists but can't be read (permissions)

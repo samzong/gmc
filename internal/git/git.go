@@ -634,14 +634,14 @@ func isPathInStagedDiff(path string) (bool, error) {
 	return false, nil
 }
 
-// getGitTrackedFilesInDir gets all git-tracked files in a directory
+// getGitTrackedFilesInDir gets all git-tracked files in a directory, including untracked files that are not ignored.
 func getGitTrackedFilesInDir(dir string) ([]string, error) {
-	cmd := exec.Command("git", "ls-files", dir)
+	cmd := exec.Command("git", "ls-files", "--cached", "--others", "--exclude-standard", dir)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 
 	if Verbose {
-		fmt.Fprintf(os.Stderr, "Running: git ls-files %s\n", dir)
+		fmt.Fprintf(os.Stderr, "Running: git ls-files --cached --others --exclude-standard %s\n", dir)
 	}
 
 	if err := cmd.Run(); err != nil {

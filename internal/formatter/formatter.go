@@ -57,31 +57,7 @@ func BuildPrompt(role string, changedFiles []string, diff string, userPrompt str
 	prompt, err := RenderTemplate(templateContent, data)
 	if err != nil {
 		fmt.Printf("Warning: %v, using simple format\n", err)
-		cfg := config.GetConfig()
-		formatMsg := `in the format of "type(scope): description"`
-		emojiInstruction := ""
-		if cfg.EnableEmoji {
-			formatMsg = `in the format of "emoji type(scope): description"`
-			emojiInstruction = fmt.Sprintf(
-				"Add an appropriate emoji at the beginning based on the commit type (%s).\n",
-				emoji.GetEmojiDescription(),
-			)
-		}
-		prompt = fmt.Sprintf(`You are a professional %s, please generate a commit message that follows the `+
-			`Conventional Commits specification based on the following Git changes:
-
-Changed Files:
-%s
-
-Changed Content:
-%s
-
-Please generate a commit message %s.
-The type should be the most appropriate from the following choices: %s.
-%sThe description should be concise (no more than 150 characters) and accurately reflect the changes.
-Do not add issue numbers like "#123" or "(#123)" in the commit message, `+
-			`this will be handled automatically by the tool.`, role, changedFilesStr, diff,
-			formatMsg, strings.Join(emoji.GetAllCommitTypes(), ", "), emojiInstruction)
+		prompt = buildSimplePrompt(role, changedFilesStr, diff)
 	}
 
 	// Append user prompt if provided
@@ -167,4 +143,26 @@ func truncateToValidUTF8(input string, maxBytes int) string {
 	}
 
 	return input[:end]
+}
+
+func buildSimplePrompt(role, changedFilesStr, diff string) string {
+	cfg := config.GetConfig()
+
+	typeInstruction := `Use the "type(scope): description" syntax`
+	if cfg.EnableEmoji {
+		typeInstruction = `Use the "emoji type(scope): description" syntax`
+	}
+
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "%s, summarize the following git changes as a single Conventional Commits line.\n\n", role)
+	fmt.Fprintf(&builder, "Files:\n%s\n\n", changedFilesStr)
+	fmt.Fprintf(&builder, "Diff:\n%s\n\n", diff)
+	fmt.Fprintf(&builder, "%s and pick the most relevant type from: %s.\n",
+		typeInstruction, strings.Join(emoji.GetAllCommitTypes(), ", "))
+	if cfg.EnableEmoji {
+		fmt.Fprintf(&builder, "Start with an emoji that matches the type (%s).\n", emoji.GetEmojiDescription())
+	}
+	builder.WriteString("Keep it under 150 characters and skip issue references; gmc adds them automatically.")
+
+	return builder.String()
 }

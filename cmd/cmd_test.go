@@ -51,44 +51,20 @@ func TestInitConfig(t *testing.T) {
 }
 
 func TestHandleErrors(t *testing.T) {
-	tests := []struct {
-		name           string
-		input          error
-		expectedOutput string
-	}{
-		{
-			name:  "Nil error returns nil",
-			input: nil,
-		},
-		{
-			name:           "No changes detected - special handling",
-			input:          &mockError{message: "No changes detected in the staging area files."},
-			expectedOutput: "No changes detected",
-		},
-		{
-			name:           "Generic error - default handling",
-			input:          &mockError{message: "generic error"},
-			expectedOutput: "generic error",
-		},
-	}
+	t.Run("returns nil for nil error", func(t *testing.T) {
+		assert.NoError(t, handleErrors(nil))
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := handleErrors(tt.input)
+	t.Run("propagates sentinel error", func(t *testing.T) {
+		err := handleErrors(errNoChangesDetected)
+		assert.ErrorIs(t, err, errNoChangesDetected)
+	})
 
-			// handleErrors should always return nil for display purposes
-			assert.Nil(t, result)
-		})
-	}
-}
-
-// Mock error type for testing
-type mockError struct {
-	message string
-}
-
-func (m *mockError) Error() string {
-	return m.message
+	t.Run("propagates generic error", func(t *testing.T) {
+		expectedErr := errors.New("boom")
+		err := handleErrors(expectedErr)
+		assert.ErrorIs(t, err, expectedErr)
+	})
 }
 
 func TestGetEditor(t *testing.T) {
@@ -494,7 +470,7 @@ func TestErrorHandlingPatterns(t *testing.T) {
 	// Test common error handling patterns used in cmd package
 
 	// Test error wrapping
-	originalErr := &mockError{message: "original error"}
+	originalErr := errors.New("original error")
 	wrappedErr := fmt.Errorf("wrapped: %w", originalErr)
 
 	assert.Contains(t, wrappedErr.Error(), "wrapped")

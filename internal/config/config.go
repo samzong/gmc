@@ -1,9 +1,11 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/spf13/viper"
 )
@@ -25,6 +27,8 @@ const (
 	DefaultPromptTemplate = "default"
 )
 
+var configFilePath string
+
 var suggestedRoles = []string{
 	"Developer",
 	"Frontend Developer",
@@ -43,6 +47,7 @@ var suggestedModels = []string{
 func InitConfig(cfgFile string) error {
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
+		configFilePath = cfgFile
 	} else {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -52,6 +57,7 @@ func InitConfig(cfgFile string) error {
 		viper.AddConfigPath(home)
 		viper.SetConfigName(DefaultConfigName)
 		viper.SetConfigType("yaml")
+		configFilePath = filepath.Join(home, DefaultConfigName+".yaml")
 	}
 
 	viper.SetDefault("role", DefaultRole)
@@ -68,32 +74,29 @@ func InitConfig(cfgFile string) error {
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			var configDir string
-			if cfgFile != "" {
-				configDir = filepath.Dir(cfgFile)
-			} else {
-				home, _ := os.UserHomeDir()
-				configDir = home
-			}
-
+		var notFoundErr viper.ConfigFileNotFoundError
+		if errors.As(err, &notFoundErr) || os.IsNotExist(err) {
+			configDir := filepath.Dir(configFilePath)
 			if err := os.MkdirAll(configDir, 0755); err != nil {
 				return fmt.Errorf("failed to create configuration directory: %w", err)
 			}
 
-			configPath := ""
-			if cfgFile != "" {
-				configPath = cfgFile
-			} else {
-				home, _ := os.UserHomeDir()
-				configPath = filepath.Join(home, DefaultConfigName+".yaml")
-			}
-
-			if err := viper.WriteConfigAs(configPath); err != nil {
+			if err := viper.WriteConfigAs(configFilePath); err != nil {
 				return fmt.Errorf("failed to write configuration file: %w", err)
+			}
+			viper.SetConfigFile(configFilePath)
+			if err := enforceConfigFilePermissions(configFilePath); err != nil {
+				return err
 			}
 		} else {
 			return fmt.Errorf("failed to read configuration file: %w", err)
+		}
+	} else {
+		if used := viper.ConfigFileUsed(); used != "" {
+			configFilePath = used
+		}
+		if err := enforceConfigFilePermissions(configFilePath); err != nil {
+			return err
 		}
 	}
 
@@ -125,7 +128,10 @@ func GetConfig() *Config {
 }
 
 func SaveConfig() error {
-	return viper.WriteConfig()
+	if err := viper.WriteConfig(); err != nil {
+		return err
+	}
+	return enforceConfigFilePermissions(configFilePath)
 }
 
 func SetConfigValue(key string, value any) {
@@ -146,4 +152,34 @@ func GetSuggestedRoles() []string {
 
 func GetSuggestedModels() []string {
 	return suggestedModels
+}
+
+func enforceConfigFilePermissions(path string) error {
+	if path == "" || runtime.GOOS == "windows" {
+		return nil
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("failed to stat configuration file: %w", err)
+	}
+
+	const securePerm os.FileMode = 0o600
+	if info.Mode().Perm() != securePerm {
+		if err := os.Chmod(path, securePerm); err != nil {
+			return fmt.Errorf("failed to set configuration file permissions: %w", err)
+		}
+	}
+
+	updatedInfo, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("failed to verify configuration file permissions: %w", err)
+	}
+
+	if updatedInfo.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("configuration file %s remains readable by other users (mode %04o)",
+			path, updatedInfo.Mode().Perm())
+	}
+
+	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -146,9 +147,24 @@ prompt_template: "default"`
 }
 
 func TestInitConfig_CreateNewConfigFile(t *testing.T) {
-	// This test is skipped due to viper WriteConfigAs complexity
-	// The functionality is covered by integration tests
-	t.Skip("Viper WriteConfigAs behavior is complex to test in unit tests")
+	if runtime.GOOS == "windows" {
+		t.Skip("file permission bits are not reliable on Windows")
+	}
+
+	tempDir, err := os.MkdirTemp("", "gmc_new_config_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	configFile := filepath.Join(tempDir, "fresh_config.yaml")
+
+	viper.Reset()
+
+	err = InitConfig(configFile)
+	require.NoError(t, err)
+
+	info, err := os.Stat(configFile)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0600), info.Mode().Perm())
 }
 
 func TestInitConfig_ExistingConfigFile(t *testing.T) {
@@ -182,6 +198,12 @@ prompts_dir: "/custom/prompts"`
 	assert.Equal(t, "https://api.custom.com/v1", viper.GetString("api_base"))
 	assert.Equal(t, "detailed", viper.GetString("prompt_template"))
 	assert.Equal(t, "/custom/prompts", viper.GetString("prompts_dir"))
+
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(configFile)
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0600), info.Mode().Perm())
+	}
 }
 
 func TestInitConfig_DefaultPath(t *testing.T) {
