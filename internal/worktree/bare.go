@@ -138,7 +138,9 @@ func configureBareRepo(bareDir string, upstreamURL string) error {
 		fmt.Fprintln(os.Stderr, "Fetching remote references...")
 	}
 	fetchCmd := exec.Command("git", "-C", bareDir, "fetch", "origin")
-	_ = fetchCmd.Run()
+	if err := fetchCmd.Run(); err != nil && Verbose {
+		fmt.Fprintf(os.Stderr, "Warning: 'git fetch origin' failed: %v\n", err)
+	}
 
 	// Add upstream remote if specified
 	if upstreamURL != "" {

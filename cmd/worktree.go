@@ -174,8 +174,8 @@ func runWorktreeDefault() error {
 func filterBareWorktrees(worktrees []worktree.WorktreeInfo) []worktree.WorktreeInfo {
 	var filtered []worktree.WorktreeInfo
 	for _, wt := range worktrees {
-		// Skip bare worktrees and worktrees with names containing .bare
-		if wt.IsBare || strings.Contains(wt.Path, ".bare") {
+		// Skip bare worktrees and the .bare directory itself
+		if wt.IsBare || filepath.Base(wt.Path) == ".bare" {
 			continue
 		}
 		filtered = append(filtered, wt)
