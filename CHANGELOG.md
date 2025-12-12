@@ -1,6 +1,13 @@
 # Changelog
 
 
+## [v0.3.1] - 2025-12-12
+### Bug Fixes
+- **docker:** use alpine:3.19 to avoid QEMU cross-arch trigger issues
+
+
+## [v0.3.0] - 2025-12-12
+
 ## [v0.2.0] - 2025-11-06
 
 ## [v0.1.4] - 2025-11-04
@@ -100,7 +107,9 @@
 - **gma:** add option to automatically stage all changes ([#123](https://github.com/samzong/gmc/issues/123))
 
 
-[Unreleased]: https://github.com/samzong/gmc/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/samzong/gmc/compare/v0.3.1...HEAD
+[v0.3.1]: https://github.com/samzong/gmc/compare/v0.3.0...v0.3.1
+[v0.3.0]: https://github.com/samzong/gmc/compare/v0.2.0...v0.3.0
 [v0.2.0]: https://github.com/samzong/gmc/compare/v0.1.4...v0.2.0
 [v0.1.4]: https://github.com/samzong/gmc/compare/v0.1.3...v0.1.4
 [v0.1.3]: https://github.com/samzong/gmc/compare/v0.1.2...v0.1.3
