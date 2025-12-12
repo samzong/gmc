@@ -19,7 +19,7 @@ RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X github.com/samzong/gmc/cmd.Version=${VERSION} -X github.com/samzong/gmc/cmd.BuildTime=${BUILDTIME}" \
     -o gmc .
 
-FROM alpine:latest
+FROM alpine:3.19
 
 RUN apk --no-cache add ca-certificates git
 
