@@ -231,78 +231,32 @@ func printWorktreeTable(worktrees []worktree.WorktreeInfo) {
 	}
 
 	// Calculate column widths
+	maxName := len("Name")
 	maxBranch := len("Branch")
-	maxPath := len("Path")
 	for _, wt := range worktrees {
+		name := filepath.Base(wt.Path)
+		if len(name) > maxName {
+			maxName = len(name)
+		}
 		if len(wt.Branch) > maxBranch {
 			maxBranch = len(wt.Branch)
-		}
-		relPath := getRelativePath(wt.Path)
-		if len(relPath) > maxPath {
-			maxPath = len(relPath)
 		}
 	}
 
 	// Add padding
+	maxName += 2
 	maxBranch += 2
-	maxPath += 2
 
 	// Print header
-	fmt.Printf("┌%s┬%s┬%s┐\n",
-		strings.Repeat("─", maxBranch),
-		strings.Repeat("─", maxPath),
-		strings.Repeat("─", 10))
-	fmt.Printf("│ %-*s│ %-*s│ %-8s│\n",
-		maxBranch-1, "Branch",
-		maxPath-1, "Path",
-		"Status")
-	fmt.Printf("├%s┼%s┼%s┤\n",
-		strings.Repeat("─", maxBranch),
-		strings.Repeat("─", maxPath),
-		strings.Repeat("─", 10))
+	fmt.Printf("%-*s %-*s %s\n", maxName, "NAME", maxBranch, "BRANCH", "STATUS")
 
 	// Print rows
 	for _, wt := range worktrees {
-		relPath := getRelativePath(wt.Path)
+		name := filepath.Base(wt.Path)
 		status := worktree.GetWorktreeStatus(wt.Path)
 		if wt.IsBare {
 			status = "bare"
 		}
-		fmt.Printf("│ %-*s│ %-*s│ %-8s│\n",
-			maxBranch-1, wt.Branch,
-			maxPath-1, relPath,
-			status)
+		fmt.Printf("%-*s %-*s %s\n", maxName, name, maxBranch, wt.Branch, status)
 	}
-
-	fmt.Printf("└%s┴%s┴%s┘\n",
-		strings.Repeat("─", maxBranch),
-		strings.Repeat("─", maxPath),
-		strings.Repeat("─", 10))
-}
-
-func getRelativePath(absPath string) string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return absPath
-	}
-
-	// Try to get relative path from worktree root
-	root, err := worktree.GetWorktreeRoot()
-	if err == nil {
-		rel, err := filepath.Rel(root, absPath)
-		if err == nil {
-			return "./" + rel
-		}
-	}
-
-	// Fall back to relative from cwd
-	rel, err := filepath.Rel(cwd, absPath)
-	if err != nil {
-		return absPath
-	}
-
-	if !strings.HasPrefix(rel, ".") {
-		rel = "./" + rel
-	}
-	return rel
 }
