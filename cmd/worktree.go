@@ -54,7 +54,7 @@ Examples:
 var wtListCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
-	Short:   "List all worktrees",
+	Short:   "List all worktrees (alias: ls)",
 	Long:    `List all worktrees in the current repository.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		worktree.Verbose = verbose
@@ -65,7 +65,7 @@ var wtListCmd = &cobra.Command{
 var wtRemoveCmd = &cobra.Command{
 	Use:     "remove <name>",
 	Aliases: []string{"rm"},
-	Short:   "Remove a worktree",
+	Short:   "Remove a worktree (alias: rm)",
 	Long: `Remove a worktree.
 
 By default, only removes the worktree directory, keeping the branch.
