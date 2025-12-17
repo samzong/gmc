@@ -13,16 +13,20 @@
 
 ## Core Features
 
-1. **One Command Commit**：Complete git add and commit operations with a single command
-2. **Smart Message Generation**：Automatically generate commit messages based on git diff
-3. **LLM Models Support**：Support OpenAI API Style
-4. **Role Customization**：Generate commit messages tailored to different engineering roles
-5. **Conventional Commits**：The generated message follows the Conventional Commits specification
-6. **Branch Creation**：Automatically create feature branches with generated names based on description
-7. **Commit History Analysis**：Analyze commit quality and get AI-powered improvement suggestions
-8. **Auto Version Tagging**：Recommend the next semantic version and create annotated git tags on demand
+1. **One-command commit**: stage + generate + commit (interactive)
+2. 🔥 **Smart message generation**: reads your staged diff and formats to Conventional Commits
+3. **OpenAI-compatible API support**: configure API key + optional base URL (proxy/providers)
+4. **Role & prompt control**: set a role, pick templates, add extra prompt context on demand
+5. **Branch name generation**: create and switch to a new branch from a description (`--branch`)
+6. **Commit history analysis**: assess commit quality and (optionally) get AI suggestions (`gmc analyze`)
+7. **Auto semantic version tagging**: suggest and create annotated tags (`gmc tag`)
+8. 🔥 **Worktree workflows**: manage `.bare` + worktree structure (`gmc wt`)
 
 ## Usage
+
+### Quick start (required config)
+
+`gmc` reads configuration from `~/.gmc.yaml` by default (override with `--config`). On macOS/Linux, the config file is forced to permission `0600`.
 
 First use gmc to set the OpenAI API serivce:
 
@@ -35,54 +39,138 @@ gmc config set model gpt-4.1-mini
 And Configure other parameters.
 
 ```bash
-# Set role
-(base) ➜  ~ gmc config set [Key]
-apibase          -- Set OpenAI API Base URL
-apikey           -- Set OpenAI API Key
-model            -- Set up the LLM model
-prompt_template  -- Set Prompt Template
-prompts_dir      -- Set Prompt Template Directory
-role             -- Set Current Role
+gmc config set role "Backend Developer"
+gmc config set enable_emoji true
+gmc config set prompt_template default   # or detailed
+gmc config set prompts_dir ~/.gmc/prompts
+
+gmc config get
+gmc config list_templates
 ```
 
-Use the following command.
+### Commit workflow
 
 ```bash
-# It's will Automatically read git diff from staging area.
+# Uses staged changes (git diff --cached)
 gmc
 
-# Automatically add all changes to the staging area
+# Stage all changes before generating the message
 gmc -a
 
-# Associate issue number
+# Commit only specific files:
+# - with -a: stage those files (and commit only those files)
+# - without -a: commit only if those files are already staged
+gmc -a path/to/file1 path/to/file2
+
+# Append an issue reference (added to the end of the subject)
 gmc --issue 123
 
-# Create feature branch with generated name
+# Create and switch to a new branch from a description
 gmc --branch "implement user authentication"
 
-# Verbose output for debugging
+# Add extra context/instructions to the LLM prompt
+gmc --prompt "Focus on user-visible behavior, not refactors"
+
+# Generate the message but do not run git commit
+gmc --dry-run
+
+# Skip hooks and/or DCO signoff
+gmc --no-verify
+gmc --no-signoff
+
+# Auto-confirm the generated message (no prompt)
+gmc --yes
+
+# Verbose output (prints git command output)
 gmc --verbose
 
-# Set Template directory
-gmc config set prompts_dir /path/to/templates
+# Provide a custom config file
+gmc --config /path/to/.gmc.yaml
+```
 
-# Use Template (only filename in prompts_dir)
-gmc config set prompt_template my_template
+### Interactive actions
 
-# Analyze commit history quality (personal)
-gmc analyze
+After generating a message, `gmc` prompts: `y/n/r/e`:
 
-# Analyze team commit history quality
-gmc analyze --team
+- `y` (or empty): commit
+- `n`: cancel
+- `r`: regenerate
+- `e`: edit in `$EDITOR` (or `$VISUAL`, fallback to `vi`)
 
-# Suggest next semantic version and create a tag
+## Commands
+
+### Analyze commit history
+
+```bash
+gmc analyze          # personal commits (last 50)
+gmc analyze --team   # team commits (last 200)
+```
+
+If an API key is configured, `gmc analyze` will attempt to generate AI suggestions; failures are non-fatal.
+
+### Suggest and create a semantic version tag
+
+```bash
 gmc tag
-
-# Auto-confirm the suggested tag without prompting
 gmc tag --yes
 ```
 
-## Prompt template
+`gmc tag` always runs a rule-based suggestion; if an API key is configured, it will also ask the LLM and validate/fallback safely. See `docs/auto-versioning-kep.md`.
+
+### 🔥 Worktree management (`gmc wt`)
+
+```bash
+gmc wt
+gmc wt list
+gmc wt add feature-login -b main
+gmc wt remove feature-login -D
+gmc wt clone https://github.com/user/repo.git --name my-project
+```
+
+This is designed for the `.bare` + worktree pattern. See `docs/auto-bare-worktree.md`.
+
+#### Open source (fork + upstream) workflow
+
+Clone your fork and register the upstream remote in one command:
+
+```bash
+gmc wt clone https://github.com/me/my-fork.git \
+  --upstream https://github.com/org/upstream-repo.git \
+  --name upstream-repo
+```
+
+Then work from the default branch worktree (usually `main/` or `master/`) and keep it synced:
+
+```bash
+cd upstream-repo/main
+git fetch upstream
+git merge upstream/main
+
+# Create a feature worktree based on the updated default branch
+gmc wt add feature-login  # defaults source main
+```
+
+### Shell completion
+
+```bash
+# One-off (current shell session)
+source <(gmc completion bash)
+source <(gmc completion zsh)
+
+# Persistent install (recommended)
+mkdir -p ~/.zsh/completions ~/.bash_completion.d
+gmc completion zsh > ~/.zsh/completions/_gmc
+gmc completion bash > ~/.bash_completion.d/gmc
+```
+
+For zsh, ensure `~/.zsh/completions` is in your `fpath` (e.g. in `~/.zshrc`):
+
+```bash
+fpath=(~/.zsh/completions $fpath)
+autoload -Uz compinit && compinit
+```
+
+## Prompt templates
 
 `gmc` supports prompt templates, allowing you to adjust the style of the generated commit message.
 
@@ -90,13 +178,21 @@ gmc tag --yes
 
 | Template Name | Description                                                                          |
 | ------------- | ------------------------------------------------------------------------------------ |
-| default       | Standard prompt template, generate commit messages that conform to the specification |
+| default       | Standard one-line template for Conventional Commits                                  |
+| detailed      | More prescriptive template (optionally includes emoji mapping guidance)              |
 
-### Template
+### Custom templates
 
-You can create a prompt template, the method is as follows:
+Custom templates live under `prompts_dir` (default: `~/.gmc/prompts`). Use:
 
-1. Create a YAML format template file in the `~/.gmc/prompts` directory, for example `my_template.yaml`:
+```bash
+gmc config set prompts_dir ~/.gmc/prompts
+gmc config set prompt_template my_template   # resolves ~/.gmc/prompts/my_template.yaml
+```
+
+You can also set `prompt_template` to an absolute file path.
+
+Create a YAML template file, for example `~/.gmc/prompts/my_template.yaml`:
 
 ```yaml
 name: "My Template"
@@ -122,8 +218,8 @@ template: |
 You can use the following variables in the template:
 
 - `{{.Role}}`: The user configured role
-- `{{.Files}}`: The list of changed files
-- `{{.Diff}}`: Git difference content
+- `{{.Files}}`: Changed files (newline-separated)
+- `{{.Diff}}`: Staged diff (may be truncated for very large diffs)
 
 ## License
 
