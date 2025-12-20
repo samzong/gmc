@@ -8,9 +8,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/samzong/gmc/internal/gitcmd"
 )
 
 var Verbose bool
+
+func gitRunner() gitcmd.Runner {
+	return gitcmd.Runner{Verbose: Verbose}
+}
 
 // CommitInfo represents information about a single commit
 type CommitInfo struct {
@@ -23,8 +29,7 @@ type CommitInfo struct {
 
 // IsGitRepository checks if the current directory is a git repository
 func IsGitRepository() bool {
-	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
-	err := cmd.Run()
+	_, err := gitRunner().Run("rev-parse", "--is-inside-work-tree")
 	return err == nil
 }
 
@@ -40,23 +45,20 @@ func GetDiff() (string, error) {
 		return "", err
 	}
 
-	cmd := exec.Command("git", "diff")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
+	runner := gitRunner()
+	result, err := runner.Run("diff")
+	if err != nil {
 		return "", fmt.Errorf("failed to run git diff: %w", err)
 	}
 
-	unstaged := out.String()
-	out.Reset()
+	unstaged := string(result.Stdout)
 
-	cmd = exec.Command("git", "diff", "--cached")
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
+	result, err = runner.Run("diff", "--cached")
+	if err != nil {
 		return "", fmt.Errorf("failed to run git diff --cached: %w", err)
 	}
 
-	staged := out.String()
+	staged := string(result.Stdout)
 
 	diff := unstaged + staged
 	return diff, nil
@@ -67,24 +69,15 @@ func GetStagedDiff() (string, error) {
 		return "", err
 	}
 
-	cmd := exec.Command("git", "diff", "--cached")
-	var out bytes.Buffer
-	var errBuf bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errBuf
-
-	if Verbose {
-		fmt.Fprintln(os.Stderr, "Running: git diff --cached")
-	}
-
-	if err := cmd.Run(); err != nil {
-		if Verbose && errBuf.Len() > 0 {
-			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
+	result, err := gitRunner().RunLogged("diff", "--cached")
+	if err != nil {
+		if Verbose && len(result.Stderr) > 0 {
+			fmt.Fprintln(os.Stderr, "Git stderr:", string(result.Stderr))
 		}
 		return "", fmt.Errorf("failed to run git diff --cached: %w", err)
 	}
 
-	return out.String(), nil
+	return string(result.Stdout), nil
 }
 
 func ParseChangedFiles() ([]string, error) {
@@ -92,23 +85,20 @@ func ParseChangedFiles() ([]string, error) {
 		return nil, err
 	}
 
-	cmd := exec.Command("git", "diff", "--name-only")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
+	runner := gitRunner()
+	result, err := runner.Run("diff", "--name-only")
+	if err != nil {
 		return nil, fmt.Errorf("failed to run git diff --name-only: %w", err)
 	}
 
-	unstaged := strings.Split(strings.TrimSpace(out.String()), "\n")
-	out.Reset()
+	unstaged := strings.Split(strings.TrimSpace(string(result.Stdout)), "\n")
 
-	cmd = exec.Command("git", "diff", "--cached", "--name-only")
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
+	result, err = runner.Run("diff", "--cached", "--name-only")
+	if err != nil {
 		return nil, fmt.Errorf("failed to run git diff --cached --name-only: %w", err)
 	}
 
-	staged := strings.Split(strings.TrimSpace(out.String()), "\n")
+	staged := strings.Split(strings.TrimSpace(string(result.Stdout)), "\n")
 
 	fileMap := make(map[string]bool)
 	for _, file := range unstaged {
@@ -136,33 +126,24 @@ func ParseStagedFiles() ([]string, error) {
 		return nil, err
 	}
 
-	cmd := exec.Command("git", "diff", "--cached", "--name-only")
-	var out bytes.Buffer
-	var errBuf bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errBuf
-
-	if Verbose {
-		fmt.Fprintln(os.Stderr, "Running: git diff --cached --name-only")
-	}
-
-	if err := cmd.Run(); err != nil {
-		if Verbose && errBuf.Len() > 0 {
-			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
+	runResult, err := gitRunner().RunLogged("diff", "--cached", "--name-only")
+	if err != nil {
+		if Verbose && len(runResult.Stderr) > 0 {
+			fmt.Fprintln(os.Stderr, "Git stderr:", string(runResult.Stderr))
 		}
 		return nil, fmt.Errorf("failed to run git diff --cached --name-only: %w", err)
 	}
 
-	stagedFiles := strings.Split(strings.TrimSpace(out.String()), "\n")
+	stagedFiles := strings.Split(strings.TrimSpace(string(runResult.Stdout)), "\n")
 
-	var result []string
+	var files []string
 	for _, file := range stagedFiles {
 		if file != "" {
-			result = append(result, file)
+			files = append(files, file)
 		}
 	}
 
-	return result, nil
+	return files, nil
 }
 
 func AddAll() error {
@@ -170,23 +151,16 @@ func AddAll() error {
 		return err
 	}
 
-	cmd := exec.Command("git", "add", ".")
-	var errBuf bytes.Buffer
-	cmd.Stderr = &errBuf
-
-	if Verbose {
-		fmt.Fprintln(os.Stderr, "Running: git add .")
-	}
-
-	if err := cmd.Run(); err != nil {
-		if Verbose && errBuf.Len() > 0 {
-			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
+	result, err := gitRunner().RunLogged("add", ".")
+	if err != nil {
+		if Verbose && len(result.Stderr) > 0 {
+			fmt.Fprintln(os.Stderr, "Git stderr:", string(result.Stderr))
 		}
 		return fmt.Errorf("failed to run git add .: %w", err)
 	}
 
-	if Verbose && errBuf.Len() > 0 {
-		fmt.Fprintln(os.Stderr, "Git output:", errBuf.String())
+	if Verbose && len(result.Stderr) > 0 {
+		fmt.Fprintln(os.Stderr, "Git output:", string(result.Stderr))
 	}
 
 	return nil
@@ -207,34 +181,23 @@ func Commit(message string, args ...string) error {
 	}
 
 	commitArgs := append([]string{"commit", "-m", message}, args...)
-	cmd := exec.Command("git", commitArgs...)
-
-	var outBuf bytes.Buffer
-	var errBuf bytes.Buffer
-	cmd.Stdout = &outBuf
-	cmd.Stderr = &errBuf
-
-	if Verbose {
-		fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(commitArgs, " "))
-	}
-
-	err := cmd.Run()
+	result, err := gitRunner().RunLogged(commitArgs...)
 
 	// Always show output in verbose mode
 	if Verbose {
-		if outBuf.Len() > 0 {
-			fmt.Fprintln(os.Stderr, "Git output:", outBuf.String())
+		if len(result.Stdout) > 0 {
+			fmt.Fprintln(os.Stderr, "Git output:", string(result.Stdout))
 		}
-		if errBuf.Len() > 0 {
-			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
+		if len(result.Stderr) > 0 {
+			fmt.Fprintln(os.Stderr, "Git stderr:", string(result.Stderr))
 		}
 	}
 
 	if err != nil {
 		// Include git error output in the error message
 		errMsg := "Failed to run git commit"
-		if errBuf.Len() > 0 {
-			errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(errBuf.String()))
+		if len(result.Stderr) > 0 {
+			errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(string(result.Stderr)))
 		}
 		return fmt.Errorf("%s: %w", errMsg, err)
 	}
@@ -273,36 +236,30 @@ func validateBranchName(branchName string) error {
 }
 
 func branchExists(branchName string) (bool, error) {
-	cmd := exec.Command("git", "rev-parse", "--verify", branchName)
-	cmd.Stderr = nil // Suppress error output
-
 	if Verbose {
 		fmt.Fprintf(os.Stderr, "Checking if branch exists: git rev-parse --verify %s\n", branchName)
 	}
 
-	return cmd.Run() == nil, nil
+	_, err := gitRunner().Run("rev-parse", "--verify", branchName)
+	return err == nil, nil
 }
 
 func createAndSwitchBranch(branchName string) error {
-	cmd := exec.Command("git", "checkout", "-b", branchName)
-	var outBuf, errBuf bytes.Buffer
-	cmd.Stdout = &outBuf
-	cmd.Stderr = &errBuf
-
 	if Verbose {
 		fmt.Fprintf(os.Stderr, "Creating and switching to branch: git checkout -b %s\n", branchName)
 	}
 
-	if err := cmd.Run(); err != nil {
+	result, err := gitRunner().Run("checkout", "-b", branchName)
+	if err != nil {
 		errMsg := fmt.Sprintf("failed to create and switch to branch '%s'", branchName)
-		if errBuf.Len() > 0 {
-			errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(errBuf.String()))
+		if len(result.Stderr) > 0 {
+			errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(string(result.Stderr)))
 		}
 		return fmt.Errorf("%s: %w", errMsg, err)
 	}
 
-	if Verbose && outBuf.Len() > 0 {
-		fmt.Fprintln(os.Stderr, "Git output:", outBuf.String())
+	if Verbose && len(result.Stdout) > 0 {
+		fmt.Fprintln(os.Stderr, "Git output:", string(result.Stdout))
 	}
 
 	return nil
@@ -314,19 +271,12 @@ func GetLatestTag() (string, error) {
 		return "", err
 	}
 
-	cmd := exec.Command("git", "tag", "--sort=-creatordate")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-
-	if Verbose {
-		fmt.Fprintln(os.Stderr, "Running: git tag --sort=-creatordate")
-	}
-
-	if err := cmd.Run(); err != nil {
+	result, err := gitRunner().RunLogged("tag", "--sort=-creatordate")
+	if err != nil {
 		return "", fmt.Errorf("failed to list tags: %w", err)
 	}
 
-	output := strings.TrimSpace(out.String())
+	output := strings.TrimSpace(string(result.Stdout))
 	if output == "" {
 		return "", nil
 	}
@@ -355,24 +305,15 @@ func GetCommitsSinceTag(tag string) ([]CommitInfo, error) {
 		}
 	}
 
-	cmd := exec.Command("git", args...)
-	var out bytes.Buffer
-	var errBuf bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errBuf
-
-	if Verbose {
-		fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(args, " "))
-	}
-
-	if err := cmd.Run(); err != nil {
-		if errBuf.Len() > 0 {
-			return nil, fmt.Errorf("failed to run git log: %s", strings.TrimSpace(errBuf.String()))
+	result, err := gitRunner().RunLogged(args...)
+	if err != nil {
+		if len(result.Stderr) > 0 {
+			return nil, fmt.Errorf("failed to run git log: %s", strings.TrimSpace(string(result.Stderr)))
 		}
 		return nil, fmt.Errorf("failed to run git log: %w", err)
 	}
 
-	data := out.Bytes()
+	data := result.Stdout
 	if len(bytes.TrimSpace(data)) == 0 {
 		return []CommitInfo{}, nil
 	}
@@ -420,18 +361,15 @@ func CreateAnnotatedTag(tag string, message string) error {
 		message = "Release " + tag
 	}
 
-	cmd := exec.Command("git", "tag", "-a", tag, "-m", message)
-	var errBuf bytes.Buffer
-	cmd.Stderr = &errBuf
-
 	if Verbose {
 		fmt.Fprintf(os.Stderr, "Running: git tag -a %s -m %q\n", tag, message)
 	}
 
-	if err := cmd.Run(); err != nil {
+	result, err := gitRunner().Run("tag", "-a", tag, "-m", message)
+	if err != nil {
 		errMsg := fmt.Sprintf("failed to create tag '%s'", tag)
-		if errBuf.Len() > 0 {
-			errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(errBuf.String()))
+		if len(result.Stderr) > 0 {
+			errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(string(result.Stderr)))
 		}
 		return fmt.Errorf("%s: %w", errMsg, err)
 	}
@@ -445,10 +383,8 @@ func tagExists(tag string) (bool, error) {
 	}
 
 	ref := "refs/tags/" + tag
-	cmd := exec.Command("git", "rev-parse", "--verify", ref)
-	cmd.Stderr = nil
-
-	if err := cmd.Run(); err != nil {
+	_, err := gitRunner().Run("rev-parse", "--verify", ref)
+	if err != nil {
 		if _, ok := err.(*exec.ExitError); ok {
 			return false, nil
 		}
@@ -464,37 +400,29 @@ func GetCommitHistory(limit int, teamMode bool) ([]CommitInfo, error) {
 		return nil, err
 	}
 
-	var cmd *exec.Cmd
+	var args []string
 	if teamMode {
 		// Team mode: get commits from all authors
-		cmd = exec.Command("git", "log", "--pretty=format:%h|%an|%ad|%s", "--date=short", fmt.Sprintf("-n%d", limit))
+		args = []string{"log", "--pretty=format:%h|%an|%ad|%s", "--date=short", fmt.Sprintf("-n%d", limit)}
 	} else {
 		// Personal mode: get commits from current user only
 		currentUser, err := getCurrentGitUser()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get current git user: %w", err)
 		}
-		cmd = exec.Command("git", "log", "--pretty=format:%h|%an|%ad|%s", "--date=short",
-			"--author="+currentUser, fmt.Sprintf("-n%d", limit))
+		args = []string{"log", "--pretty=format:%h|%an|%ad|%s", "--date=short",
+			"--author=" + currentUser, fmt.Sprintf("-n%d", limit)}
 	}
 
-	var out bytes.Buffer
-	var errBuf bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errBuf
-
-	if Verbose {
-		fmt.Fprintf(os.Stderr, "Running: %s\n", strings.Join(cmd.Args, " "))
-	}
-
-	if err := cmd.Run(); err != nil {
-		if Verbose && errBuf.Len() > 0 {
-			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
+	result, err := gitRunner().RunLogged(args...)
+	if err != nil {
+		if Verbose && len(result.Stderr) > 0 {
+			fmt.Fprintln(os.Stderr, "Git stderr:", string(result.Stderr))
 		}
 		return nil, fmt.Errorf("failed to run git log: %w", err)
 	}
 
-	output := strings.TrimSpace(out.String())
+	output := strings.TrimSpace(string(result.Stdout))
 	if output == "" {
 		return []CommitInfo{}, nil
 	}
@@ -504,15 +432,12 @@ func GetCommitHistory(limit int, teamMode bool) ([]CommitInfo, error) {
 
 // getCurrentGitUser gets the current git user name
 func getCurrentGitUser() (string, error) {
-	cmd := exec.Command("git", "config", "user.name")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-
-	if err := cmd.Run(); err != nil {
+	result, err := gitRunner().Run("config", "user.name")
+	if err != nil {
 		return "", fmt.Errorf("failed to get git user name: %w", err)
 	}
 
-	return strings.TrimSpace(out.String()), nil
+	return strings.TrimSpace(string(result.Stdout)), nil
 }
 
 // parseCommitOutput parses the git log output into CommitInfo structs
@@ -599,24 +524,15 @@ func ResolveFiles(paths []string) ([]string, error) {
 func isPathInStagedDiff(path string) (bool, error) {
 	gitPath := filepath.ToSlash(path)
 
-	cmd := exec.Command("git", "diff", "--cached", "--name-only", "--", gitPath)
-	var out bytes.Buffer
-	var errBuf bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errBuf
-
-	if Verbose {
-		fmt.Fprintf(os.Stderr, "Running: git diff --cached --name-only -- %s\n", gitPath)
-	}
-
-	if err := cmd.Run(); err != nil {
-		if Verbose && errBuf.Len() > 0 {
-			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
+	result, err := gitRunner().RunLogged("diff", "--cached", "--name-only", "--", gitPath)
+	if err != nil {
+		if Verbose && len(result.Stderr) > 0 {
+			fmt.Fprintln(os.Stderr, "Git stderr:", string(result.Stderr))
 		}
 		return false, fmt.Errorf("failed to inspect staged diff: %w", err)
 	}
 
-	output := strings.TrimSpace(out.String())
+	output := strings.TrimSpace(string(result.Stdout))
 	if output == "" {
 		return false, nil
 	}
@@ -636,32 +552,25 @@ func isPathInStagedDiff(path string) (bool, error) {
 
 // getGitTrackedFilesInDir gets all git-tracked files in a directory, including untracked files that are not ignored.
 func getGitTrackedFilesInDir(dir string) ([]string, error) {
-	cmd := exec.Command("git", "ls-files", "--cached", "--others", "--exclude-standard", dir)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-
-	if Verbose {
-		fmt.Fprintf(os.Stderr, "Running: git ls-files --cached --others --exclude-standard %s\n", dir)
-	}
-
-	if err := cmd.Run(); err != nil {
+	runResult, err := gitRunner().RunLogged("ls-files", "--cached", "--others", "--exclude-standard", dir)
+	if err != nil {
 		return nil, fmt.Errorf("failed to list git files in directory: %w", err)
 	}
 
-	output := strings.TrimSpace(out.String())
+	output := strings.TrimSpace(string(runResult.Stdout))
 	if output == "" {
 		return []string{}, nil
 	}
 
 	files := strings.Split(output, "\n")
-	var result []string
+	var tracked []string
 	for _, file := range files {
 		if file != "" {
-			result = append(result, file)
+			tracked = append(tracked, file)
 		}
 	}
 
-	return result, nil
+	return tracked, nil
 }
 
 // CheckFileStatus checks the git status of specified files
@@ -707,41 +616,32 @@ func CheckFileStatus(files []string) ([]string, []string, []string, error) {
 
 // isFileStaged checks if a file is staged
 func isFileStaged(file string) (bool, error) {
-	cmd := exec.Command("git", "diff", "--cached", "--name-only", file)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-
-	if err := cmd.Run(); err != nil {
+	result, err := gitRunner().Run("diff", "--cached", "--name-only", file)
+	if err != nil {
 		return false, err
 	}
 
-	return strings.TrimSpace(out.String()) != "", nil
+	return strings.TrimSpace(string(result.Stdout)) != "", nil
 }
 
 // isFileModified checks if a file is modified (unstaged changes)
 func isFileModified(file string) (bool, error) {
-	cmd := exec.Command("git", "diff", "--name-only", file)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-
-	if err := cmd.Run(); err != nil {
+	result, err := gitRunner().Run("diff", "--name-only", file)
+	if err != nil {
 		return false, err
 	}
 
-	return strings.TrimSpace(out.String()) != "", nil
+	return strings.TrimSpace(string(result.Stdout)) != "", nil
 }
 
 // isFileTracked checks if a file is tracked by git
 func isFileTracked(file string) (bool, error) {
-	cmd := exec.Command("git", "ls-files", file)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-
-	if err := cmd.Run(); err != nil {
+	result, err := gitRunner().Run("ls-files", file)
+	if err != nil {
 		return false, err
 	}
 
-	return strings.TrimSpace(out.String()) != "", nil
+	return strings.TrimSpace(string(result.Stdout)) != "", nil
 }
 
 // StageFiles stages specific files
@@ -751,18 +651,11 @@ func StageFiles(files []string) error {
 	}
 
 	for _, file := range files {
-		cmd := exec.Command("git", "add", file)
-		var errBuf bytes.Buffer
-		cmd.Stderr = &errBuf
-
-		if Verbose {
-			fmt.Fprintf(os.Stderr, "Running: git add %s\n", file)
-		}
-
-		if err := cmd.Run(); err != nil {
+		result, err := gitRunner().RunLogged("add", file)
+		if err != nil {
 			errMsg := "failed to stage file " + file
-			if errBuf.Len() > 0 {
-				errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(errBuf.String()))
+			if len(result.Stderr) > 0 {
+				errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(string(result.Stderr)))
 			}
 			return fmt.Errorf("%s: %w", errMsg, err)
 		}
@@ -785,24 +678,15 @@ func GetFilesDiff(files []string) (string, error) {
 	args = append(args, "--")
 	args = append(args, files...)
 
-	cmd := exec.Command("git", args...)
-	var out bytes.Buffer
-	var errBuf bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errBuf
-
-	if Verbose {
-		fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(args, " "))
-	}
-
-	if err := cmd.Run(); err != nil {
-		if Verbose && errBuf.Len() > 0 {
-			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
+	result, err := gitRunner().RunLogged(args...)
+	if err != nil {
+		if Verbose && len(result.Stderr) > 0 {
+			fmt.Fprintln(os.Stderr, "Git stderr:", string(result.Stderr))
 		}
 		return "", fmt.Errorf("failed to get diff for files: %w", err)
 	}
 
-	return out.String(), nil
+	return string(result.Stdout), nil
 }
 
 // CommitFiles commits specific files only
@@ -825,34 +709,23 @@ func CommitFiles(message string, files []string, args ...string) error {
 	commitArgs = append(commitArgs, "--")
 	commitArgs = append(commitArgs, files...)
 
-	cmd := exec.Command("git", commitArgs...)
-
-	var outBuf bytes.Buffer
-	var errBuf bytes.Buffer
-	cmd.Stdout = &outBuf
-	cmd.Stderr = &errBuf
-
-	if Verbose {
-		fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(commitArgs, " "))
-	}
-
-	err := cmd.Run()
+	result, err := gitRunner().RunLogged(commitArgs...)
 
 	// Always show output in verbose mode
 	if Verbose {
-		if outBuf.Len() > 0 {
-			fmt.Fprintln(os.Stderr, "Git output:", outBuf.String())
+		if len(result.Stdout) > 0 {
+			fmt.Fprintln(os.Stderr, "Git output:", string(result.Stdout))
 		}
-		if errBuf.Len() > 0 {
-			fmt.Fprintln(os.Stderr, "Git stderr:", errBuf.String())
+		if len(result.Stderr) > 0 {
+			fmt.Fprintln(os.Stderr, "Git stderr:", string(result.Stderr))
 		}
 	}
 
 	if err != nil {
 		// Include git error output in the error message
 		errMsg := "Failed to commit files"
-		if errBuf.Len() > 0 {
-			errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(errBuf.String()))
+		if len(result.Stderr) > 0 {
+			errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(string(result.Stderr)))
 		}
 		return fmt.Errorf("%s: %w", errMsg, err)
 	}

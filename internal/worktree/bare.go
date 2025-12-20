@@ -1,12 +1,10 @@
 package worktree
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -50,15 +48,7 @@ func Clone(repoURL string, opts CloneOptions) error {
 
 	// Clone as bare repository - pass output to user for progress
 	args := []string{"clone", "--bare", "--progress", repoURL, bareDir}
-	cmd := exec.Command("git", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if Verbose {
-		fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(args, " "))
-	}
-
-	if err := cmd.Run(); err != nil {
+	if err := gitRunner().RunStreamingLogged(args...); err != nil {
 		// Clean up on failure
 		os.RemoveAll(projectName)
 		return fmt.Errorf("failed to clone repository: %w", err)
@@ -79,15 +69,7 @@ func Clone(repoURL string, opts CloneOptions) error {
 	}
 	mainWorktree := filepath.Join(absProjectDir, defaultBranch)
 	args = []string{"-C", bareDir, "worktree", "add", mainWorktree, defaultBranch}
-	cmd = exec.Command("git", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if Verbose {
-		fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(args, " "))
-	}
-
-	if err := cmd.Run(); err != nil {
+	if err := gitRunner().RunStreamingLogged(args...); err != nil {
 		os.RemoveAll(projectName)
 		return fmt.Errorf("failed to create main worktree: %w", err)
 	}
@@ -137,19 +119,15 @@ func configureBareRepo(bareDir string, upstreamURL string) error {
 	if Verbose {
 		fmt.Fprintln(os.Stderr, "Fetching remote references...")
 	}
-	fetchCmd := exec.Command("git", "-C", bareDir, "fetch", "origin")
-	if err := fetchCmd.Run(); err != nil && Verbose {
+	_, err := gitRunner().Run("-C", bareDir, "fetch", "origin")
+	if err != nil && Verbose {
 		fmt.Fprintf(os.Stderr, "Warning: 'git fetch origin' failed: %v\n", err)
 	}
 
 	// Add upstream remote if specified
 	if upstreamURL != "" {
 		args := []string{"-C", bareDir, "remote", "add", "upstream", upstreamURL}
-		cmd := exec.Command("git", args...)
-		if Verbose {
-			fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(args, " "))
-		}
-		if err := cmd.Run(); err != nil {
+		if _, err := gitRunner().RunLogged(args...); err != nil {
 			return fmt.Errorf("failed to add upstream remote: %w", err)
 		}
 	}
@@ -160,24 +138,17 @@ func configureBareRepo(bareDir string, upstreamURL string) error {
 // gitConfig sets a git config value
 func gitConfig(repoDir string, key string, value string) error {
 	args := []string{"-C", repoDir, "config", key, value}
-	cmd := exec.Command("git", args...)
-	if Verbose {
-		fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(args, " "))
-	}
-	return cmd.Run()
+	_, err := gitRunner().RunLogged(args...)
+	return err
 }
 
 // getDefaultBranch gets the default branch name from a bare repository
 func getDefaultBranch(bareDir string) (string, error) {
 	// Try to get from HEAD
 	args := []string{"-C", bareDir, "symbolic-ref", "--short", "HEAD"}
-	cmd := exec.Command("git", args...)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = nil
-
-	if err := cmd.Run(); err == nil {
-		branch := strings.TrimSpace(out.String())
+	result, err := gitRunner().Run(args...)
+	if err == nil {
+		branch := strings.TrimSpace(string(result.Stdout))
 		if branch != "" {
 			return branch, nil
 		}
@@ -186,9 +157,7 @@ func getDefaultBranch(bareDir string) (string, error) {
 	// Fallback: check common branch names
 	for _, branch := range []string{"main", "master"} {
 		args := []string{"-C", bareDir, "rev-parse", "--verify", "refs/heads/" + branch}
-		cmd := exec.Command("git", args...)
-		cmd.Stderr = nil
-		if cmd.Run() == nil {
+		if _, err := gitRunner().Run(args...); err == nil {
 			return branch, nil
 		}
 	}

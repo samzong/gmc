@@ -1,18 +1,22 @@
 package worktree
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/samzong/gmc/internal/gitcmd"
 )
 
 // Verbose controls whether to print debug output
 var Verbose bool
+
+func gitRunner() gitcmd.Runner {
+	return gitcmd.Runner{Verbose: Verbose}
+}
 
 // RepoType represents the type of git repository
 type RepoType int
@@ -93,30 +97,24 @@ func DetectRepositoryType(dir string) (RepoType, error) {
 
 // isInsideWorkTree checks if the directory is inside a git work tree
 func isInsideWorkTree(dir string) bool {
-	cmd := exec.Command("git", "-C", dir, "rev-parse", "--is-inside-work-tree")
-	cmd.Stderr = nil
-	output, err := cmd.Output()
-	return err == nil && strings.TrimSpace(string(output)) == "true"
+	result, err := gitRunner().Run("-C", dir, "rev-parse", "--is-inside-work-tree")
+	return err == nil && strings.TrimSpace(string(result.Stdout)) == "true"
 }
 
 // isBareRepository checks if the directory is a bare git repository
 func isBareRepository(dir string) bool {
-	cmd := exec.Command("git", "-C", dir, "rev-parse", "--is-bare-repository")
-	cmd.Stderr = nil
-	output, err := cmd.Output()
-	return err == nil && strings.TrimSpace(string(output)) == "true"
+	result, err := gitRunner().Run("-C", dir, "rev-parse", "--is-bare-repository")
+	return err == nil && strings.TrimSpace(string(result.Stdout)) == "true"
 }
 
 // getGitOutput runs a git command and returns the trimmed output, or empty string on error
 func getGitOutput(dir string, args ...string) string {
 	fullArgs := append([]string{"-C", dir}, args...)
-	cmd := exec.Command("git", fullArgs...)
-	cmd.Stderr = nil
-	output, err := cmd.Output()
+	result, err := gitRunner().Run(fullArgs...)
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(output))
+	return strings.TrimSpace(string(result.Stdout))
 }
 
 // FindBareRoot finds the root directory containing .bare
@@ -155,16 +153,12 @@ func GetWorktreeRoot() (string, error) {
 	}
 
 	// Fall back to git-common-dir
-	cmd := exec.Command("git", "rev-parse", "--git-common-dir")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = nil
-
-	if err := cmd.Run(); err != nil {
+	result, err := gitRunner().Run("rev-parse", "--git-common-dir")
+	if err != nil {
 		return "", fmt.Errorf("not in a git repository: %w", err)
 	}
 
-	commonDir := strings.TrimSpace(out.String())
+	commonDir := strings.TrimSpace(string(result.Stdout))
 	if commonDir == "" {
 		return "", errors.New("failed to determine git common directory")
 	}
@@ -192,21 +186,12 @@ func IsBareWorktree() bool {
 
 // List returns all worktrees for the current repository
 func List() ([]WorktreeInfo, error) {
-	cmd := exec.Command("git", "worktree", "list", "--porcelain")
-	var out bytes.Buffer
-	var errBuf bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errBuf
-
-	if Verbose {
-		fmt.Fprintln(os.Stderr, "Running: git worktree list --porcelain")
-	}
-
-	if err := cmd.Run(); err != nil {
+	result, err := gitRunner().RunLogged("worktree", "list", "--porcelain")
+	if err != nil {
 		return nil, fmt.Errorf("failed to list worktrees: %w", err)
 	}
 
-	return parseWorktreeList(out.String())
+	return parseWorktreeList(string(result.Stdout))
 }
 
 // parseWorktreeList parses the porcelain output of git worktree list
@@ -296,9 +281,7 @@ func Add(name string, opts AddOptions) error {
 		if Verbose {
 			fmt.Fprintln(os.Stderr, "Fetching latest changes...")
 		}
-		cmd := exec.Command("git", "fetch", "--all")
-		cmd.Stderr = os.Stderr
-		_ = cmd.Run() // Ignore fetch errors
+		_ = gitRunner().RunWithWriters(false, nil, os.Stderr, "fetch", "--all") // Ignore fetch errors
 	}
 
 	// Check if branch already exists
@@ -312,16 +295,9 @@ func Add(name string, opts AddOptions) error {
 		args = []string{"worktree", "add", "-b", name, targetPath, baseBranch}
 	}
 
-	cmd := exec.Command("git", args...)
-	var errBuf bytes.Buffer
-	cmd.Stderr = &errBuf
-
-	if Verbose {
-		fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(args, " "))
-	}
-
-	if err := cmd.Run(); err != nil {
-		errMsg := strings.TrimSpace(errBuf.String())
+	result, err := gitRunner().RunLogged(args...)
+	if err != nil {
+		errMsg := strings.TrimSpace(string(result.Stderr))
 		if errMsg != "" {
 			return fmt.Errorf("failed to create worktree: %s", errMsg)
 		}
@@ -387,16 +363,9 @@ func Remove(name string, opts RemoveOptions) error {
 	}
 	args = append(args, targetPath)
 
-	cmd := exec.Command("git", args...)
-	var errBuf bytes.Buffer
-	cmd.Stderr = &errBuf
-
-	if Verbose {
-		fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(args, " "))
-	}
-
-	if err := cmd.Run(); err != nil {
-		errMsg := strings.TrimSpace(errBuf.String())
+	result, err := gitRunner().RunLogged(args...)
+	if err != nil {
+		errMsg := strings.TrimSpace(string(result.Stderr))
 		if errMsg != "" {
 			return fmt.Errorf("failed to remove worktree: %s", errMsg)
 		}
@@ -408,16 +377,9 @@ func Remove(name string, opts RemoveOptions) error {
 	// Optionally delete branch
 	if opts.DeleteBranch && wtInfo.Branch != "" && wtInfo.Branch != "(detached)" {
 		args := []string{"branch", "-D", wtInfo.Branch}
-		cmd := exec.Command("git", args...)
-		var errBuf bytes.Buffer
-		cmd.Stderr = &errBuf
-
-		if Verbose {
-			fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(args, " "))
-		}
-
-		if err := cmd.Run(); err != nil {
-			errMsg := strings.TrimSpace(errBuf.String())
+		result, err := gitRunner().RunLogged(args...)
+		if err != nil {
+			errMsg := strings.TrimSpace(string(result.Stderr))
 			if errMsg != "" {
 				return fmt.Errorf("failed to delete branch: %s", errMsg)
 			}
@@ -432,16 +394,12 @@ func Remove(name string, opts RemoveOptions) error {
 
 // GetWorktreeStatus returns the git status of a worktree (clean/modified)
 func GetWorktreeStatus(path string) string {
-	cmd := exec.Command("git", "-C", path, "status", "--porcelain")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = nil
-
-	if err := cmd.Run(); err != nil {
+	result, err := gitRunner().Run("-C", path, "status", "--porcelain")
+	if err != nil {
 		return "unknown"
 	}
 
-	if strings.TrimSpace(out.String()) == "" {
+	if strings.TrimSpace(string(result.Stdout)) == "" {
 		return "clean"
 	}
 	return "modified"
@@ -473,23 +431,23 @@ func branchExists(name string) (bool, error) {
 	// Try to find the bare repo root for proper -C path
 	root, _ := GetWorktreeRoot()
 
-	var cmd *exec.Cmd
+	var args []string
 	if root == "" {
 		// Fallback to current directory
-		cmd = exec.Command("git", "rev-parse", "--verify", "refs/heads/"+name)
+		args = []string{"rev-parse", "--verify", "refs/heads/" + name}
 	} else {
 		// Check if .bare directory exists
 		bareDir := filepath.Join(root, ".bare")
 		if _, statErr := os.Stat(bareDir); statErr == nil {
-			cmd = exec.Command("git", "-C", bareDir, "rev-parse", "--verify", "refs/heads/"+name)
+			args = []string{"-C", bareDir, "rev-parse", "--verify", "refs/heads/" + name}
 		} else {
 			// Standard repo
-			cmd = exec.Command("git", "-C", root, "rev-parse", "--verify", "refs/heads/"+name)
+			args = []string{"-C", root, "rev-parse", "--verify", "refs/heads/" + name}
 		}
 	}
 
-	cmd.Stderr = nil
-	return cmd.Run() == nil, nil
+	_, err := gitRunner().Run(args...)
+	return err == nil, nil
 }
 
 // DupOptions options for duplicating worktrees
@@ -519,7 +477,7 @@ func Dup(opts DupOptions) (*DupResult, error) {
 	}
 
 	timestamp := fmt.Sprintf("%d", getCurrentTimestamp())
-	result := &DupResult{
+	dupResult := &DupResult{
 		Worktrees: make([]string, 0, opts.Count),
 		Branches:  make([]string, 0, opts.Count),
 	}
@@ -536,27 +494,20 @@ func Dup(opts DupOptions) (*DupResult, error) {
 
 		// Create worktree with new branch
 		args := []string{"worktree", "add", "-b", branchName, targetPath, opts.BaseBranch}
-		cmd := exec.Command("git", args...)
-		var errBuf bytes.Buffer
-		cmd.Stderr = &errBuf
-
-		if Verbose {
-			fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(args, " "))
-		}
-
-		if err := cmd.Run(); err != nil {
-			errMsg := strings.TrimSpace(errBuf.String())
+		runResult, err := gitRunner().RunLogged(args...)
+		if err != nil {
+			errMsg := strings.TrimSpace(string(runResult.Stderr))
 			if errMsg != "" {
 				return nil, fmt.Errorf("failed to create worktree %s: %s", dirName, errMsg)
 			}
 			return nil, fmt.Errorf("failed to create worktree %s: %w", dirName, err)
 		}
 
-		result.Worktrees = append(result.Worktrees, dirName)
-		result.Branches = append(result.Branches, branchName)
+		dupResult.Worktrees = append(dupResult.Worktrees, dirName)
+		dupResult.Branches = append(dupResult.Branches, branchName)
 	}
 
-	return result, nil
+	return dupResult, nil
 }
 
 // Promote renames the branch of a worktree to a permanent name
@@ -585,32 +536,21 @@ func Promote(worktreeName, newBranchName string) error {
 	}
 
 	// Get current branch name
-	cmd := exec.Command("git", "-C", targetPath, "rev-parse", "--abbrev-ref", "HEAD")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = nil
-
-	if err := cmd.Run(); err != nil {
+	result, err := gitRunner().Run("-C", targetPath, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
 		return fmt.Errorf("failed to get current branch: %w", err)
 	}
 
-	oldBranch := strings.TrimSpace(out.String())
+	oldBranch := strings.TrimSpace(string(result.Stdout))
 	if oldBranch == "HEAD" {
 		return errors.New("worktree is in detached HEAD state, cannot promote")
 	}
 
 	// Rename branch
 	args := []string{"-C", targetPath, "branch", "-m", newBranchName}
-	cmd = exec.Command("git", args...)
-	var errBuf bytes.Buffer
-	cmd.Stderr = &errBuf
-
-	if Verbose {
-		fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(args, " "))
-	}
-
-	if err := cmd.Run(); err != nil {
-		errMsg := strings.TrimSpace(errBuf.String())
+	result, err = gitRunner().RunLogged(args...)
+	if err != nil {
+		errMsg := strings.TrimSpace(string(result.Stderr))
 		if errMsg != "" {
 			return fmt.Errorf("failed to rename branch: %s", errMsg)
 		}
