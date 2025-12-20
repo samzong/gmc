@@ -171,15 +171,6 @@ func Commit(message string, args ...string) error {
 		return err
 	}
 
-	// Safety check: In test environment, prevent commits unless in temp directory
-	if os.Getenv("GO_TEST_ENV") == "1" {
-		cwd, _ := os.Getwd()
-		if !strings.Contains(cwd, "/tmp/") && !strings.Contains(cwd, "\\Temp\\") &&
-			!strings.Contains(cwd, "gmc_git_test") && !strings.Contains(cwd, "gmc_non_git_test") {
-			return errors.New("SAFETY: refusing to commit in non-temporary directory during tests")
-		}
-	}
-
 	commitArgs := append([]string{"commit", "-m", message}, args...)
 	result, err := gitRunner().RunLogged(commitArgs...)
 
@@ -693,15 +684,6 @@ func GetFilesDiff(files []string) (string, error) {
 func CommitFiles(message string, files []string, args ...string) error {
 	if err := CheckGitRepository(); err != nil {
 		return err
-	}
-
-	// Safety check: In test environment, prevent commits unless in temp directory
-	if os.Getenv("GO_TEST_ENV") == "1" {
-		cwd, _ := os.Getwd()
-		if !strings.Contains(cwd, "/tmp/") && !strings.Contains(cwd, "\\Temp\\") &&
-			!strings.Contains(cwd, "gmc_git_test") && !strings.Contains(cwd, "gmc_non_git_test") {
-			return errors.New("SAFETY: refusing to commit in non-temporary directory during tests")
-		}
 	}
 
 	commitArgs := []string{"commit", "-m", message}
