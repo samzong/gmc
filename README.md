@@ -18,9 +18,8 @@
 3. **OpenAI-compatible API support**: configure API key + optional base URL (proxy/providers)
 4. **Role & prompt control**: set a role, pick templates, add extra prompt context on demand
 5. **Branch name generation**: create and switch to a new branch from a description (`--branch`)
-6. **Commit history analysis**: assess commit quality and (optionally) get AI suggestions (`gmc analyze`)
-7. **Auto semantic version tagging**: suggest and create annotated tags (`gmc tag`)
-8. 🔥 **Worktree workflows**: manage `.bare` + worktree structure (`gmc wt`)
+6. **Auto semantic version tagging**: suggest and create annotated tags (`gmc tag`)
+7. 🔥 **Worktree workflows**: manage `.bare` + worktree structure (`gmc wt`)
 
 ## Usage
 
@@ -98,15 +97,6 @@ After generating a message, `gmc` prompts: `y/n/r/e`:
 - `e`: edit in `$EDITOR` (or `$VISUAL`, fallback to `vi`)
 
 ## Commands
-
-### Analyze commit history
-
-```bash
-gmc analyze          # personal commits (last 50)
-gmc analyze --team   # team commits (last 200)
-```
-
-If an API key is configured, `gmc analyze` will attempt to generate AI suggestions; failures are non-fatal.
 
 ### Suggest and create a semantic version tag
 

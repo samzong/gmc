@@ -1,19 +1,11 @@
 name: "GMC - Git Message Commit"
-description: "Generate high-quality commit messages or analyze commit quality using LLM"
+description: "Generate high-quality commit messages using LLM"
 author: "samzong"
 branding:
   icon: "edit-3"
   color: "purple"
 
 inputs:
-  mode:
-    description: "Operation mode: 'analyze' or 'generate'"
-    required: false
-    default: "analyze"
-  team:
-    description: "Analyze team commits (only for analyze mode)"
-    required: false
-    default: "false"
   args:
     description: "Extra args for generate mode (e.g. '-a --issue 123 --branch ""add auth""')"
     required: false
@@ -41,16 +33,16 @@ inputs:
     required: false
     default: "."
   comment:
-    description: "If true on PRs, post analysis/generation output as a comment"
+    description: "If true on PRs, post generation output as a comment"
     required: false
     default: "false"
 
 outputs:
   report:
-    description: "Full text output from 'analyze' or 'generate' run"
+    description: "Full text output from generate run"
     value: ${{ steps.run.outputs.report }}
   commit_message:
-    description: "Generated commit message (from generate mode, typically with --dry-run)"
+    description: "Generated commit message (typically with --dry-run)"
     value: ${{ steps.run.outputs.commit_message }}
 
 runs:
@@ -93,25 +85,13 @@ runs:
       run: |
         set -euo pipefail
         mkdir -p "$RUNNER_TEMP"
-        if [ "${{ inputs.mode }}" = "analyze" ]; then
-          TEAM_FLAG=""
-          if [ "${{ inputs.team }}" = "true" ]; then TEAM_FLAG="--team"; fi
-          echo "Running: ./gmc analyze ${TEAM_FLAG}"
-          # Capture output but do not fail the action if gmc exits non-zero
-          if ! OUT=$(./gmc analyze ${TEAM_FLAG} 2>&1); then
-            echo "gmc analyze returned non-zero; continuing and capturing output"
-          fi
-          printf "%s\n" "$OUT" | sed -e 's/\r$//' > "$RUNNER_TEMP/gmc_output.txt"
-          printf 'report<<EOF\n%s\nEOF\n' "$OUT" >> "$GITHUB_OUTPUT"
-        else
-          echo "Running: ./gmc -y --dry-run ${{ inputs.args }}"
-          if ! OUT=$(./gmc -y --dry-run ${{ inputs.args }} 2>&1); then
-            echo "gmc generate returned non-zero; continuing and capturing output"
-          fi
-          printf "%s\n" "$OUT" | sed -e 's/\r$//' > "$RUNNER_TEMP/gmc_output.txt"
-          printf 'report<<EOF\n%s\nEOF\n' "$OUT" >> "$GITHUB_OUTPUT"
-          printf 'commit_message<<EOF\n%s\nEOF\n' "$OUT" >> "$GITHUB_OUTPUT"
+        echo "Running: ./gmc -y --dry-run ${{ inputs.args }}"
+        if ! OUT=$(./gmc -y --dry-run ${{ inputs.args }} 2>&1); then
+          echo "gmc generate returned non-zero; continuing and capturing output"
         fi
+        printf "%s\n" "$OUT" | sed -e 's/\r$//' > "$RUNNER_TEMP/gmc_output.txt"
+        printf 'report<<EOF\n%s\nEOF\n' "$OUT" >> "$GITHUB_OUTPUT"
+        printf 'commit_message<<EOF\n%s\nEOF\n' "$OUT" >> "$GITHUB_OUTPUT"
 
     - name: Comment on PR with output
       if: ${{ inputs.comment == 'true' && startsWith(github.event_name, 'pull_request') }}
@@ -127,4 +107,3 @@ runs:
             issue_number: context.issue.number,
             body: body.length > 65000 ? body.slice(0, 65000) + '\n\n…(truncated)…' : body,
           });
-

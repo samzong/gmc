@@ -54,7 +54,6 @@
 - **errors:** standardize error messages to lowercase for consistency
 
 ### Features
-- **analyzer:** implement commit history analysis with AI-powered suggestions and quality metrics
 - **test:** add test coverage commands and safety checks
 
 
