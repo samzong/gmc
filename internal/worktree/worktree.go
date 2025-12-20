@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Verbose controls whether to print debug output
@@ -489,4 +490,138 @@ func branchExists(name string) (bool, error) {
 
 	cmd.Stderr = nil
 	return cmd.Run() == nil, nil
+}
+
+// DupOptions options for duplicating worktrees
+type DupOptions struct {
+	BaseBranch string // Base branch to create from
+	Count      int    // Number of worktrees to create
+}
+
+// DupResult result of a dup operation
+type DupResult struct {
+	Worktrees []string // Created worktree directories
+	Branches  []string // Created branch names
+}
+
+// Dup creates multiple worktrees with temporary branches for parallel development
+func Dup(opts DupOptions) (*DupResult, error) {
+	if opts.BaseBranch == "" {
+		opts.BaseBranch = "HEAD"
+	}
+	if opts.Count < 1 {
+		opts.Count = 2
+	}
+
+	root, err := GetWorktreeRoot()
+	if err != nil {
+		return nil, fmt.Errorf("failed to find worktree root: %w", err)
+	}
+
+	timestamp := fmt.Sprintf("%d", getCurrentTimestamp())
+	result := &DupResult{
+		Worktrees: make([]string, 0, opts.Count),
+		Branches:  make([]string, 0, opts.Count),
+	}
+
+	for i := 1; i <= opts.Count; i++ {
+		dirName := fmt.Sprintf(".dup-%d", i)
+		branchName := fmt.Sprintf("_dup/%s/%s-%d", opts.BaseBranch, timestamp, i)
+		targetPath := filepath.Join(root, dirName)
+
+		// Check if directory already exists
+		if _, err := os.Stat(targetPath); err == nil {
+			return nil, fmt.Errorf("directory already exists: %s", targetPath)
+		}
+
+		// Create worktree with new branch
+		args := []string{"worktree", "add", "-b", branchName, targetPath, opts.BaseBranch}
+		cmd := exec.Command("git", args...)
+		var errBuf bytes.Buffer
+		cmd.Stderr = &errBuf
+
+		if Verbose {
+			fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(args, " "))
+		}
+
+		if err := cmd.Run(); err != nil {
+			errMsg := strings.TrimSpace(errBuf.String())
+			if errMsg != "" {
+				return nil, fmt.Errorf("failed to create worktree %s: %s", dirName, errMsg)
+			}
+			return nil, fmt.Errorf("failed to create worktree %s: %w", dirName, err)
+		}
+
+		result.Worktrees = append(result.Worktrees, dirName)
+		result.Branches = append(result.Branches, branchName)
+	}
+
+	return result, nil
+}
+
+// Promote renames the branch of a worktree to a permanent name
+func Promote(worktreeName, newBranchName string) error {
+	if worktreeName == "" {
+		return errors.New("worktree name cannot be empty")
+	}
+	if newBranchName == "" {
+		return errors.New("branch name cannot be empty")
+	}
+
+	if err := validateBranchName(newBranchName); err != nil {
+		return err
+	}
+
+	root, err := GetWorktreeRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find worktree root: %w", err)
+	}
+
+	targetPath := filepath.Join(root, worktreeName)
+
+	// Verify worktree exists
+	if _, err := os.Stat(targetPath); os.IsNotExist(err) {
+		return fmt.Errorf("worktree not found: %s", worktreeName)
+	}
+
+	// Get current branch name
+	cmd := exec.Command("git", "-C", targetPath, "rev-parse", "--abbrev-ref", "HEAD")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = nil
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to get current branch: %w", err)
+	}
+
+	oldBranch := strings.TrimSpace(out.String())
+	if oldBranch == "HEAD" {
+		return errors.New("worktree is in detached HEAD state, cannot promote")
+	}
+
+	// Rename branch
+	args := []string{"-C", targetPath, "branch", "-m", newBranchName}
+	cmd = exec.Command("git", args...)
+	var errBuf bytes.Buffer
+	cmd.Stderr = &errBuf
+
+	if Verbose {
+		fmt.Fprintf(os.Stderr, "Running: git %s\n", strings.Join(args, " "))
+	}
+
+	if err := cmd.Run(); err != nil {
+		errMsg := strings.TrimSpace(errBuf.String())
+		if errMsg != "" {
+			return fmt.Errorf("failed to rename branch: %s", errMsg)
+		}
+		return fmt.Errorf("failed to rename branch: %w", err)
+	}
+
+	fmt.Printf("Promoted '%s' -> '%s'\n", oldBranch, newBranchName)
+	return nil
+}
+
+// getCurrentTimestamp returns current unix timestamp
+func getCurrentTimestamp() int64 {
+	return time.Now().Unix()
 }

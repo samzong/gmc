@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/samzong/gmc/internal/worktree"
@@ -103,12 +104,51 @@ Examples:
 	},
 }
 
+var wtDupCmd = &cobra.Command{
+	Use:   "dup [count]",
+	Short: "Create multiple worktrees for parallel development",
+	Long: `Create multiple worktrees with temporary branches for parallel AI development.
+
+Each worktree gets a temporary branch (_dup/<base>/<timestamp>-<n>) that can
+be promoted to a permanent name later using 'gmc wt promote'.
+
+Examples:
+  gmc wt dup           # Create 2 worktrees based on main
+  gmc wt dup 3         # Create 3 worktrees based on main
+  gmc wt dup -b dev    # Create 2 worktrees based on dev
+  gmc wt dup 3 -b dev  # Create 3 worktrees based on dev`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		worktree.Verbose = verbose
+		return runWorktreeDup(args)
+	},
+}
+
+var wtPromoteCmd = &cobra.Command{
+	Use:   "promote <worktree> <branch-name>",
+	Short: "Rename temporary branch to permanent name",
+	Long: `Rename the temporary branch of a worktree to a permanent branch name.
+
+Use this after evaluating parallel development results to keep the best solution.
+
+Examples:
+  gmc wt promote .dup-2 feature/add-auth
+  gmc wt promote .dup-1 fix/login-bug`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		worktree.Verbose = verbose
+		return runWorktreePromote(args[0], args[1])
+	},
+}
+
 func init() {
 	// Add subcommands
 	wtCmd.AddCommand(wtAddCmd)
 	wtCmd.AddCommand(wtListCmd)
 	wtCmd.AddCommand(wtRemoveCmd)
 	wtCmd.AddCommand(wtCloneCmd)
+	wtCmd.AddCommand(wtDupCmd)
+	wtCmd.AddCommand(wtPromoteCmd)
 
 	// Flags for add command
 	wtAddCmd.Flags().StringVarP(&wtBaseBranch, "base", "b", "", "Base branch to create from")
@@ -120,6 +160,9 @@ func init() {
 	// Flags for clone command
 	wtCloneCmd.Flags().StringVar(&wtUpstream, "upstream", "", "Upstream repository URL (for fork workflow)")
 	wtCloneCmd.Flags().StringVar(&wtProjectName, "name", "", "Custom project directory name")
+
+	// Flags for dup command
+	wtDupCmd.Flags().StringVarP(&wtBaseBranch, "base", "b", "main", "Base branch to create from")
 
 	// Add to root command
 	rootCmd.AddCommand(wtCmd)
@@ -259,4 +302,41 @@ func printWorktreeTable(worktrees []worktree.WorktreeInfo) {
 		}
 		fmt.Printf("%-*s %-*s %s\n", maxName, name, maxBranch, wt.Branch, status)
 	}
+}
+
+func runWorktreeDup(args []string) error {
+	opts := worktree.DupOptions{
+		BaseBranch: wtBaseBranch,
+		Count:      2,
+	}
+
+	if len(args) > 0 {
+		count, err := strconv.Atoi(args[0])
+		if err != nil {
+			return fmt.Errorf("invalid count: %s", args[0])
+		}
+		opts.Count = count
+	}
+
+	result, err := worktree.Dup(opts)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Created %d worktrees based on '%s':\n", len(result.Worktrees), opts.BaseBranch)
+	for i, wt := range result.Worktrees {
+		fmt.Printf("  %s -> %s\n", wt, result.Branches[i])
+	}
+	fmt.Println()
+	fmt.Println("Next steps:")
+	fmt.Println("  1. Work in each directory with different AI tools")
+	fmt.Println("  2. Evaluate and pick the best solution")
+	fmt.Printf("  3. Run: gmc wt promote <worktree> <branch-name>\n")
+	fmt.Println("  4. Clean up: gmc wt rm <other-worktrees> -D")
+
+	return nil
+}
+
+func runWorktreePromote(worktreeName, branchName string) error {
+	return worktree.Promote(worktreeName, branchName)
 }
