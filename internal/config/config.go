@@ -107,7 +107,34 @@ func InitConfig(cfgFile string) error {
 		}
 	}
 
+	// Merge repo-level config if exists (higher priority than home config)
+	if repoConfig := findRepoConfig(); repoConfig != "" {
+		if err := viper.MergeInConfig(); err == nil {
+			// Re-read with repo config path for merge
+			repoViper := viper.New()
+			repoViper.SetConfigFile(repoConfig)
+			if err := repoViper.ReadInConfig(); err == nil {
+				for _, key := range repoViper.AllKeys() {
+					viper.Set(key, repoViper.Get(key))
+				}
+			}
+		}
+	}
+
 	return nil
+}
+
+// findRepoConfig searches for .gmc.yaml in the current working directory.
+func findRepoConfig() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	repoConfigPath := filepath.Join(cwd, DefaultConfigName+".yaml")
+	if _, err := os.Stat(repoConfigPath); err == nil {
+		return repoConfigPath
+	}
+	return ""
 }
 
 func GetConfig() *Config {

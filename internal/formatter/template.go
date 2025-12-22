@@ -205,6 +205,19 @@ func GetPromptTemplate(templateName string) (string, error) {
 		return readTemplateFile(templateName)
 	}
 
+	// Check repo-level prompts directory first (./.gmc/prompts/)
+	cwd, _ := os.Getwd()
+	if cwd != "" {
+		repoPromptsPath := filepath.Join(cwd, ".gmc", "prompts", templateName)
+		if filepath.Ext(repoPromptsPath) == "" {
+			repoPromptsPath += ".yaml"
+		}
+		if _, err := os.Stat(repoPromptsPath); err == nil {
+			return readTemplateFile(repoPromptsPath)
+		}
+	}
+
+	// Fallback to home prompts directory
 	cfg := config.GetConfig()
 	if cfg.PromptsDir != "" {
 		customPath := filepath.Join(cfg.PromptsDir, templateName)
