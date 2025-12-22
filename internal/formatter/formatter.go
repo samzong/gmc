@@ -51,7 +51,7 @@ func BuildPrompt(role string, changedFiles []string, diff string, userPrompt str
 	templateContent, err := GetPromptTemplate(templateName)
 	if err != nil {
 		fmt.Printf("Warning: %v, using default template\n", err)
-		templateContent = buildTemplateContent("default")
+		templateContent = buildDefaultTemplateContent()
 	}
 
 	prompt, err := RenderTemplate(templateContent, data)

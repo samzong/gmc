@@ -52,22 +52,10 @@ func initTemplateParts() {
 
 func init() {
 	initTemplateParts()
-	initBuiltinTemplates()
 }
 
-var builtinTemplates map[string]string
-
-// initBuiltinTemplates initializes builtin templates with dynamic content
-func initBuiltinTemplates() {
-	// Templates will be generated dynamically based on enable_emoji config
-	builtinTemplates = map[string]string{
-		"default":  "", // Will be generated dynamically
-		"detailed": "", // Will be generated dynamically
-	}
-}
-
-// buildTemplateContent builds template content based on enable_emoji configuration
-func buildTemplateContent(templateName string) string {
+// buildDefaultTemplateContent builds the default template content based on enable_emoji configuration
+func buildDefaultTemplateContent() string {
 	cfg := config.GetConfig()
 	enableEmoji := cfg.EnableEmoji
 
@@ -78,10 +66,8 @@ func buildTemplateContent(templateName string) string {
 		emojiInstruction = templateParts.Emoji + "\n"
 	}
 
-	switch templateName {
-	case "default":
-		return fmt.Sprintf(
-			`%s
+	return fmt.Sprintf(
+		`%s
 
 %s
 
@@ -91,83 +77,14 @@ Reply with one line. %s.
 Select the most fitting type from: %s.
 %sKeep the description under 150 characters and describe the behavior change.
 %s`,
-			templateParts.Header,
-			templateParts.Files,
-			templateParts.Content,
-			formatMsg,
-			strings.Join(emoji.GetAllCommitTypes(), ", "),
-			emojiInstruction,
-			templateParts.NoIssues,
-		)
-	case "detailed":
-		emojiSection := ""
-		if enableEmoji {
-			emojiSection = fmt.Sprintf(
-				"1. Lead with an emoji that matches the commit type:\n%s\n\n",
-				buildDetailedEmojiList(),
-			)
-		}
-		return fmt.Sprintf(
-			`As a seasoned %s
-
-%s
-
-%s
-
-Provide a one-line summary. %s.
-%s2. Scope (optional) should identify the impacted component.
-3. Description must stay under 150 characters, start with an imperative verb, and explain the change.
-
-%s`,
-			templateParts.Header,
-			templateParts.Files,
-			templateParts.Content,
-			formatMsg,
-			emojiSection,
-			templateParts.NoIssues,
-		)
-	default:
-		return ""
-	}
-}
-
-// buildDetailedEmojiList builds a formatted list of emoji mappings for the detailed template
-func buildDetailedEmojiList() string {
-	types := emoji.GetAllCommitTypes()
-	lines := make([]string, 0, len(types))
-	for _, t := range types {
-		emojiChar := emoji.GetEmojiForType(t)
-		description := getCommitTypeDescription(t)
-		lines = append(lines, fmt.Sprintf("   - %s %s: %s", emojiChar, t, description))
-	}
-	return strings.Join(lines, "\n")
-}
-
-// getCommitTypeDescription returns a human-readable description for a commit type
-func getCommitTypeDescription(commitType string) string {
-	descriptions := map[string]string{
-		"feat":     "new feature",
-		"fix":      "bug fix",
-		"docs":     "documentation changes",
-		"style":    "code style changes (e.g., formatting, missing semicolons, etc.)",
-		"refactor": "code changes that neither fix a bug nor add a feature",
-		"perf":     "performance improvements",
-		"test":     "adding or correcting tests",
-		"chore":    "changes to build process or auxiliary tools and libraries",
-		"build":    "changes to build system or dependencies",
-		"ci":       "changes to CI configuration files and scripts",
-		"revert":   "revert a previous commit",
-		"release":  "release a new version",
-		"hotfix":   "hotfix a critical issue",
-		"security": "security fix",
-		"other":    "other changes",
-		"wip":      "work in progress",
-		"deps":     "dependency update",
-	}
-	if desc, ok := descriptions[commitType]; ok {
-		return desc
-	}
-	return "changes"
+		templateParts.Header,
+		templateParts.Files,
+		templateParts.Content,
+		formatMsg,
+		strings.Join(emoji.GetAllCommitTypes(), ", "),
+		emojiInstruction,
+		templateParts.NoIssues,
+	)
 }
 
 // readTemplateFile reads and parses a template file.
@@ -189,48 +106,33 @@ func readTemplateFile(filePath string) (string, error) {
 }
 
 func GetPromptTemplate(templateName string) (string, error) {
-	if template, ok := builtinTemplates[templateName]; ok {
-		// Generate template dynamically based on enable_emoji config
-		content := buildTemplateContent(templateName)
+	if templateName == "" || templateName == config.DefaultPromptTemplate {
+		content := buildDefaultTemplateContent()
 		if content != "" {
 			return content, nil
 		}
-		// Fallback to stored template if dynamic generation fails
-		if template != "" {
-			return template, nil
+	}
+
+	// Expand ~ to home directory
+	if strings.HasPrefix(templateName, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			templateName = filepath.Join(home, templateName[2:])
 		}
 	}
 
-	if _, err := os.Stat(templateName); err == nil {
-		return readTemplateFile(templateName)
+	info, err := os.Stat(templateName)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("prompt template file not found: %s", templateName)
+		}
+		return "", fmt.Errorf("unable to stat prompt template file %s: %w", templateName, err)
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("prompt template path is a directory: %s", templateName)
 	}
 
-	// Check repo-level prompts directory first (./.gmc/prompts/)
-	cwd, _ := os.Getwd()
-	if cwd != "" {
-		repoPromptsPath := filepath.Join(cwd, ".gmc", "prompts", templateName)
-		if filepath.Ext(repoPromptsPath) == "" {
-			repoPromptsPath += ".yaml"
-		}
-		if _, err := os.Stat(repoPromptsPath); err == nil {
-			return readTemplateFile(repoPromptsPath)
-		}
-	}
-
-	// Fallback to home prompts directory
-	cfg := config.GetConfig()
-	if cfg.PromptsDir != "" {
-		customPath := filepath.Join(cfg.PromptsDir, templateName)
-		if filepath.Ext(customPath) == "" {
-			customPath += ".yaml"
-		}
-
-		if _, err := os.Stat(customPath); err == nil {
-			return readTemplateFile(customPath)
-		}
-	}
-
-	return "", fmt.Errorf("could not find prompt template: %s", templateName)
+	return readTemplateFile(templateName)
 }
 
 func RenderTemplate(templateContent string, data TemplateData) (string, error) {
@@ -245,61 +147,4 @@ func RenderTemplate(templateContent string, data TemplateData) (string, error) {
 	}
 
 	return buf.String(), nil
-}
-
-func GetBuiltinTemplates() map[string]string {
-	result := make(map[string]string)
-	for name := range builtinTemplates {
-		content := buildTemplateContent(name)
-		if content != "" {
-			result[name] = content
-		}
-	}
-	return result
-}
-
-func ListTemplates(dirPath string) ([]string, error) {
-	fi, err := os.Stat(dirPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("directory does not exist: %s", dirPath)
-		}
-		return nil, err
-	}
-
-	if !fi.IsDir() {
-		return nil, fmt.Errorf("path is not a directory: %s", dirPath)
-	}
-
-	files, err := os.ReadDir(dirPath)
-	if err != nil {
-		return nil, err
-	}
-
-	var templates []string
-	for _, file := range files {
-		if file.IsDir() {
-			continue
-		}
-
-		ext := filepath.Ext(file.Name())
-		if ext == ".yaml" || ext == ".yml" {
-			filePath := filepath.Join(dirPath, file.Name())
-			content, err := os.ReadFile(filePath)
-			if err == nil {
-				var tpl PromptTemplate
-				if err := yaml.Unmarshal(content, &tpl); err == nil && tpl.Template != "" {
-					name := file.Name()
-					name = name[:len(name)-len(ext)]
-					if tpl.Name != "" {
-						templates = append(templates, fmt.Sprintf("%s (%s)", name, tpl.Name))
-					} else {
-						templates = append(templates, name)
-					}
-				}
-			}
-		}
-	}
-
-	return templates, nil
 }

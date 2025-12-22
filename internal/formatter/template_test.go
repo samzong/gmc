@@ -5,34 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func TestGetBuiltinTemplates(t *testing.T) {
-	// Enable emoji for testing to match expected behavior
-	viper.Set("enable_emoji", true)
-	defer viper.Set("enable_emoji", false)
-
-	templates := GetBuiltinTemplates()
-
-	assert.NotEmpty(t, templates)
-	assert.Contains(t, templates, "default")
-	assert.Contains(t, templates, "detailed")
-
-	// Check that templates contain expected content
-	defaultTemplate := templates["default"]
-	assert.Contains(t, defaultTemplate, "{{.Role}}")
-	assert.Contains(t, defaultTemplate, "{{.Files}}")
-	assert.Contains(t, defaultTemplate, "{{.Diff}}")
-
-	detailedTemplate := templates["detailed"]
-	assert.Contains(t, detailedTemplate, "{{.Role}}")
-	assert.Contains(t, detailedTemplate, "{{.Files}}")
-	assert.Contains(t, detailedTemplate, "{{.Diff}}")
-	assert.Contains(t, detailedTemplate, "feat: new feature")
-}
 
 func TestGetPromptTemplate_Builtin(t *testing.T) {
 	tests := []struct {
@@ -41,17 +16,17 @@ func TestGetPromptTemplate_Builtin(t *testing.T) {
 		expectError  bool
 	}{
 		{
+			name:         "Empty template name uses default",
+			templateName: "",
+			expectError:  false,
+		},
+		{
 			name:         "Default builtin template",
 			templateName: "default",
 			expectError:  false,
 		},
 		{
-			name:         "Detailed builtin template",
-			templateName: "detailed",
-			expectError:  false,
-		},
-		{
-			name:         "Non-existent builtin template",
+			name:         "Non-existent template",
 			templateName: "nonexistent",
 			expectError:  true,
 		},
@@ -135,32 +110,11 @@ but still {{.Role}} template content`,
 	}
 }
 
-func TestGetPromptTemplate_CustomPromptsDir(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "gmc_prompts_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
-
-	// Create custom template
-	templateContent := `name: "custom_dir_test"
-description: "Template from custom prompts dir"
-template: "Custom dir template: {{.Role}}"`
-
-	templateFile := filepath.Join(tempDir, "custom.yaml")
-	err = os.WriteFile(templateFile, []byte(templateContent), 0644)
-	require.NoError(t, err)
-
-	// This test requires config mock, but for now just test the error path
-	result, err := GetPromptTemplate("custom")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "could not find prompt template")
-	assert.Empty(t, result)
-}
-
 func TestGetPromptTemplate_FileReadError(t *testing.T) {
 	// Test with non-existent file
 	result, err := GetPromptTemplate("/non/existent/path/template.yaml")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "could not find prompt template")
+	assert.Contains(t, err.Error(), "prompt template file not found")
 	assert.Empty(t, result)
 
 	// Test file that exists but can't be read (permissions)
@@ -250,68 +204,6 @@ func TestRenderTemplate(t *testing.T) {
 	}
 }
 
-func TestListTemplates(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "gmc_list_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
-
-	// Create test template files
-	templates := map[string]string{
-		"template1.yaml": `name: "template1"
-description: "First template"
-template: "Template 1 content {{.Role}}"`,
-		"template2.yml": `name: "template2"
-description: "Second template"  
-template: "Template 2 content {{.Files}}"`,
-		"invalid.yaml":    `invalid yaml content [`,
-		"nottemplate.txt": "This is not a template file",
-		"empty.yaml": `name: ""
-template: ""`, // Empty template should be ignored
-	}
-
-	for filename, content := range templates {
-		err := os.WriteFile(filepath.Join(tempDir, filename), []byte(content), 0644)
-		require.NoError(t, err)
-	}
-
-	// Create a subdirectory that should be ignored
-	subDir := filepath.Join(tempDir, "subdir")
-	err = os.MkdirAll(subDir, 0755)
-	require.NoError(t, err)
-
-	result, err := ListTemplates(tempDir)
-	require.NoError(t, err)
-
-	// Should find valid templates
-	assert.Contains(t, result, "template1 (template1)")
-	assert.Contains(t, result, "template2 (template2)")
-
-	// Should not contain invalid or non-template files
-	assert.NotContains(t, result, "invalid")
-	assert.NotContains(t, result, "nottemplate")
-	assert.NotContains(t, result, "empty")
-	assert.NotContains(t, result, "subdir")
-}
-
-func TestListTemplates_NonExistentDirectory(t *testing.T) {
-	result, err := ListTemplates("/non/existent/directory")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "directory does not exist")
-	assert.Nil(t, result)
-}
-
-func TestListTemplates_FileInsteadOfDirectory(t *testing.T) {
-	tempFile, err := os.CreateTemp("", "notdir")
-	require.NoError(t, err)
-	defer os.Remove(tempFile.Name())
-	tempFile.Close()
-
-	result, err := ListTemplates(tempFile.Name())
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "path is not a directory")
-	assert.Nil(t, result)
-}
-
 func TestTemplateData(t *testing.T) {
 	data := TemplateData{
 		Role:  "Senior Go Developer",
@@ -382,9 +274,4 @@ template: |
 	assert.Contains(t, renderedResult, "internal/formatter/formatter.go")
 	assert.Contains(t, renderedResult, "internal/formatter/template.go")
 	assert.Contains(t, renderedResult, "+func NewFunction() {}")
-
-	// Test listing templates in the directory
-	templates, err := ListTemplates(tempDir)
-	require.NoError(t, err)
-	assert.Contains(t, templates, "workflow_test (workflow_test)")
 }

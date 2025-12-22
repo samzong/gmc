@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/samzong/gmc/internal/config"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -311,11 +310,14 @@ template: |
 	err = os.WriteFile(templateFile, []byte(customTemplate), 0644)
 	require.NoError(t, err)
 
-	// Mock config to use custom template
-	_ = config.GetConfig() // Just to ensure config is initialized
+	// Use custom template path for this test
+	prevTemplate := viper.GetString("prompt_template")
+	viper.Set("prompt_template", templateFile)
+	defer viper.Set("prompt_template", prevTemplate)
 
 	// Test that custom template path works
 	result := BuildPrompt("Test Developer", []string{"file.go"}, "diff content", "")
+	assert.Contains(t, result, "Custom template for Test Developer.")
 	assert.Contains(t, result, "Test Developer")
 	assert.Contains(t, result, "file.go")
 	assert.Contains(t, result, "diff content")

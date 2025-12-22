@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -19,16 +18,14 @@ func TestConfig_Struct(t *testing.T) {
 		Model:          "gpt-4",
 		APIKey:         "test-key",
 		APIBase:        "https://api.openai.com/v1",
-		PromptTemplate: "detailed",
-		PromptsDir:     "/test/prompts",
+		PromptTemplate: "/test/prompts/custom.yaml",
 	}
 
 	assert.Equal(t, "Senior Go Developer", cfg.Role)
 	assert.Equal(t, "gpt-4", cfg.Model)
 	assert.Equal(t, "test-key", cfg.APIKey)
 	assert.Equal(t, "https://api.openai.com/v1", cfg.APIBase)
-	assert.Equal(t, "detailed", cfg.PromptTemplate)
-	assert.Equal(t, "/test/prompts", cfg.PromptsDir)
+	assert.Equal(t, "/test/prompts/custom.yaml", cfg.PromptTemplate)
 }
 
 func TestDefaults(t *testing.T) {
@@ -140,10 +137,6 @@ prompt_template: "default"`
 	assert.Equal(t, "", viper.GetString("api_key"))
 	assert.Equal(t, "", viper.GetString("api_base"))
 	assert.Equal(t, DefaultPromptTemplate, viper.GetString("prompt_template"))
-
-	// Check prompts directory contains home path
-	promptsDir := viper.GetString("prompts_dir")
-	assert.Contains(t, promptsDir, ".gmc/prompts")
 }
 
 func TestInitConfig_CreateNewConfigFile(t *testing.T) {
@@ -179,8 +172,7 @@ func TestInitConfig_ExistingConfigFile(t *testing.T) {
 model: "gpt-4"
 api_key: "existing-key"
 api_base: "https://api.custom.com/v1"
-prompt_template: "detailed"
-prompts_dir: "/custom/prompts"`
+prompt_template: "/custom/prompt.yaml"`
 
 	err = os.WriteFile(configFile, []byte(existingConfig), 0644)
 	require.NoError(t, err)
@@ -196,8 +188,7 @@ prompts_dir: "/custom/prompts"`
 	assert.Equal(t, "gpt-4", viper.GetString("model"))
 	assert.Equal(t, "existing-key", viper.GetString("api_key"))
 	assert.Equal(t, "https://api.custom.com/v1", viper.GetString("api_base"))
-	assert.Equal(t, "detailed", viper.GetString("prompt_template"))
-	assert.Equal(t, "/custom/prompts", viper.GetString("prompts_dir"))
+	assert.Equal(t, "/custom/prompt.yaml", viper.GetString("prompt_template"))
 
 	if runtime.GOOS != "windows" {
 		info, err := os.Stat(configFile)
@@ -266,8 +257,7 @@ func TestGetConfig(t *testing.T) {
 	viper.Set("model", "gpt-4")
 	viper.Set("api_key", "test-key")
 	viper.Set("api_base", "https://test-api.com/v1")
-	viper.Set("prompt_template", "test_template")
-	viper.Set("prompts_dir", "/test/prompts")
+	viper.Set("prompt_template", "/test/prompts/test_template.yaml")
 
 	cfg := GetConfig()
 
@@ -275,8 +265,7 @@ func TestGetConfig(t *testing.T) {
 	assert.Equal(t, "gpt-4", cfg.Model)
 	assert.Equal(t, "test-key", cfg.APIKey)
 	assert.Equal(t, "https://test-api.com/v1", cfg.APIBase)
-	assert.Equal(t, "test_template", cfg.PromptTemplate)
-	assert.Equal(t, "/test/prompts", cfg.PromptsDir)
+	assert.Equal(t, "/test/prompts/test_template.yaml", cfg.PromptTemplate)
 }
 
 func TestGetConfig_UnmarshalError(t *testing.T) {
@@ -325,32 +314,6 @@ model: "original-model"`
 
 	assert.Contains(t, string(content), "Modified Role")
 	assert.Contains(t, string(content), "modified-model")
-}
-
-func TestInitConfig_PromptsDirectoryCreation(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "gmc_prompts_dir_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
-
-	configFile := filepath.Join(tempDir, "prompts_test.yaml")
-	promptsDir := filepath.Join(tempDir, "custom_prompts")
-
-	// Create config with custom prompts directory
-	customConfig := fmt.Sprintf(`role: "Developer"
-model: "gpt-3.5-turbo"
-prompts_dir: "%s"`, promptsDir)
-
-	err = os.WriteFile(configFile, []byte(customConfig), 0644)
-	require.NoError(t, err)
-
-	// Reset viper state
-	viper.Reset()
-
-	err = InitConfig(configFile)
-	require.NoError(t, err)
-
-	// Check that prompts directory was created
-	assert.DirExists(t, promptsDir)
 }
 
 func TestInitConfig_CreateConfigDirectoryError(t *testing.T) {

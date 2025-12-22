@@ -16,7 +16,6 @@ type Config struct {
 	APIKey         string `mapstructure:"api_key"`
 	APIBase        string `mapstructure:"api_base"`
 	PromptTemplate string `mapstructure:"prompt_template"`
-	PromptsDir     string `mapstructure:"prompts_dir"`
 	EnableEmoji    bool   `mapstructure:"enable_emoji"`
 }
 
@@ -67,10 +66,6 @@ func InitConfig(cfgFile string) error {
 	viper.SetDefault("prompt_template", DefaultPromptTemplate)
 	viper.SetDefault("enable_emoji", false)
 
-	home, _ := os.UserHomeDir()
-	defaultPromptsDir := filepath.Join(home, ".gmc", "prompts")
-	viper.SetDefault("prompts_dir", defaultPromptsDir)
-
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
@@ -97,13 +92,6 @@ func InitConfig(cfgFile string) error {
 		}
 		if err := enforceConfigFilePermissions(configFilePath); err != nil {
 			return err
-		}
-	}
-
-	promptsDir := viper.GetString("prompts_dir")
-	if promptsDir != "" {
-		if err := os.MkdirAll(promptsDir, 0755); err != nil {
-			fmt.Printf("Warning: Failed to create prompt directory %s: %v\n", promptsDir, err)
 		}
 	}
 
@@ -147,7 +135,6 @@ func GetConfig() *Config {
 			APIKey:         "",
 			APIBase:        "",
 			PromptTemplate: DefaultPromptTemplate,
-			PromptsDir:     filepath.Join(os.Getenv("HOME"), ".gmc", "prompts"),
 			EnableEmoji:    false,
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -476,7 +477,7 @@ func Dup(opts DupOptions) (*DupResult, error) {
 		return nil, fmt.Errorf("failed to find worktree root: %w", err)
 	}
 
-	timestamp := fmt.Sprintf("%d", getCurrentTimestamp())
+	timestamp := strconv.FormatInt(getCurrentTimestamp(), 10)
 	dupResult := &DupResult{
 		Worktrees: make([]string, 0, opts.Count),
 		Branches:  make([]string, 0, opts.Count),

@@ -40,11 +40,10 @@ And Configure other parameters.
 ```bash
 gmc config set role "Backend Developer"
 gmc config set enable_emoji true
-gmc config set prompt_template default   # or detailed
-gmc config set prompts_dir ~/.gmc/prompts
+gmc config set prompt_template default
+gmc config set prompt_template /path/to/prompt.yaml
 
 gmc config get
-gmc config list_templates
 ```
 
 ### Commit workflow
@@ -162,27 +161,15 @@ autoload -Uz compinit && compinit
 
 ## Prompt templates
 
-`gmc` supports prompt templates, allowing you to adjust the style of the generated commit message.
+`gmc` supports a single prompt template override. If `prompt_template` is empty or set to `default`, the built-in template is used.
 
-### Built-in Templates
-
-| Template Name | Description                                                                          |
-| ------------- | ------------------------------------------------------------------------------------ |
-| default       | Standard one-line template for Conventional Commits                                  |
-| detailed      | More prescriptive template (optionally includes emoji mapping guidance)              |
-
-### Custom templates
-
-Custom templates live under `prompts_dir` (default: `~/.gmc/prompts`). Use:
+Set `prompt_template` to a file path to override the built-in template:
 
 ```bash
-gmc config set prompts_dir ~/.gmc/prompts
-gmc config set prompt_template my_template   # resolves ~/.gmc/prompts/my_template.yaml
+gmc config set prompt_template /path/to/my_template.yaml
 ```
 
-You can also set `prompt_template` to an absolute file path.
-
-Create a YAML template file, for example `~/.gmc/prompts/my_template.yaml`:
+Create a YAML template file, for example `/path/to/my_template.yaml`:
 
 ```yaml
 name: "My Template"

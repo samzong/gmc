@@ -102,7 +102,7 @@ var (
 	}
 
 	configSetPromptTemplateCmd = &cobra.Command{
-		Use:   "prompt_template [Template Name or Path]",
+		Use:   "prompt_template [Template Path]",
 		Short: "Set Prompt Template",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -155,24 +155,6 @@ var (
 		},
 	}
 
-	configSetPromptsDirCmd = &cobra.Command{
-		Use:   "prompts_dir [Directory Path]",
-		Short: "Set Prompt Template Directory",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			dir := args[0]
-
-			config.SetConfigValue("prompts_dir", dir)
-
-			if err := config.SaveConfig(); err != nil {
-				return fmt.Errorf("failed to save configuration: %w", err)
-			}
-
-			fmt.Printf("The prompt template directory has been set to: %s\n", dir)
-			return nil
-		},
-	}
-
 	configGetCmd = &cobra.Command{
 		Use:   "get",
 		Short: "Get Current Configuration",
@@ -188,36 +170,7 @@ var (
 				fmt.Println("API Base URL: <Not Set>")
 			}
 			fmt.Printf("Prompt Template: %s\n", cfg.PromptTemplate)
-			fmt.Printf("Prompt Template Directory: %s\n", cfg.PromptsDir)
 			fmt.Printf("Enable Emoji: %v\n", cfg.EnableEmoji)
-		},
-	}
-
-	configListTemplatesCmd = &cobra.Command{
-		Use:   "list_templates",
-		Short: "List All Available Prompt Templates",
-		Run: func(_ *cobra.Command, _ []string) {
-			fmt.Println("Built-in Templates:")
-			for name := range formatter.GetBuiltinTemplates() {
-				fmt.Printf("- %s\n", name)
-			}
-
-			cfg := config.GetConfig()
-			if cfg.PromptsDir != "" {
-				fmt.Printf("\nTemplate Directory (%s):\n", cfg.PromptsDir)
-				templates, err := formatter.ListTemplates(cfg.PromptsDir)
-				if err != nil {
-					fmt.Printf("Failed to read templates: %v\n", err)
-				} else {
-					if len(templates) == 0 {
-						fmt.Println("No templates found")
-					} else {
-						for _, tpl := range templates {
-							fmt.Printf("- %s\n", tpl)
-						}
-					}
-				}
-			}
 		},
 	}
 )
@@ -228,10 +181,8 @@ func init() {
 	configSetCmd.AddCommand(configSetAPIKeyCmd)
 	configSetCmd.AddCommand(configSetAPIBaseCmd)
 	configSetCmd.AddCommand(configSetPromptTemplateCmd)
-	configSetCmd.AddCommand(configSetPromptsDirCmd)
 	configSetCmd.AddCommand(configSetEnableEmojiCmd)
 
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configGetCmd)
-	configCmd.AddCommand(configListTemplatesCmd)
 }
