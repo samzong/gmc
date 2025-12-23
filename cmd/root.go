@@ -68,6 +68,7 @@ func init() {
 		"Additional context or instructions for commit message generation")
 
 	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(initCmd)
 }
 
 func initConfig() {
@@ -169,6 +170,15 @@ func getStagedChanges() (string, []string, error) {
 
 func handleCommitFlow(diff string, changedFiles []string) error {
 	cfg := config.GetConfig()
+
+	proceed, err := ensureLLMConfigured(cfg, os.Stdin, os.Stdout, runInitWizard)
+	if err != nil {
+		return err
+	}
+	if !proceed {
+		return nil
+	}
+	cfg = config.GetConfig()
 
 	return runCommitFlow(cfg, changedFiles, diff, performCommit)
 }

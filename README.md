@@ -27,6 +27,12 @@
 
 `gmc` reads configuration from `~/.gmc.yaml` by default (override with `--config`). On macOS/Linux, the config file is forced to permission `0600`.
 
+If `api_key` is missing, `gmc` will prompt you to run the guided setup. You can also run it anytime:
+
+```bash
+gmc init
+```
+
 First use gmc to set the OpenAI API serivce:
 
 ```bash

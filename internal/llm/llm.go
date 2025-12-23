@@ -130,6 +130,40 @@ func SuggestVersion(baseVersion string, commits []string, model string) (string,
 	return version, reason, nil
 }
 
+func TestConnection(model string) error {
+	client, ctx, cancel, chosenModel, err := newOpenAIClient(model)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+
+	messages := []openai.ChatCompletionMessage{
+		{
+			Role:    openai.ChatMessageRoleUser,
+			Content: "Reply with OK.",
+		},
+	}
+
+	resp, err := client.CreateChatCompletion(
+		ctx,
+		openai.ChatCompletionRequest{
+			Model:       chosenModel,
+			Messages:    messages,
+			MaxTokens:   1,
+			Temperature: 0,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to call LLM: %w", err)
+	}
+
+	if len(resp.Choices) == 0 {
+		return errors.New("LLM returned empty response")
+	}
+
+	return nil
+}
+
 func buildVersionPrompt(baseVersion string, commits []string) string {
 	var builder strings.Builder
 	for i, commit := range commits {
