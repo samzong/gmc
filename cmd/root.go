@@ -379,6 +379,15 @@ func commitStagedFiles(files []string) error {
 func handleSelectiveCommitFlow(diff string, files []string) error {
 	cfg := config.GetConfig()
 
+	proceed, err := ensureLLMConfigured(cfg, os.Stdin, os.Stdout, runInitWizard)
+	if err != nil {
+		return err
+	}
+	if !proceed {
+		return nil
+	}
+	cfg = config.GetConfig()
+
 	return runCommitFlow(cfg, files, diff, func(message string) error {
 		return performSelectiveCommit(message, files)
 	})

@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/samzong/gmc/internal/config"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -147,4 +149,24 @@ func TestEnsureLLMConfigured_InitError(t *testing.T) {
 	})
 	assert.ErrorIs(t, err, expectedErr)
 	assert.False(t, proceed)
+}
+
+func TestHandleSelectiveCommitFlow_MissingKeyDeclineInit(t *testing.T) {
+	originalStdin := os.Stdin
+	r, w, err := os.Pipe()
+	assert.NoError(t, err)
+	_, err = w.WriteString("n\n")
+	assert.NoError(t, err)
+	assert.NoError(t, w.Close())
+	os.Stdin = r
+	defer func() {
+		os.Stdin = originalStdin
+		_ = r.Close()
+	}()
+
+	viper.Reset()
+	viper.Set("api_key", "")
+
+	err = handleSelectiveCommitFlow("diff", []string{"file.go"})
+	assert.NoError(t, err)
 }
