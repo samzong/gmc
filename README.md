@@ -27,7 +27,13 @@
 
 `gmc` reads configuration from `~/.gmc.yaml` by default (override with `--config`). On macOS/Linux, the config file is forced to permission `0600`.
 
-First use gmc to set the OpenAI API serivce:
+Recommended: run the guided setup (or accept the prompt shown on first use):
+
+```bash
+gmc init
+```
+
+Manual configuration (alternative to `gmc init`):
 
 ```bash
 gmc config set apibase https://your-proxy-domain.com/v1
@@ -172,8 +178,8 @@ gmc config set prompt_template /path/to/my_template.yaml
 Create a YAML template file, for example `/path/to/my_template.yaml`:
 
 ```yaml
-name: "My Template"
-description: "My commit message format"
+name: 'My Template'
+description: 'My commit message format'
 template: |
   As a {{.Role}}, please generate a commit message that follows the Conventional Commits specification for the following Git changes:
 

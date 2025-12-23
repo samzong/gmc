@@ -377,6 +377,11 @@ func TestExecute(t *testing.T) {
 	// We can't test the full execution without mocking a lot of dependencies
 	assert.NotNil(t, Execute)
 
+	viper.Reset()
+	viper.Set("api_key", "test-api-key")
+	viper.Set("model", "gpt-3.5-turbo")
+	viper.Set("role", "Developer")
+
 	// Test that it doesn't panic when called (though it will likely error)
 	assert.NotPanics(t, func() {
 		_ = Execute()
@@ -512,6 +517,11 @@ func TestGenerateAndCommit(t *testing.T) {
 		addAll = originalAddAll
 		verbose = originalVerbose
 	}()
+
+	viper.Reset()
+	viper.Set("api_key", "test-api-key")
+	viper.Set("model", "gpt-3.5-turbo")
+	viper.Set("role", "Developer")
 
 	// Test with minimal setup
 	branchDesc = ""
@@ -669,6 +679,11 @@ func TestRootCommandSuccess(t *testing.T) {
 	// Save original configErr
 	originalConfigErr := configErr
 	defer func() { configErr = originalConfigErr }()
+
+	viper.Reset()
+	viper.Set("api_key", "test-api-key")
+	viper.Set("model", "gpt-3.5-turbo")
+	viper.Set("role", "Developer")
 
 	// Clear config error
 	configErr = nil
