@@ -25,7 +25,7 @@
 
 ### Quick start (required config)
 
-`gmc` reads configuration from `~/.gmc.yaml` by default (override with `--config`). On macOS/Linux, the config file is forced to permission `0600`.
+`gmc` reads configuration from `~/.gmc.yaml` by default (override with `--config`). On macOS/Linux, the config file is forced to permission `0600`. You can also place a `.gmc.yaml` in your project directory to override global settings on a per-repo basis.
 
 Recommended: run the guided setup (or accept the prompt shown on first use):
 
@@ -122,6 +122,16 @@ gmc wt remove feature-login -D
 gmc wt clone https://github.com/user/repo.git --name my-project
 ```
 
+`gmc wt clone` creates a `.bare/` directory containing the bare repository plus a worktree for the default branch (e.g., `main/`).
+
+#### Parallel development with dup/promote
+
+```bash
+gmc wt dup              # Create 2 worktrees for parallel AI development
+gmc wt dup 3 -b dev     # Create 3 worktrees based on dev branch
+gmc wt promote .dup-1 feature/best-solution  # Rename temp branch to permanent
+```
+
 This is designed for the `.bare` + worktree pattern. See `docs/auto-bare-worktree.md`.
 
 #### Open source (fork + upstream) workflow
@@ -202,7 +212,7 @@ You can use the following variables in the template:
 
 - `{{.Role}}`: The user configured role
 - `{{.Files}}`: Changed files (newline-separated)
-- `{{.Diff}}`: Staged diff (may be truncated for very large diffs)
+- `{{.Diff}}`: Staged diff (truncated to 4000 characters for very large diffs)
 
 ## License
 

@@ -59,21 +59,18 @@ When executing `gmc wt`, display the current worktree list + common command help
 ```bash
 $ gmc wt
 
-📂 Current Worktrees:
-┌───────────────┬─────────────────────────────┬──────────┐
-│ Branch        │ Path                        │ Status   │
-├───────────────┼─────────────────────────────┼──────────┤
-│ main          │ ./main                      │ clean    │
-│ feature-x     │ ./feature-x                 │ modified │
-└───────────────┴─────────────────────────────┴──────────┘
+Current Worktrees:
+NAME          BRANCH        STATUS
+main          main          clean
+feature-x     feature-x     modified
 
-💡 Common Commands:
+Common Commands:
   gmc wt add <branch>      Create new worktree with branch
   gmc wt add <branch> -b   Create based on specific branch
   gmc wt rm <name>         Remove worktree (keeps branch)
   gmc wt rm <name> -D      Remove worktree and delete branch
 
-📍 You are here: ./feature-x (branch: feature-x)
+You are here: ./feature-x (branch: feature-x)
 ```
 
 ### Subcommand Design
@@ -119,13 +116,10 @@ gmc wt list              # List all worktrees
 gmc wt ls                # Shorthand
 
 # Output format (same as the list portion when gmc wt has no arguments)
-# ┌────────────────┬──────────────────────────────────┬──────────┐
-# │ Branch         │ Path                             │ Status   │
-# ├────────────────┼──────────────────────────────────┼──────────┤
-# │ main           │ /path/to/project/main            │ clean    │
-# │ feature-x      │ /path/to/project/feature-x       │ modified │
-# │ hotfix-y       │ /path/to/project/hotfix-y        │ clean    │
-# └────────────────┴──────────────────────────────────┴──────────┘
+# NAME          BRANCH        STATUS
+# main          main          clean
+# feature-x     feature-x     modified
+# hotfix-y      hotfix-y      clean
 ```
 
 ---
@@ -148,6 +142,40 @@ gmc wt rm <name> -f
 ```
 
 > **Design Principle**: Consistent with `git worktree remove`, preserves branch by default. Deleting branch requires explicitly specifying the `-D` option to prevent accidental deletion.
+
+---
+
+#### `gmc wt dup` - Create Multiple Worktrees for Parallel Development
+
+**Core Function**: Create multiple worktrees with temporary branches for parallel AI development.
+
+```bash
+# Basic usage: Create 2 worktrees based on main
+gmc wt dup
+
+# Specify count and base branch
+gmc wt dup 3           # Create 3 worktrees based on main
+gmc wt dup -b dev      # Create 2 worktrees based on dev
+gmc wt dup 3 -b dev    # Create 3 worktrees based on dev
+```
+
+Each worktree gets a temporary branch (`_dup/<base>/<timestamp>-<n>`) that can be promoted to a permanent name later.
+
+---
+
+#### `gmc wt promote` - Rename Temporary Branch to Permanent Name
+
+**Core Function**: Rename the temporary branch of a worktree to a permanent branch name.
+
+```bash
+gmc wt promote <worktree> <branch-name>
+
+# Examples
+gmc wt promote .dup-2 feature/add-auth
+gmc wt promote .dup-1 fix/login-bug
+```
+
+Use this after evaluating parallel development results to keep the best solution.
 
 ---
 
