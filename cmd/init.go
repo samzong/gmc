@@ -34,9 +34,7 @@ var (
 		return config.SaveConfig()
 	}
 
-	testLLMConnection = func(model string) error {
-		return llm.TestConnection(model)
-	}
+	testLLMConnection = llm.TestConnection
 )
 
 func runInitWizard(in io.Reader, out io.Writer, current *config.Config) error {
@@ -140,7 +138,10 @@ func runInitWizard(in io.Reader, out io.Writer, current *config.Config) error {
 	}
 }
 
-func ensureLLMConfigured(cfg *config.Config, in io.Reader, out io.Writer, initRunner func(io.Reader, io.Writer, *config.Config) error) (bool, error) {
+func ensureLLMConfigured(
+	cfg *config.Config, in io.Reader, out io.Writer,
+	initRunner func(io.Reader, io.Writer, *config.Config) error,
+) (bool, error) {
 	current := cfg
 	if current == nil {
 		current = config.GetConfig()

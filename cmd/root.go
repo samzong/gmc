@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -53,16 +52,6 @@ var (
 	}
 )
 
-var (
-	// globalCtx holds the context passed from main for signal handling
-	globalCtx context.Context
-)
-
-// SetContext sets the global context for signal handling
-func SetContext(ctx context.Context) {
-	globalCtx := ctx
-}
-
 // RootCmd returns the root command for doc generation
 func RootCmd() *cobra.Command {
 	return rootCmd
@@ -75,7 +64,8 @@ func Execute() error {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "Configuration file path (default: $XDG_CONFIG_HOME/gmc/config.yaml)")
+	rootCmd.PersistentFlags().StringVar(
+		&cfgFile, "config", "", "Config file (default: $XDG_CONFIG_HOME/gmc/config.yaml)")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Enable debug output")
 
 	// Use -V for version (freeing -v for verbose, industry convention)
@@ -331,7 +321,8 @@ func getUserConfirmation(message string) (string, string, error) {
 		return "", "", errors.New("stdin is not a terminal, use --yes to skip interactive confirmation")
 	}
 
-	fmt.Fprint(os.Stderr, "\nDo you want to proceed with this commit message? [y/n/r/e] (y=yes, n=no, r=regenerate, e=edit): ")
+	fmt.Fprint(os.Stderr,
+		"\nDo you want to proceed with this commit message? [y/n/r/e] (y/n/r=regenerate/e=edit): ")
 	reader := bufio.NewReader(os.Stdin)
 	response, err := reader.ReadString('\n')
 	if err != nil {
