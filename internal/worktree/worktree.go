@@ -63,6 +63,7 @@ type AddOptions struct {
 type RemoveOptions struct {
 	Force        bool // Force removal even if dirty
 	DeleteBranch bool // Also delete the branch
+	DryRun       bool // Preview what would be done without making changes
 }
 
 // DetectRepositoryType detects the type of git repository in the current or specified directory
@@ -357,6 +358,21 @@ func Remove(name string, opts RemoveOptions) error {
 		return errors.New("cannot remove the main bare worktree")
 	}
 
+	// Dry run: preview what would be done
+	if opts.DryRun {
+		status := GetWorktreeStatus(targetPath)
+		fmt.Fprintf(os.Stderr, "Would remove worktree: %s\n", targetPath)
+		fmt.Fprintf(os.Stderr, "  Branch: %s\n", wtInfo.Branch)
+		fmt.Fprintf(os.Stderr, "  Status: %s\n", status)
+		if opts.DeleteBranch && wtInfo.Branch != "" && wtInfo.Branch != "(detached)" {
+			fmt.Fprintf(os.Stderr, "Would delete branch: %s\n", wtInfo.Branch)
+		}
+		if status == "modified" && !opts.Force {
+			fmt.Fprintln(os.Stderr, "Note: Worktree has uncommitted changes. Use -f to force removal.")
+		}
+		return nil
+	}
+
 	// Remove worktree
 	args := []string{"worktree", "remove"}
 	if opts.Force {
@@ -373,7 +389,7 @@ func Remove(name string, opts RemoveOptions) error {
 		return fmt.Errorf("failed to remove worktree: %w", err)
 	}
 
-	fmt.Printf("Removed worktree '%s'\n", name)
+	fmt.Fprintf(os.Stderr, "Removed worktree '%s'\n", name)
 
 	// Optionally delete branch
 	if opts.DeleteBranch && wtInfo.Branch != "" && wtInfo.Branch != "(detached)" {
@@ -387,7 +403,7 @@ func Remove(name string, opts RemoveOptions) error {
 			return fmt.Errorf("failed to delete branch: %w", err)
 		}
 
-		fmt.Printf("Deleted branch '%s'\n", wtInfo.Branch)
+		fmt.Fprintf(os.Stderr, "Deleted branch '%s'\n", wtInfo.Branch)
 	}
 
 	return nil

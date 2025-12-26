@@ -15,6 +15,7 @@ var (
 	wtBaseBranch   string
 	wtForce        bool
 	wtDeleteBranch bool
+	wtDryRun       bool
 	wtUpstream     string
 	wtProjectName  string
 )
@@ -75,7 +76,8 @@ Use -D to also delete the branch.
 Examples:
   gmc wt remove feature-login      # Remove worktree, keep branch
   gmc wt rm feature-login -D       # Remove worktree and delete branch
-  gmc wt rm feature-login -f       # Force remove (ignore dirty state)`,
+  gmc wt rm feature-login -f       # Force remove (ignore dirty state)
+  gmc wt rm feature-login --dry-run  # Preview what would be removed`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		worktree.Verbose = verbose
@@ -156,6 +158,7 @@ func init() {
 	// Flags for remove command
 	wtRemoveCmd.Flags().BoolVarP(&wtForce, "force", "f", false, "Force removal even if worktree is dirty")
 	wtRemoveCmd.Flags().BoolVarP(&wtDeleteBranch, "delete-branch", "D", false, "Also delete the branch")
+	wtRemoveCmd.Flags().BoolVar(&wtDryRun, "dry-run", false, "Preview what would be removed without making changes")
 
 	// Flags for clone command
 	wtCloneCmd.Flags().StringVar(&wtUpstream, "upstream", "", "Upstream repository URL (for fork workflow)")
@@ -174,7 +177,7 @@ func runWorktreeDefault() error {
 
 	// If not using bare worktree pattern, show status + help
 	if !isBareWorktree {
-		fmt.Println("Current repository is not using the bare worktree pattern.")
+		fmt.Fprintln(os.Stderr, "Current repository is not using the bare worktree pattern.")
 		return nil
 	}
 
@@ -187,24 +190,24 @@ func runWorktreeDefault() error {
 	// Filter out bare worktrees
 	filtered := filterBareWorktrees(worktrees)
 
-	fmt.Println("Current Worktrees:")
+	fmt.Fprintln(os.Stderr, "Current Worktrees:")
 	printWorktreeTable(filtered)
 
 	// Print common commands
-	fmt.Println()
-	fmt.Println("Common Commands:")
-	fmt.Println("  gmc wt add <branch>      Create new worktree with branch")
-	fmt.Println("  gmc wt add <branch> -b   Create based on specific branch")
-	fmt.Println("  gmc wt rm <name>         Remove worktree (keeps branch)")
-	fmt.Println("  gmc wt rm <name> -D      Remove worktree and delete branch")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Common Commands:")
+	fmt.Fprintln(os.Stderr, "  gmc wt add <branch>      Create new worktree with branch")
+	fmt.Fprintln(os.Stderr, "  gmc wt add <branch> -b   Create based on specific branch")
+	fmt.Fprintln(os.Stderr, "  gmc wt rm <name>         Remove worktree (keeps branch)")
+	fmt.Fprintln(os.Stderr, "  gmc wt rm <name> -D      Remove worktree and delete branch")
 
 	// Show current location
 	cwd, err := os.Getwd()
 	if err == nil {
 		for _, wt := range filtered {
 			if strings.HasPrefix(cwd, wt.Path) {
-				fmt.Println()
-				fmt.Printf("You are here: ./%s (branch: %s)\n", filepath.Base(wt.Path), wt.Branch)
+				fmt.Fprintln(os.Stderr)
+				fmt.Fprintf(os.Stderr, "You are here: ./%s (branch: %s)\n", filepath.Base(wt.Path), wt.Branch)
 				break
 			}
 		}
@@ -244,7 +247,7 @@ func runWorktreeList() error {
 	filtered := filterBareWorktrees(worktrees)
 
 	if len(filtered) == 0 {
-		fmt.Println("No worktrees found.")
+		fmt.Fprintln(os.Stderr, "No worktrees found.")
 		return nil
 	}
 
@@ -256,6 +259,7 @@ func runWorktreeRemove(name string) error {
 	opts := worktree.RemoveOptions{
 		Force:        wtForce,
 		DeleteBranch: wtDeleteBranch,
+		DryRun:       wtDryRun,
 	}
 	return worktree.Remove(name, opts)
 }
@@ -291,7 +295,7 @@ func printWorktreeTable(worktrees []worktree.WorktreeInfo) {
 	maxBranch += 2
 
 	// Print header
-	fmt.Printf("%-*s %-*s %s\n", maxName, "NAME", maxBranch, "BRANCH", "STATUS")
+	fmt.Fprintf(os.Stderr, "%-*s %-*s %s\n", maxName, "NAME", maxBranch, "BRANCH", "STATUS")
 
 	// Print rows
 	for _, wt := range worktrees {
@@ -300,7 +304,7 @@ func printWorktreeTable(worktrees []worktree.WorktreeInfo) {
 		if wt.IsBare {
 			status = "bare"
 		}
-		fmt.Printf("%-*s %-*s %s\n", maxName, name, maxBranch, wt.Branch, status)
+		fmt.Fprintf(os.Stderr, "%-*s %-*s %s\n", maxName, name, maxBranch, wt.Branch, status)
 	}
 }
 
@@ -323,16 +327,16 @@ func runWorktreeDup(args []string) error {
 		return err
 	}
 
-	fmt.Printf("Created %d worktrees based on '%s':\n", len(result.Worktrees), opts.BaseBranch)
+	fmt.Fprintf(os.Stderr, "Created %d worktrees based on '%s':\n", len(result.Worktrees), opts.BaseBranch)
 	for i, wt := range result.Worktrees {
-		fmt.Printf("  %s -> %s\n", wt, result.Branches[i])
+		fmt.Fprintf(os.Stderr, "  %s -> %s\n", wt, result.Branches[i])
 	}
-	fmt.Println()
-	fmt.Println("Next steps:")
-	fmt.Println("  1. Work in each directory with different AI tools")
-	fmt.Println("  2. Evaluate and pick the best solution")
-	fmt.Printf("  3. Run: gmc wt promote <worktree> <branch-name>\n")
-	fmt.Println("  4. Clean up: gmc wt rm <other-worktrees> -D")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Next steps:")
+	fmt.Fprintln(os.Stderr, "  1. Work in each directory with different AI tools")
+	fmt.Fprintln(os.Stderr, "  2. Evaluate and pick the best solution")
+	fmt.Fprintf(os.Stderr, "  3. Run: gmc wt promote <worktree> <branch-name>\n")
+	fmt.Fprintln(os.Stderr, "  4. Clean up: gmc wt rm <other-worktrees> -D")
 
 	return nil
 }

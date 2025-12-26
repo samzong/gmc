@@ -1,14 +1,21 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 
+	"github.com/mattn/go-isatty"
 	"github.com/samzong/gmc/internal/config"
 	"github.com/samzong/gmc/internal/formatter"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var (
+	configOutputJSON bool
+
 	configCmd = &cobra.Command{
 		Use:   "config",
 		Short: "Manage gmc configuration",
@@ -38,7 +45,7 @@ var (
 				return fmt.Errorf("failed to save configuration: %w", err)
 			}
 
-			fmt.Printf("The role has been set to: %s\n", role)
+			fmt.Fprintf(os.Stderr, "The role has been set to: %s\n", role)
 			return nil
 		},
 	}
@@ -59,17 +66,38 @@ var (
 				return fmt.Errorf("failed to save configuration: %w", err)
 			}
 
-			fmt.Printf("The model has been set to: %s\n", model)
+			fmt.Fprintf(os.Stderr, "The model has been set to: %s\n", model)
 			return nil
 		},
 	}
 
 	configSetAPIKeyCmd = &cobra.Command{
-		Use:   "apikey [API Key]",
-		Short: "Set OpenAI API Key",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			apiKey := args[0]
+		Use:   "apikey",
+		Short: "Set OpenAI API Key (interactive, hidden input)",
+		Long: `Set OpenAI API Key securely with hidden input.
+
+For security, the key must be entered interactively (input is hidden).
+This command requires a terminal.
+
+Usage:
+  gmc config set apikey`,
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd()) {
+				return fmt.Errorf("this command requires an interactive terminal")
+			}
+
+			fmt.Fprint(os.Stderr, "Enter API Key: ")
+			keyBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
+			fmt.Fprintln(os.Stderr) // newline after hidden input
+			if err != nil {
+				return fmt.Errorf("failed to read API key: %w", err)
+			}
+
+			apiKey := strings.TrimSpace(string(keyBytes))
+			if apiKey == "" {
+				return fmt.Errorf("API key cannot be empty")
+			}
 
 			config.SetConfigValue("api_key", apiKey)
 
@@ -77,7 +105,7 @@ var (
 				return fmt.Errorf("failed to save configuration: %w", err)
 			}
 
-			fmt.Println("The API key has been set")
+			fmt.Fprintln(os.Stderr, "The API key has been set")
 			return nil
 		},
 	}
@@ -95,8 +123,8 @@ var (
 				return fmt.Errorf("failed to save configuration: %w", err)
 			}
 
-			fmt.Println("The API base URL has been set to:", apiBase)
-			fmt.Println("Note: This setting is used for proxy OpenAI API, leave it empty if you don't need a proxy")
+			fmt.Fprintln(os.Stderr, "The API base URL has been set to:", apiBase)
+			fmt.Fprintln(os.Stderr, "Note: This setting is used for proxy OpenAI API, leave it empty if you don't need a proxy")
 			return nil
 		},
 	}
@@ -119,7 +147,7 @@ var (
 				return fmt.Errorf("failed to save configuration: %w", err)
 			}
 
-			fmt.Printf("The prompt template has been set to: %s\n", templateName)
+			fmt.Fprintf(os.Stderr, "The prompt template has been set to: %s\n", templateName)
 			return nil
 		},
 	}
@@ -147,9 +175,9 @@ var (
 			}
 
 			if enableEmoji {
-				fmt.Println("Emoji support has been enabled")
+				fmt.Fprintln(os.Stderr, "Emoji support has been enabled")
 			} else {
-				fmt.Println("Emoji support has been disabled")
+				fmt.Fprintln(os.Stderr, "Emoji support has been disabled")
 			}
 			return nil
 		},
@@ -158,22 +186,50 @@ var (
 	configGetCmd = &cobra.Command{
 		Use:   "get",
 		Short: "Get Current Configuration",
-		Run: func(_ *cobra.Command, _ []string) {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			cfg := config.GetConfig()
-			fmt.Println("Current Configuration:")
-			fmt.Printf("Role: %s\n", cfg.Role)
-			fmt.Printf("Model: %s\n", cfg.Model)
-			fmt.Println("API Key: ********")
-			if cfg.APIBase != "" {
-				fmt.Printf("API Base URL: %s\n", cfg.APIBase)
-			} else {
-				fmt.Println("API Base URL: <Not Set>")
+
+			if configOutputJSON {
+				// JSON output to stdout for machine consumption
+				output := configJSONOutput{
+					Role:           cfg.Role,
+					Model:          cfg.Model,
+					APIKeySet:      cfg.APIKey != "",
+					APIBase:        cfg.APIBase,
+					PromptTemplate: cfg.PromptTemplate,
+					EnableEmoji:    cfg.EnableEmoji,
+				}
+				encoder := json.NewEncoder(os.Stdout)
+				encoder.SetIndent("", "  ")
+				return encoder.Encode(output)
 			}
-			fmt.Printf("Prompt Template: %s\n", cfg.PromptTemplate)
-			fmt.Printf("Enable Emoji: %v\n", cfg.EnableEmoji)
+
+			// Human-readable output to stderr
+			fmt.Fprintln(os.Stderr, "Current Configuration:")
+			fmt.Fprintf(os.Stderr, "Role: %s\n", cfg.Role)
+			fmt.Fprintf(os.Stderr, "Model: %s\n", cfg.Model)
+			fmt.Fprintln(os.Stderr, "API Key: ********")
+			if cfg.APIBase != "" {
+				fmt.Fprintf(os.Stderr, "API Base URL: %s\n", cfg.APIBase)
+			} else {
+				fmt.Fprintln(os.Stderr, "API Base URL: <Not Set>")
+			}
+			fmt.Fprintf(os.Stderr, "Prompt Template: %s\n", cfg.PromptTemplate)
+			fmt.Fprintf(os.Stderr, "Enable Emoji: %v\n", cfg.EnableEmoji)
+			return nil
 		},
 	}
 )
+
+// configJSONOutput is the JSON structure for config get --json
+type configJSONOutput struct {
+	Role           string `json:"role"`
+	Model          string `json:"model"`
+	APIKeySet      bool   `json:"api_key_set"`
+	APIBase        string `json:"api_base"`
+	PromptTemplate string `json:"prompt_template"`
+	EnableEmoji    bool   `json:"enable_emoji"`
+}
 
 func init() {
 	configSetCmd.AddCommand(configSetRoleCmd)
@@ -182,6 +238,8 @@ func init() {
 	configSetCmd.AddCommand(configSetAPIBaseCmd)
 	configSetCmd.AddCommand(configSetPromptTemplateCmd)
 	configSetCmd.AddCommand(configSetEnableEmojiCmd)
+
+	configGetCmd.Flags().BoolVar(&configOutputJSON, "json", false, "Output configuration in JSON format")
 
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configGetCmd)

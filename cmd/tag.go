@@ -2,11 +2,13 @@ package cmd
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
+	"github.com/mattn/go-isatty"
 	"github.com/samzong/gmc/internal/config"
 	"github.com/samzong/gmc/internal/git"
 	"github.com/samzong/gmc/internal/llm"
@@ -16,6 +18,12 @@ import (
 
 var (
 	tagAutoYes bool
+
+	// isStdinTerminal is a function to check if stdin is a terminal.
+	// It can be overridden in tests.
+	isStdinTerminal = func() bool {
+		return isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd())
+	}
 
 	tagCmd = &cobra.Command{
 		Use:   "tag",
@@ -60,9 +68,9 @@ func runTagCommand() error {
 
 	if len(commits) == 0 {
 		if lastTag == "" {
-			fmt.Println("No commits found in the repository; nothing to tag yet.")
+			fmt.Fprintln(os.Stderr, "No commits found in the repository; nothing to tag yet.")
 		} else {
-			fmt.Printf("No new commits since %s; no tag created.\n", lastTag)
+			fmt.Fprintf(os.Stderr, "No new commits since %s; no tag created.\n", lastTag)
 		}
 		return nil
 	}
@@ -82,11 +90,11 @@ func runTagCommand() error {
 		displayTag = "initial commit"
 	}
 
-	fmt.Printf("Commits since %s (%d total):\n", displayTag, len(commits))
+	fmt.Fprintf(os.Stderr, "Commits since %s (%d total):\n", displayTag, len(commits))
 	for _, commit := range commits {
-		fmt.Printf("  - %s\n", commit.Message)
+		fmt.Fprintf(os.Stderr, "  - %s\n", commit.Message)
 	}
-	fmt.Println()
+	fmt.Fprintln(os.Stderr)
 
 	ruleResult := version.SuggestWithRules(baseVersion, commits)
 	finalVersion := ruleResult.NextVersion
@@ -141,19 +149,19 @@ func runTagCommand() error {
 		}
 	}
 
-	fmt.Printf("Suggested version (%s): %s\n", source, finalVersion.String())
+	fmt.Fprintf(os.Stderr, "Suggested version (%s): %s\n", source, finalVersion.String())
 	if strings.TrimSpace(finalReason) != "" {
-		fmt.Printf("Reason: %s\n", finalReason)
+		fmt.Fprintf(os.Stderr, "Reason: %s\n", finalReason)
 	}
-	fmt.Println()
+	fmt.Fprintln(os.Stderr)
 
 	if lastTag != "" && finalVersion.Equal(baseVersion) {
-		fmt.Println("No version bump recommended. No tag created.")
+		fmt.Fprintln(os.Stderr, "No version bump recommended. No tag created.")
 		return nil
 	}
 
 	if lastTag == "" && finalVersion.Equal(baseVersion) {
-		fmt.Printf("Suggested version matches base version %s; skipping tag creation.\n", baseVersion.String())
+		fmt.Fprintf(os.Stderr, "Suggested version matches base version %s; skipping tag creation.\n", baseVersion.String())
 		return nil
 	}
 
@@ -163,7 +171,7 @@ func runTagCommand() error {
 	}
 
 	if !confirmed {
-		fmt.Println("Tag creation cancelled.")
+		fmt.Fprintln(os.Stderr, "Tag creation cancelled.")
 		return nil
 	}
 
@@ -176,18 +184,22 @@ func runTagCommand() error {
 		return fmt.Errorf("failed to create tag: %w", err)
 	}
 
-	fmt.Printf("Tag %s created successfully.\n", finalVersion.String())
-	fmt.Printf("Hint: run `git push origin %s` to share the tag.\n", finalVersion.String())
+	fmt.Fprintf(os.Stderr, "Tag %s created successfully.\n", finalVersion.String())
+	fmt.Fprintf(os.Stderr, "Hint: run `git push origin %s` to share the tag.\n", finalVersion.String())
 	return nil
 }
 
 func confirmTagCreation(tag string) (bool, error) {
 	if tagAutoYes {
-		fmt.Println("Auto-confirming tag creation (-y flag is set)")
+		fmt.Fprintln(os.Stderr, "Auto-confirming tag creation (-y flag is set)")
 		return true, nil
 	}
 
-	fmt.Printf("Create tag %s? [y/N]: ", tag)
+	if !isStdinTerminal() {
+		return false, errors.New("stdin is not a terminal, use --yes to skip interactive confirmation")
+	}
+
+	fmt.Fprintf(os.Stderr, "Create tag %s? [y/N]: ", tag)
 	reader := bufio.NewReader(os.Stdin)
 	input, err := reader.ReadString('\n')
 	if err != nil {

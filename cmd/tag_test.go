@@ -21,6 +21,10 @@ func TestConfirmTagCreationUserInput(t *testing.T) {
 	original := tagAutoYes
 	defer func() { tagAutoYes = original }()
 
+	originalIsStdinTerminal := isStdinTerminal
+	defer func() { isStdinTerminal = originalIsStdinTerminal }()
+	isStdinTerminal = func() bool { return true }
+
 	tagAutoYes = false
 
 	// Mock stdin with affirmative answer
@@ -45,6 +49,10 @@ func TestConfirmTagCreationUserInput(t *testing.T) {
 func TestConfirmTagCreationDecline(t *testing.T) {
 	original := tagAutoYes
 	defer func() { tagAutoYes = original }()
+
+	originalIsStdinTerminal := isStdinTerminal
+	defer func() { isStdinTerminal = originalIsStdinTerminal }()
+	isStdinTerminal = func() bool { return true }
 
 	tagAutoYes = false
 

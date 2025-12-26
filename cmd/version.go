@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -15,7 +16,7 @@ var (
 		Use:   "version",
 		Short: "Show gmc version information",
 		Run: func(_ *cobra.Command, _ []string) {
-			fmt.Printf("gmc version %s (built at %s)\n", Version, BuildTime)
+			fmt.Fprintf(os.Stderr, "gmc version %s (built at %s)\n", Version, BuildTime)
 		},
 	}
 )

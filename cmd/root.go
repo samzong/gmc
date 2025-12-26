@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/mattn/go-isatty"
 	"github.com/samzong/gmc/internal/branch"
 	"github.com/samzong/gmc/internal/config"
 	"github.com/samzong/gmc/internal/formatter"
@@ -130,11 +131,11 @@ func handleBranchCreation() error {
 		return errors.New("invalid branch description: cannot generate branch name")
 	}
 
-	fmt.Printf("Creating and switching to branch: %s\n", branchName)
+	fmt.Fprintf(os.Stderr, "Creating and switching to branch: %s\n", branchName)
 	if err := git.CreateAndSwitchBranch(branchName); err != nil {
 		return fmt.Errorf("failed to create branch: %w", err)
 	}
-	fmt.Println("Successfully created and switched to new branch!")
+	fmt.Fprintln(os.Stderr, "Successfully created and switched to new branch!")
 	return nil
 }
 
@@ -146,7 +147,7 @@ func handleStaging() error {
 	if err := git.AddAll(); err != nil {
 		return fmt.Errorf("git add failed: %w", err)
 	}
-	fmt.Println("All changes have been added to the staging area.")
+	fmt.Fprintln(os.Stderr, "All changes have been added to the staging area.")
 	return nil
 }
 
@@ -171,7 +172,7 @@ func getStagedChanges() (string, []string, error) {
 func handleCommitFlow(diff string, changedFiles []string) error {
 	cfg := config.GetConfig()
 
-	proceed, err := ensureLLMConfigured(cfg, os.Stdin, os.Stdout, runInitWizard)
+	proceed, err := ensureLLMConfigured(cfg, os.Stdin, os.Stderr, runInitWizard)
 	if err != nil {
 		return err
 	}
@@ -195,18 +196,22 @@ func generateCommitMessage(cfg *config.Config, changedFiles []string, diff strin
 		formattedMessage = fmt.Sprintf("%s (#%s)", formattedMessage, issueNum)
 	}
 
-	fmt.Println("\nGenerated Commit Message:")
+	fmt.Fprintln(os.Stderr, "\nGenerated Commit Message:")
 	fmt.Println(formattedMessage)
 	return formattedMessage, nil
 }
 
 func getUserConfirmation(message string) (string, string, error) {
 	if autoYes {
-		fmt.Println("Auto-confirming commit message (-y flag is set)")
+		fmt.Fprintln(os.Stderr, "Auto-confirming commit message (-y flag is set)")
 		return "commit", "", nil
 	}
 
-	fmt.Print("\nDo you want to proceed with this commit message? [y/n/r/e] (y=yes, n=no, r=regenerate, e=edit): ")
+	if !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd()) {
+		return "", "", errors.New("stdin is not a terminal, use --yes to skip interactive confirmation")
+	}
+
+	fmt.Fprint(os.Stderr, "\nDo you want to proceed with this commit message? [y/n/r/e] (y=yes, n=no, r=regenerate, e=edit): ")
 	reader := bufio.NewReader(os.Stdin)
 	response, err := reader.ReadString('\n')
 	if err != nil {
@@ -224,17 +229,17 @@ func getUserConfirmation(message string) (string, string, error) {
 		return "commit", editedMessage, err
 	case "y", "":
 		if response == "" {
-			fmt.Println("Using default option (yes)")
+			fmt.Fprintln(os.Stderr, "Using default option (yes)")
 		}
 		return "commit", "", nil
 	default:
-		fmt.Println("Invalid input. Commit cancelled")
+		fmt.Fprintln(os.Stderr, "Invalid input. Commit cancelled")
 		return "cancel", "", nil
 	}
 }
 
 func openEditor(message string) (string, error) {
-	fmt.Println("Opening editor to modify commit message...")
+	fmt.Fprintln(os.Stderr, "Opening editor to modify commit message...")
 
 	tmpFile, err := os.CreateTemp("", "gmc-commit-")
 	if err != nil {
@@ -271,12 +276,12 @@ func openEditor(message string) (string, error) {
 		if issueNum != "" {
 			formattedMessage = fmt.Sprintf("%s (#%s)", formattedMessage, issueNum)
 		}
-		fmt.Println("Using edited message:")
-		fmt.Println(formattedMessage)
+		fmt.Fprintln(os.Stderr, "Using edited message:")
+		fmt.Fprintln(os.Stderr, formattedMessage)
 		return formattedMessage, nil
 	}
 
-	fmt.Println("Empty message provided, using original message")
+	fmt.Fprintln(os.Stderr, "Empty message provided, using original message")
 	return "", nil
 }
 
@@ -328,7 +333,7 @@ func stageAndCommitFiles(files []string) error {
 		if err := git.StageFiles(toStage); err != nil {
 			return fmt.Errorf("failed to stage files: %w", err)
 		}
-		fmt.Printf("Staged files: %v\n", toStage)
+		fmt.Fprintf(os.Stderr, "Staged files: %v\n", toStage)
 	}
 
 	// Get all files to commit (staged + newly staged)
@@ -379,7 +384,7 @@ func commitStagedFiles(files []string) error {
 func handleSelectiveCommitFlow(diff string, files []string) error {
 	cfg := config.GetConfig()
 
-	proceed, err := ensureLLMConfigured(cfg, os.Stdin, os.Stdout, runInitWizard)
+	proceed, err := ensureLLMConfigured(cfg, os.Stdin, os.Stderr, runInitWizard)
 	if err != nil {
 		return err
 	}
@@ -407,7 +412,7 @@ func buildCommitArgs() []string {
 
 func performCommit(message string) error {
 	if dryRun {
-		fmt.Println("Dry run mode, no actual commit")
+		fmt.Fprintln(os.Stderr, "Dry run mode, no actual commit")
 		return nil
 	}
 
@@ -417,14 +422,14 @@ func performCommit(message string) error {
 		return fmt.Errorf("failed to commit changes: %w", err)
 	}
 
-	fmt.Println("Successfully committed changes!")
+	fmt.Fprintln(os.Stderr, "Successfully committed changes!")
 	return nil
 }
 
 func performSelectiveCommit(message string, files []string) error {
 	if dryRun {
-		fmt.Println("Dry run mode, no actual commit")
-		fmt.Printf("Would commit files: %v\n", files)
+		fmt.Fprintln(os.Stderr, "Dry run mode, no actual commit")
+		fmt.Fprintf(os.Stderr, "Would commit files: %v\n", files)
 		return nil
 	}
 
@@ -434,7 +439,7 @@ func performSelectiveCommit(message string, files []string) error {
 		return fmt.Errorf("failed to commit files: %w", err)
 	}
 
-	fmt.Printf("Successfully committed files: %v!\n", files)
+	fmt.Fprintf(os.Stderr, "Successfully committed files: %v!\n", files)
 	return nil
 }
 
@@ -452,10 +457,10 @@ func runCommitFlow(cfg *config.Config, files []string, diff string, commitExec f
 
 		switch action {
 		case "cancel":
-			fmt.Println("Commit cancelled by user")
+			fmt.Fprintln(os.Stderr, "Commit cancelled by user")
 			return nil
 		case "regenerate":
-			fmt.Println("Regenerating commit message...")
+			fmt.Fprintln(os.Stderr, "Regenerating commit message...")
 			continue
 		case "commit":
 			finalMessage := message
