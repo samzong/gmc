@@ -23,7 +23,11 @@ gmc is a CLI tool that accelerates Git commit efficiency by generating high-qual
 
 .PP
 \fB--config\fP=""
-	Configuration file path (default is $HOME/.gmc.yaml)
+	Config file (default: $XDG_CONFIG_HOME/gmc/config.yaml)
+
+.PP
+\fB--debug\fP[=false]
+	Enable debug output
 
 .PP
 \fB--dry-run\fP[=false]
@@ -54,8 +58,12 @@ gmc is a CLI tool that accelerates Git commit efficiency by generating high-qual
 	LLM request timeout in seconds
 
 .PP
-\fB-V\fP, \fB--verbose\fP[=false]
+\fB-v\fP, \fB--verbose\fP[=false]
 	Show detailed git command output
+
+.PP
+\fB-V\fP, \fB--version\fP[=false]
+	version for gmc
 
 .PP
 \fB-y\fP, \fB--yes\fP[=false]
