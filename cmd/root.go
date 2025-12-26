@@ -2,11 +2,13 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/mattn/go-isatty"
 	"github.com/samzong/gmc/internal/branch"
@@ -14,6 +16,7 @@ import (
 	"github.com/samzong/gmc/internal/formatter"
 	"github.com/samzong/gmc/internal/git"
 	"github.com/samzong/gmc/internal/llm"
+	"github.com/samzong/gmc/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -29,6 +32,8 @@ var (
 	verbose              bool
 	branchDesc           string
 	userPrompt           string
+	timeoutSeconds       int
+	debug                bool
 	errNoChangesDetected = errors.New("no changes detected in the staging area files")
 	rootCmd              = &cobra.Command{
 		Use:   "gmc",
@@ -48,6 +53,21 @@ var (
 	}
 )
 
+var (
+	// globalCtx holds the context passed from main for signal handling
+	globalCtx context.Context
+)
+
+// SetContext sets the global context for signal handling
+func SetContext(ctx context.Context) {
+	globalCtx := ctx
+}
+
+// RootCmd returns the root command for doc generation
+func RootCmd() *cobra.Command {
+	return rootCmd
+}
+
 func Execute() error {
 	return rootCmd.Execute()
 }
@@ -55,7 +75,11 @@ func Execute() error {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "Configuration file path (default is $HOME/.gmc.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "Configuration file path (default: $XDG_CONFIG_HOME/gmc/config.yaml)")
+	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Enable debug output")
+
+	// Use -V for version (freeing -v for verbose, industry convention)
+	rootCmd.Flags().BoolP("version", "V", false, "version for gmc")
 	rootCmd.Flags().BoolVar(&noVerify, "no-verify", false, "Skip pre-commit hooks")
 	rootCmd.Flags().BoolVar(&noSignoff, "no-signoff", false, "Skip signing the commit (DCO signoff)")
 	rootCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Generate message only, do not commit")
@@ -63,10 +87,11 @@ func init() {
 		"Stage files before committing (all files if none specified, or only specified files)")
 	rootCmd.Flags().StringVar(&issueNum, "issue", "", "Optional issue number")
 	rootCmd.Flags().BoolVarP(&autoYes, "yes", "y", false, "Automatically confirm the commit message")
-	rootCmd.Flags().BoolVarP(&verbose, "verbose", "V", false, "Show detailed git command output")
+	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed git command output")
 	rootCmd.Flags().StringVarP(&branchDesc, "branch", "b", "", "Create and switch to a new branch with generated name")
 	rootCmd.Flags().StringVarP(&userPrompt, "prompt", "p", "",
 		"Additional context or instructions for commit message generation")
+	rootCmd.Flags().IntVar(&timeoutSeconds, "timeout", 30, "LLM request timeout in seconds")
 
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(initCmd)
@@ -95,6 +120,16 @@ func handleErrors(err error) error {
 
 func generateAndCommit(fileArgs []string) error {
 	git.Verbose = verbose
+
+	// Set LLM timeout from flag
+	if timeoutSeconds > 0 {
+		llm.Timeout = time.Duration(timeoutSeconds) * time.Second
+	}
+
+	// Check for stdin input via "-" argument
+	if len(fileArgs) == 1 && fileArgs[0] == "-" {
+		return handleStdinDiff()
+	}
 
 	// Handle branch creation
 	if err := handleBranchCreation(); err != nil {
@@ -169,6 +204,85 @@ func getStagedChanges() (string, []string, error) {
 	return diff, changedFiles, nil
 }
 
+// handleStdinDiff reads diff from stdin and generates commit message
+// Usage: git diff | gmc -
+func handleStdinDiff() error {
+	if isatty.IsTerminal(os.Stdin.Fd()) {
+		return errors.New("no input from stdin: use 'git diff | gmc -' or 'gmc - < diff.txt'")
+	}
+
+	// Read diff from stdin
+	var sb strings.Builder
+	scanner := bufio.NewScanner(os.Stdin)
+	// Increase buffer size for large diffs
+	buf := make([]byte, 1024*1024)
+	scanner.Buffer(buf, 10*1024*1024)
+	for scanner.Scan() {
+		sb.WriteString(scanner.Text())
+		sb.WriteString("\n")
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("failed to read stdin: %w", err)
+	}
+
+	diff := strings.TrimSpace(sb.String())
+	if diff == "" {
+		return errors.New("empty diff received from stdin")
+	}
+
+	if debug {
+		fmt.Fprintf(os.Stderr, "[debug] Read %d bytes from stdin\n", len(diff))
+	}
+
+	// Extract file names from diff
+	changedFiles := extractFilesFromDiff(diff)
+
+	cfg := config.GetConfig()
+	proceed, err := ensureLLMConfigured(cfg, os.Stdin, os.Stderr, runInitWizard)
+	if err != nil {
+		return err
+	}
+	if !proceed {
+		return nil
+	}
+	cfg = config.GetConfig()
+
+	// Generate commit message
+	message, err := generateCommitMessage(cfg, changedFiles, diff, userPrompt)
+	if err != nil {
+		return err
+	}
+
+	// In stdin mode, always output the message and exit (no commit)
+	fmt.Fprintln(os.Stderr, "\n[stdin mode: message only, no commit]")
+	fmt.Println(message)
+	return nil
+}
+
+// extractFilesFromDiff parses file names from unified diff format
+func extractFilesFromDiff(diff string) []string {
+	var files []string
+	seen := make(map[string]bool)
+
+	for _, line := range strings.Split(diff, "\n") {
+		if strings.HasPrefix(line, "+++ b/") {
+			file := strings.TrimPrefix(line, "+++ b/")
+			if !seen[file] {
+				files = append(files, file)
+				seen[file] = true
+			}
+		} else if strings.HasPrefix(line, "--- a/") {
+			file := strings.TrimPrefix(line, "--- a/")
+			if !seen[file] {
+				files = append(files, file)
+				seen[file] = true
+			}
+		}
+	}
+
+	return files
+}
+
 func handleCommitFlow(diff string, changedFiles []string) error {
 	cfg := config.GetConfig()
 
@@ -186,7 +300,13 @@ func handleCommitFlow(diff string, changedFiles []string) error {
 
 func generateCommitMessage(cfg *config.Config, changedFiles []string, diff string, userPrompt string) (string, error) {
 	prompt := formatter.BuildPrompt(cfg.Role, changedFiles, diff, userPrompt)
+
+	// Show spinner during LLM call
+	sp := ui.NewSpinner("Generating commit message...")
+	sp.Start()
 	message, err := llm.GenerateCommitMessage(prompt, cfg.Model)
+	sp.Stop()
+
 	if err != nil {
 		return "", fmt.Errorf("failed to generate commit message: %w", err)
 	}

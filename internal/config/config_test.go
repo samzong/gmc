@@ -31,8 +31,11 @@ func TestConfig_Struct(t *testing.T) {
 func TestDefaults(t *testing.T) {
 	assert.Equal(t, "Developer", DefaultRole)
 	assert.Equal(t, "gpt-3.5-turbo", DefaultModel)
-	assert.Equal(t, ".gmc", DefaultConfigName)
+	assert.Equal(t, "config", DefaultConfigName)
+	assert.Equal(t, "gmc", DefaultConfigDir)
+	assert.Equal(t, ".gmc", LegacyConfigName)
 	assert.Equal(t, "default", DefaultPromptTemplate)
+	assert.Equal(t, "GMC", EnvPrefix)
 }
 
 func TestGetSuggestedRoles(t *testing.T) {
@@ -198,23 +201,30 @@ prompt_template: "/custom/prompt.yaml"`
 }
 
 func TestInitConfig_DefaultPath(t *testing.T) {
-	// This test is tricky because it uses the actual user home directory
-	// We'll just test that it doesn't error and sets defaults
+	// This test validates XDG config path support
 
 	// Reset viper state
 	viper.Reset()
 
-	// Get original home to restore later
+	// Get original env vars to restore later
 	originalHome := os.Getenv("HOME")
+	originalXDG := os.Getenv("XDG_CONFIG_HOME")
 
 	// Create a temporary home directory
 	tempHome, err := os.MkdirTemp("", "gmc_home_test")
 	require.NoError(t, err)
 	defer os.RemoveAll(tempHome)
 
-	// Set temporary home
+	// Unset XDG_CONFIG_HOME to test default behavior
+	os.Unsetenv("XDG_CONFIG_HOME")
+	os.Unsetenv("GMC_CONFIG")
 	os.Setenv("HOME", tempHome)
-	defer os.Setenv("HOME", originalHome)
+	defer func() {
+		os.Setenv("HOME", originalHome)
+		if originalXDG != "" {
+			os.Setenv("XDG_CONFIG_HOME", originalXDG)
+		}
+	}()
 
 	err = InitConfig("")
 	require.NoError(t, err)
@@ -223,8 +233,8 @@ func TestInitConfig_DefaultPath(t *testing.T) {
 	assert.Equal(t, DefaultRole, viper.GetString("role"))
 	assert.Equal(t, DefaultModel, viper.GetString("model"))
 
-	// Check config file was created in home directory
-	expectedConfigPath := filepath.Join(tempHome, DefaultConfigName+".yaml")
+	// Check config file was created in XDG path
+	expectedConfigPath := filepath.Join(tempHome, ".config", "gmc", "config.yaml")
 	assert.FileExists(t, expectedConfigPath)
 }
 
@@ -340,7 +350,6 @@ func TestInitConfig_CreateConfigDirectoryError(t *testing.T) {
 	}
 }
 
-// Test environment variable integration
 func TestInitConfig_EnvironmentVariables(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "gmc_env_test")
 	require.NoError(t, err)
@@ -354,12 +363,12 @@ model: "config-model"`
 	err = os.WriteFile(configFile, []byte(initialConfig), 0644)
 	require.NoError(t, err)
 
-	// Set environment variables
-	os.Setenv("ROLE", "Env Developer")
-	os.Setenv("MODEL", "env-model")
+	// Set environment variables with GMC_ prefix
+	os.Setenv("GMC_ROLE", "Env Developer")
+	os.Setenv("GMC_MODEL", "env-model")
 	defer func() {
-		os.Unsetenv("ROLE")
-		os.Unsetenv("MODEL")
+		os.Unsetenv("GMC_ROLE")
+		os.Unsetenv("GMC_MODEL")
 	}()
 
 	// Reset viper state
@@ -368,9 +377,9 @@ model: "config-model"`
 	err = InitConfig(configFile)
 	require.NoError(t, err)
 
-	// This test mainly verifies that AutomaticEnv() is called
-	// without error and the config loads successfully
-	assert.NotEmpty(t, viper.GetString("role"))
+	// Verify GMC_ prefixed env vars take precedence
+	assert.Equal(t, "Env Developer", viper.GetString("role"))
+	assert.Equal(t, "env-model", viper.GetString("model"))
 }
 
 func TestInitConfig_HomeDirectoryError(t *testing.T) {

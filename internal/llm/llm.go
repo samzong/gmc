@@ -18,6 +18,9 @@ var (
 	errMissingAPIKey = errors.New(
 		"API key not set, please set the API key first: gmc config set apikey YOUR_API_KEY",
 	)
+
+	// Timeout is the default timeout for LLM API calls, can be overridden
+	Timeout = 30 * time.Second
 )
 
 func newOpenAIClient(model string) (*openai.Client, context.Context, context.CancelFunc, string, error) {
@@ -34,7 +37,7 @@ func newOpenAIClient(model string) (*openai.Client, context.Context, context.Can
 	}
 
 	client := openai.NewClientWithConfig(clientConfig)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 
 	if model == "" {
 		model = cfg.Model

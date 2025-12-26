@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -22,8 +23,11 @@ type Config struct {
 const (
 	DefaultRole           = "Developer"
 	DefaultModel          = "gpt-3.5-turbo"
-	DefaultConfigName     = ".gmc"
+	DefaultConfigName     = "config"
+	DefaultConfigDir      = "gmc"
+	LegacyConfigName      = ".gmc"
 	DefaultPromptTemplate = "default"
+	EnvPrefix             = "GMC"
 )
 
 var configFilePath string
@@ -43,22 +47,62 @@ var suggestedModels = []string{
 	"gpt-4-turbo",
 }
 
-func InitConfig(cfgFile string) error {
+// getConfigPath returns the config path following priority:
+// 1. Explicit --config flag
+// 2. GMC_CONFIG env var
+// 3. $XDG_CONFIG_HOME/gmc/config.yaml
+// 4. ~/.config/gmc/config.yaml (XDG default)
+// 5. ~/.gmc.yaml (legacy fallback)
+func getConfigPath(cfgFile string) (string, error) {
+	// 1. Explicit config file
 	if cfgFile != "" {
-		viper.SetConfigFile(cfgFile)
-		configFilePath = cfgFile
-	} else {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to find home directory: %w", err)
-		}
-
-		viper.AddConfigPath(home)
-		viper.SetConfigName(DefaultConfigName)
-		viper.SetConfigType("yaml")
-		configFilePath = filepath.Join(home, DefaultConfigName+".yaml")
+		return cfgFile, nil
 	}
 
+	// 2. GMC_CONFIG env var
+	if envConfig := os.Getenv("GMC_CONFIG"); envConfig != "" {
+		return envConfig, nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to find home directory: %w", err)
+	}
+
+	// 3. XDG_CONFIG_HOME
+	xdgConfigHome := os.Getenv("XDG_CONFIG_HOME")
+	if xdgConfigHome == "" {
+		xdgConfigHome = filepath.Join(home, ".config")
+	}
+
+	xdgConfigPath := filepath.Join(xdgConfigHome, DefaultConfigDir, DefaultConfigName+".yaml")
+
+	// Check if XDG config exists
+	if _, err := os.Stat(xdgConfigPath); err == nil {
+		return xdgConfigPath, nil
+	}
+
+	// 4. Check legacy path
+	legacyPath := filepath.Join(home, LegacyConfigName+".yaml")
+	if _, err := os.Stat(legacyPath); err == nil {
+		return legacyPath, nil
+	}
+
+	// 5. Default to XDG path for new installations
+	return xdgConfigPath, nil
+}
+
+func InitConfig(cfgFile string) error {
+	configPath, err := getConfigPath(cfgFile)
+	if err != nil {
+		return err
+	}
+	configFilePath = configPath
+
+	viper.SetConfigFile(configPath)
+	viper.SetConfigType("yaml")
+
+	// Set defaults
 	viper.SetDefault("role", DefaultRole)
 	viper.SetDefault("model", DefaultModel)
 	viper.SetDefault("api_key", "")
@@ -66,6 +110,10 @@ func InitConfig(cfgFile string) error {
 	viper.SetDefault("prompt_template", DefaultPromptTemplate)
 	viper.SetDefault("enable_emoji", false)
 
+	// Enable GMC_ prefixed environment variables
+	// GMC_MODEL, GMC_API_KEY, GMC_API_BASE, etc.
+	viper.SetEnvPrefix(EnvPrefix)
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
@@ -79,7 +127,6 @@ func InitConfig(cfgFile string) error {
 			if err := viper.WriteConfigAs(configFilePath); err != nil {
 				return fmt.Errorf("failed to write configuration file: %w", err)
 			}
-			viper.SetConfigFile(configFilePath)
 			if err := enforceConfigFilePermissions(configFilePath); err != nil {
 				return err
 			}
@@ -87,24 +134,18 @@ func InitConfig(cfgFile string) error {
 			return fmt.Errorf("failed to read configuration file: %w", err)
 		}
 	} else {
-		if used := viper.ConfigFileUsed(); used != "" {
-			configFilePath = used
-		}
 		if err := enforceConfigFilePermissions(configFilePath); err != nil {
 			return err
 		}
 	}
 
-	// Merge repo-level config if exists (higher priority than home config)
+	// Merge repo-level config if exists (higher priority than user config)
 	if repoConfig := findRepoConfig(); repoConfig != "" {
-		if err := viper.MergeInConfig(); err == nil {
-			// Re-read with repo config path for merge
-			repoViper := viper.New()
-			repoViper.SetConfigFile(repoConfig)
-			if err := repoViper.ReadInConfig(); err == nil {
-				for _, key := range repoViper.AllKeys() {
-					viper.Set(key, repoViper.Get(key))
-				}
+		repoViper := viper.New()
+		repoViper.SetConfigFile(repoConfig)
+		if err := repoViper.ReadInConfig(); err == nil {
+			for _, key := range repoViper.AllKeys() {
+				viper.Set(key, repoViper.Get(key))
 			}
 		}
 	}
@@ -118,7 +159,7 @@ func findRepoConfig() string {
 	if err != nil {
 		return ""
 	}
-	repoConfigPath := filepath.Join(cwd, DefaultConfigName+".yaml")
+	repoConfigPath := filepath.Join(cwd, LegacyConfigName+".yaml")
 	if _, err := os.Stat(repoConfigPath); err == nil {
 		return repoConfigPath
 	}
@@ -128,7 +169,7 @@ func findRepoConfig() string {
 func GetConfig() *Config {
 	cfg := &Config{}
 	if err := viper.Unmarshal(cfg); err != nil {
-		fmt.Println("Error: Failed to parse configuration:", err)
+		fmt.Fprintln(os.Stderr, "Error: Failed to parse configuration:", err)
 		return &Config{
 			Role:           DefaultRole,
 			Model:          DefaultModel,

@@ -295,7 +295,7 @@ func printWorktreeTable(worktrees []worktree.WorktreeInfo) {
 	maxBranch += 2
 
 	// Print header
-	fmt.Fprintf(os.Stderr, "%-*s %-*s %s\n", maxName, "NAME", maxBranch, "BRANCH", "STATUS")
+	fmt.Printf("%-*s %-*s %s\n", maxName, "NAME", maxBranch, "BRANCH", "STATUS")
 
 	// Print rows
 	for _, wt := range worktrees {
@@ -304,7 +304,7 @@ func printWorktreeTable(worktrees []worktree.WorktreeInfo) {
 		if wt.IsBare {
 			status = "bare"
 		}
-		fmt.Fprintf(os.Stderr, "%-*s %-*s %s\n", maxName, name, maxBranch, wt.Branch, status)
+		fmt.Printf("%-*s %-*s %s\n", maxName, name, maxBranch, wt.Branch, status)
 	}
 }
 

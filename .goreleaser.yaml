@@ -1,6 +1,8 @@
 before:
   hooks:
     - go mod tidy
+    - mkdir -p docs/man
+    - go run cmd/gendoc/main.go
 
 builds:
   - env:
@@ -31,6 +33,10 @@ archives:
     format_overrides:
       - goos: windows
         format: zip
+    files:
+      - LICENSE
+      - README.md
+      - docs/man/*
 
 changelog:
   sort: asc

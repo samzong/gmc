@@ -84,7 +84,7 @@ Usage:
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd()) {
-				return fmt.Errorf("this command requires an interactive terminal")
+				return errors.New("this command requires an interactive terminal")
 			}
 
 			fmt.Fprint(os.Stderr, "Enter API Key: ")
@@ -96,7 +96,7 @@ Usage:
 
 			apiKey := strings.TrimSpace(string(keyBytes))
 			if apiKey == "" {
-				return fmt.Errorf("API key cannot be empty")
+				return errors.New("API key cannot be empty")
 			}
 
 			config.SetConfigValue("api_key", apiKey)
@@ -204,18 +204,18 @@ Usage:
 				return encoder.Encode(output)
 			}
 
-			// Human-readable output to stderr
-			fmt.Fprintln(os.Stderr, "Current Configuration:")
-			fmt.Fprintf(os.Stderr, "Role: %s\n", cfg.Role)
-			fmt.Fprintf(os.Stderr, "Model: %s\n", cfg.Model)
-			fmt.Fprintln(os.Stderr, "API Key: ********")
+			// Human-readable output to stdout (main data output)
+			fmt.Println("Current Configuration:")
+			fmt.Printf("Role: %s\n", cfg.Role)
+			fmt.Printf("Model: %s\n", cfg.Model)
+			fmt.Println("API Key: ********")
 			if cfg.APIBase != "" {
-				fmt.Fprintf(os.Stderr, "API Base URL: %s\n", cfg.APIBase)
+				fmt.Printf("API Base URL: %s\n", cfg.APIBase)
 			} else {
-				fmt.Fprintln(os.Stderr, "API Base URL: <Not Set>")
+				fmt.Println("API Base URL: <Not Set>")
 			}
-			fmt.Fprintf(os.Stderr, "Prompt Template: %s\n", cfg.PromptTemplate)
-			fmt.Fprintf(os.Stderr, "Enable Emoji: %v\n", cfg.EnableEmoji)
+			fmt.Printf("Prompt Template: %s\n", cfg.PromptTemplate)
+			fmt.Printf("Enable Emoji: %v\n", cfg.EnableEmoji)
 			return nil
 		},
 	}

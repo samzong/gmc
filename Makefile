@@ -79,6 +79,13 @@ lint-fix: ## Run code analysis with auto-fix
 	golangci-lint run --fix
 	@echo "$(GREEN)Code analysis and fixes completed$(NC)"
 
+.PHONY: man
+man: ## Generate man pages
+	@echo "Generating man pages..."
+	@mkdir -p docs/man
+	@go run cmd/gendoc/main.go
+	@echo "Man pages generated in docs/man/"
+
 ##@ Release
 .PHONY: update-homebrew
 update-homebrew: ## Update Homebrew formula
