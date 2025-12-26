@@ -25,7 +25,7 @@
 
 ### Quick start (required config)
 
-`gmc` reads configuration from `~/.gmc.yaml` by default (override with `--config`). On macOS/Linux, the config file is forced to permission `0600`. You can also place a `.gmc.yaml` in your project directory to override global settings on a per-repo basis.
+`gmc` reads configuration from `~/.config/gmc/config.yaml` by default (override with `--config`). If a legacy `~/.gmc.yaml` exists, it is used as a fallback. On macOS/Linux, the config file is forced to permission `0600`. You can also place a `.gmc.yaml` in your project directory to override global settings on a per-repo basis.
 
 Recommended: run the guided setup (or accept the prompt shown on first use):
 
@@ -174,6 +174,10 @@ For zsh, ensure `~/.zsh/completions` is in your `fpath` (e.g. in `~/.zshrc`):
 fpath=(~/.zsh/completions $fpath)
 autoload -Uz compinit && compinit
 ```
+
+### Man pages
+
+Man pages under `docs/man/` are generated via `make man` (from `cmd/gendoc/main.go`). Do not edit them manually.
 
 ## Prompt templates
 

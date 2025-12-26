@@ -148,7 +148,7 @@ func getDefaultBranch(bareDir string) (string, error) {
 	args := []string{"-C", bareDir, "symbolic-ref", "--short", "HEAD"}
 	result, err := gitRunner().Run(args...)
 	if err == nil {
-		branch := strings.TrimSpace(string(result.Stdout))
+		branch := result.StdoutString(true)
 		if branch != "" {
 			return branch, nil
 		}

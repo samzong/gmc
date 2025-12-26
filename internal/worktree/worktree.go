@@ -108,13 +108,13 @@ func DetectRepositoryType(dir string) (RepoType, error) {
 // isInsideWorkTree checks if the directory is inside a git work tree
 func isInsideWorkTree(dir string) bool {
 	result, err := gitRunner().Run("-C", dir, "rev-parse", "--is-inside-work-tree")
-	return err == nil && strings.TrimSpace(string(result.Stdout)) == "true"
+	return err == nil && result.StdoutString(true) == "true"
 }
 
 // isBareRepository checks if the directory is a bare git repository
 func isBareRepository(dir string) bool {
 	result, err := gitRunner().Run("-C", dir, "rev-parse", "--is-bare-repository")
-	return err == nil && strings.TrimSpace(string(result.Stdout)) == "true"
+	return err == nil && result.StdoutString(true) == "true"
 }
 
 // getGitOutput runs a git command and returns the trimmed output, or empty string on error
@@ -124,7 +124,7 @@ func getGitOutput(dir string, args ...string) string {
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(result.Stdout))
+	return result.StdoutString(true)
 }
 
 // FindBareRoot finds the root directory containing .bare
@@ -168,7 +168,7 @@ func GetWorktreeRoot() (string, error) {
 		return "", fmt.Errorf("not in a git repository: %w", err)
 	}
 
-	commonDir := strings.TrimSpace(string(result.Stdout))
+	commonDir := result.StdoutString(true)
 	if commonDir == "" {
 		return "", errors.New("failed to determine git common directory")
 	}
@@ -412,7 +412,7 @@ func GetWorktreeStatus(path string) string {
 		return "unknown"
 	}
 
-	if strings.TrimSpace(string(result.Stdout)) == "" {
+	if result.StdoutString(true) == "" {
 		return "clean"
 	}
 	return "modified"
@@ -550,7 +550,7 @@ func Promote(worktreeName, newBranchName string) error {
 		return fmt.Errorf("failed to get current branch: %w", err)
 	}
 
-	oldBranch := strings.TrimSpace(string(result.Stdout))
+	oldBranch := result.StdoutString(true)
 	if oldBranch == "HEAD" {
 		return errors.New("worktree is in detached HEAD state, cannot promote")
 	}

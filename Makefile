@@ -59,11 +59,16 @@ test-coverage-ci: ## Run tests with coverage for CI (no HTML)
 	@go tool cover -func=$(BUILD_DIR)/coverage.out | tail -1
 
 .PHONY: fmt
-fmt: ## Format code and tidy modules
+fmt: ## Format code
 	@echo "Formatting code..."
 	@go fmt ./...
-	@go mod tidy
 	@echo "Format Command Done"
+
+.PHONY: tidy
+tidy: ## Tidy go.mod and go.sum
+	@echo "Tidying modules..."
+	@go mod tidy
+	@echo "Tidy Command Done"
 
 .PHONY: lint
 lint: ## Run code analysis

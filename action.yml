@@ -25,9 +25,6 @@ inputs:
   prompt_template:
     description: "Prompt template name (in prompts_dir)"
     required: false
-  prompts_dir:
-    description: "Directory containing prompt templates"
-    required: false
   working-directory:
     description: "Working directory to run commands in"
     required: false
@@ -51,7 +48,7 @@ runs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version: '1.24.x'
 
     - name: Build gmc
       shell: bash
@@ -71,7 +68,6 @@ runs:
         if [ -n "${{ inputs.model }}" ]; then ./gmc config set model "${{ inputs.model }}"; fi
         if [ -n "${{ inputs.role }}" ]; then ./gmc config set role "${{ inputs.role }}"; fi
         if [ -n "${{ inputs.prompt_template }}" ]; then ./gmc config set prompt_template "${{ inputs.prompt_template }}"; fi
-        if [ -n "${{ inputs.prompts_dir }}" ]; then ./gmc config set prompts_dir "${{ inputs.prompts_dir }}"; fi
 
     - name: Run GMC
       id: run

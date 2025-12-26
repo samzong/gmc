@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // emojiMap maps commit types to their corresponding emojis
@@ -31,6 +32,11 @@ var emojiMap = map[string]string{
 // Pre-compiled regex pattern for extracting commit type
 var commitTypeRegex = regexp.MustCompile(`^([a-zA-Z]+)(?:\([^)]+\))?:`)
 
+var (
+	commitTypesOnce   sync.Once
+	cachedCommitTypes []string
+)
+
 // GetEmojiForType returns the emoji for a given commit type.
 // Returns empty string if type is not recognized.
 func GetEmojiForType(commitType string) string {
@@ -42,12 +48,15 @@ func GetEmojiForType(commitType string) string {
 
 // GetAllCommitTypes returns all supported commit types in alphabetical order.
 func GetAllCommitTypes() []string {
-	types := make([]string, 0, len(emojiMap))
-	for t := range emojiMap {
-		types = append(types, t)
-	}
-	sort.Strings(types)
-	return types
+	commitTypesOnce.Do(func() {
+		types := make([]string, 0, len(emojiMap))
+		for t := range emojiMap {
+			types = append(types, t)
+		}
+		sort.Strings(types)
+		cachedCommitTypes = types
+	})
+	return append([]string(nil), cachedCommitTypes...)
 }
 
 // GetEmojiDescription returns a formatted string listing all commit types with their emojis.

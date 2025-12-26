@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/samzong/gmc/internal/gitcmd"
+	"github.com/samzong/gmc/internal/stringsutil"
 )
 
 var Verbose bool
@@ -23,6 +24,14 @@ func logVerboseOutput(label string, data []byte) {
 		return
 	}
 	fmt.Fprintln(os.Stderr, label, string(data))
+}
+
+func wrapGitError(action string, result gitcmd.Result, err error) error {
+	errMsg := strings.TrimSpace(string(result.Stderr))
+	if errMsg != "" {
+		return fmt.Errorf("%s: %s: %w", action, errMsg, err)
+	}
+	return fmt.Errorf("%s: %w", action, err)
 }
 
 // CommitInfo represents information about a single commit
@@ -96,34 +105,29 @@ func ParseChangedFiles() ([]string, error) {
 		return nil, fmt.Errorf("failed to run git diff --name-only: %w", err)
 	}
 
-	unstaged := strings.Split(strings.TrimSpace(string(result.Stdout)), "\n")
+	unstaged := strings.Split(result.StdoutString(true), "\n")
 
 	result, err = runner.Run("diff", "--cached", "--name-only")
 	if err != nil {
 		return nil, fmt.Errorf("failed to run git diff --cached --name-only: %w", err)
 	}
 
-	staged := strings.Split(strings.TrimSpace(string(result.Stdout)), "\n")
+	staged := strings.Split(result.StdoutString(true), "\n")
 
-	fileMap := make(map[string]bool)
+	files := make([]string, 0, len(unstaged)+len(staged))
 	for _, file := range unstaged {
 		if file != "" {
-			fileMap[file] = true
+			files = append(files, file)
 		}
 	}
 
 	for _, file := range staged {
 		if file != "" {
-			fileMap[file] = true
+			files = append(files, file)
 		}
 	}
 
-	changedFiles := make([]string, 0, len(fileMap))
-	for file := range fileMap {
-		changedFiles = append(changedFiles, file)
-	}
-
-	return changedFiles, nil
+	return stringsutil.UniqueStrings(files), nil
 }
 
 func ParseStagedFiles() ([]string, error) {
@@ -137,7 +141,7 @@ func ParseStagedFiles() ([]string, error) {
 		return nil, fmt.Errorf("failed to run git diff --cached --name-only: %w", err)
 	}
 
-	stagedFiles := strings.Split(strings.TrimSpace(string(runResult.Stdout)), "\n")
+	stagedFiles := strings.Split(runResult.StdoutString(true), "\n")
 
 	var files []string
 	for _, file := range stagedFiles {
@@ -181,11 +185,7 @@ func Commit(message string, args ...string) error {
 
 	if err != nil {
 		// Include git error output in the error message
-		errMsg := "Failed to run git commit"
-		if len(result.Stderr) > 0 {
-			errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(string(result.Stderr)))
-		}
-		return fmt.Errorf("%s: %w", errMsg, err)
+		return wrapGitError("Failed to run git commit", result, err)
 	}
 
 	return nil
@@ -237,11 +237,7 @@ func createAndSwitchBranch(branchName string) error {
 
 	result, err := gitRunner().Run("checkout", "-b", branchName)
 	if err != nil {
-		errMsg := fmt.Sprintf("failed to create and switch to branch '%s'", branchName)
-		if len(result.Stderr) > 0 {
-			errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(string(result.Stderr)))
-		}
-		return fmt.Errorf("%s: %w", errMsg, err)
+		return wrapGitError(fmt.Sprintf("failed to create and switch to branch '%s'", branchName), result, err)
 	}
 
 	if Verbose && len(result.Stdout) > 0 {
@@ -262,7 +258,7 @@ func GetLatestTag() (string, error) {
 		return "", fmt.Errorf("failed to list tags: %w", err)
 	}
 
-	output := strings.TrimSpace(string(result.Stdout))
+	output := result.StdoutString(true)
 	if output == "" {
 		return "", nil
 	}
@@ -353,11 +349,7 @@ func CreateAnnotatedTag(tag string, message string) error {
 
 	result, err := gitRunner().Run("tag", "-a", tag, "-m", message)
 	if err != nil {
-		errMsg := fmt.Sprintf("failed to create tag '%s'", tag)
-		if len(result.Stderr) > 0 {
-			errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(string(result.Stderr)))
-		}
-		return fmt.Errorf("%s: %w", errMsg, err)
+		return wrapGitError(fmt.Sprintf("failed to create tag '%s'", tag), result, err)
 	}
 
 	return nil
@@ -406,7 +398,7 @@ func GetCommitHistory(limit int, teamMode bool) ([]CommitInfo, error) {
 		return nil, fmt.Errorf("failed to run git log: %w", err)
 	}
 
-	output := strings.TrimSpace(string(result.Stdout))
+	output := result.StdoutString(true)
 	if output == "" {
 		return []CommitInfo{}, nil
 	}
@@ -421,7 +413,7 @@ func getCurrentGitUser() (string, error) {
 		return "", fmt.Errorf("failed to get git user name: %w", err)
 	}
 
-	return strings.TrimSpace(string(result.Stdout)), nil
+	return result.StdoutString(true), nil
 }
 
 // parseCommitOutput parses the git log output into CommitInfo structs
@@ -492,17 +484,8 @@ func ResolveFiles(paths []string) ([]string, error) {
 		}
 	}
 
-	// Remove duplicates
-	fileMap := make(map[string]bool)
-	var uniqueFiles []string
-	for _, file := range resolvedFiles {
-		if !fileMap[file] {
-			fileMap[file] = true
-			uniqueFiles = append(uniqueFiles, file)
-		}
-	}
-
-	return uniqueFiles, nil
+	// Remove duplicates while preserving order
+	return stringsutil.UniqueStrings(resolvedFiles), nil
 }
 
 func isPathInStagedDiff(path string) (bool, error) {
@@ -514,7 +497,7 @@ func isPathInStagedDiff(path string) (bool, error) {
 		return false, fmt.Errorf("failed to inspect staged diff: %w", err)
 	}
 
-	output := strings.TrimSpace(string(result.Stdout))
+	output := result.StdoutString(true)
 	if output == "" {
 		return false, nil
 	}
@@ -539,7 +522,7 @@ func getGitTrackedFilesInDir(dir string) ([]string, error) {
 		return nil, fmt.Errorf("failed to list git files in directory: %w", err)
 	}
 
-	output := strings.TrimSpace(string(runResult.Stdout))
+	output := runResult.StdoutString(true)
 	if output == "" {
 		return []string{}, nil
 	}
@@ -603,7 +586,7 @@ func isFileStaged(file string) (bool, error) {
 		return false, err
 	}
 
-	return strings.TrimSpace(string(result.Stdout)) != "", nil
+	return result.StdoutString(true) != "", nil
 }
 
 // isFileModified checks if a file is modified (unstaged changes)
@@ -613,7 +596,7 @@ func isFileModified(file string) (bool, error) {
 		return false, err
 	}
 
-	return strings.TrimSpace(string(result.Stdout)) != "", nil
+	return result.StdoutString(true) != "", nil
 }
 
 // isFileTracked checks if a file is tracked by git
@@ -623,7 +606,7 @@ func isFileTracked(file string) (bool, error) {
 		return false, err
 	}
 
-	return strings.TrimSpace(string(result.Stdout)) != "", nil
+	return result.StdoutString(true) != "", nil
 }
 
 // StageFiles stages specific files
@@ -635,11 +618,7 @@ func StageFiles(files []string) error {
 	for _, file := range files {
 		result, err := gitRunner().RunLogged("add", file)
 		if err != nil {
-			errMsg := "failed to stage file " + file
-			if len(result.Stderr) > 0 {
-				errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(string(result.Stderr)))
-			}
-			return fmt.Errorf("%s: %w", errMsg, err)
+			return wrapGitError("failed to stage file "+file, result, err)
 		}
 	}
 
@@ -690,11 +669,7 @@ func CommitFiles(message string, files []string, args ...string) error {
 
 	if err != nil {
 		// Include git error output in the error message
-		errMsg := "Failed to commit files"
-		if len(result.Stderr) > 0 {
-			errMsg = fmt.Sprintf("%s: %s", errMsg, strings.TrimSpace(string(result.Stderr)))
-		}
-		return fmt.Errorf("%s: %w", errMsg, err)
+		return wrapGitError("Failed to commit files", result, err)
 	}
 
 	return nil

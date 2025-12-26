@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/samzong/gmc/internal/formatter"
 	"github.com/samzong/gmc/internal/git"
 	"github.com/samzong/gmc/internal/llm"
+	"github.com/samzong/gmc/internal/stringsutil"
 	"github.com/samzong/gmc/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -227,15 +229,13 @@ func handleStdinDiff() error {
 	// Extract file names from diff
 	changedFiles := extractFilesFromDiff(diff)
 
-	cfg := config.GetConfig()
-	proceed, err := ensureLLMConfigured(cfg, os.Stdin, os.Stderr, runInitWizard)
+	cfg, proceed, err := ensureConfiguredAndGetConfig(config.GetConfig(), os.Stdin, os.Stderr, runInitWizard)
 	if err != nil {
 		return err
 	}
 	if !proceed {
 		return nil
 	}
-	cfg = config.GetConfig()
 
 	// Generate commit message
 	message, err := generateCommitMessage(cfg, changedFiles, diff, userPrompt)
@@ -249,41 +249,44 @@ func handleStdinDiff() error {
 	return nil
 }
 
+func ensureConfiguredAndGetConfig(
+	cfg *config.Config,
+	in io.Reader,
+	out io.Writer,
+	initRunner func(io.Reader, io.Writer, *config.Config) error,
+) (*config.Config, bool, error) {
+	proceed, err := ensureLLMConfigured(cfg, in, out, initRunner)
+	if err != nil || !proceed {
+		return nil, proceed, err
+	}
+	return config.GetConfig(), true, nil
+}
+
 // extractFilesFromDiff parses file names from unified diff format
 func extractFilesFromDiff(diff string) []string {
 	var files []string
-	seen := make(map[string]bool)
 
 	for _, line := range strings.Split(diff, "\n") {
 		if strings.HasPrefix(line, "+++ b/") {
 			file := strings.TrimPrefix(line, "+++ b/")
-			if !seen[file] {
-				files = append(files, file)
-				seen[file] = true
-			}
+			files = append(files, file)
 		} else if strings.HasPrefix(line, "--- a/") {
 			file := strings.TrimPrefix(line, "--- a/")
-			if !seen[file] {
-				files = append(files, file)
-				seen[file] = true
-			}
+			files = append(files, file)
 		}
 	}
 
-	return files
+	return stringsutil.UniqueStrings(files)
 }
 
 func handleCommitFlow(diff string, changedFiles []string) error {
-	cfg := config.GetConfig()
-
-	proceed, err := ensureLLMConfigured(cfg, os.Stdin, os.Stderr, runInitWizard)
+	cfg, proceed, err := ensureConfiguredAndGetConfig(config.GetConfig(), os.Stdin, os.Stderr, runInitWizard)
 	if err != nil {
 		return err
 	}
 	if !proceed {
 		return nil
 	}
-	cfg = config.GetConfig()
 
 	return runCommitFlow(cfg, changedFiles, diff, performCommit)
 }
@@ -493,16 +496,13 @@ func commitStagedFiles(files []string) error {
 }
 
 func handleSelectiveCommitFlow(diff string, files []string) error {
-	cfg := config.GetConfig()
-
-	proceed, err := ensureLLMConfigured(cfg, os.Stdin, os.Stderr, runInitWizard)
+	cfg, proceed, err := ensureConfiguredAndGetConfig(config.GetConfig(), os.Stdin, os.Stderr, runInitWizard)
 	if err != nil {
 		return err
 	}
 	if !proceed {
 		return nil
 	}
-	cfg = config.GetConfig()
 
 	return runCommitFlow(cfg, files, diff, func(message string) error {
 		return performSelectiveCommit(message, files)

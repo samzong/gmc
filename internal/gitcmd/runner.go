@@ -23,6 +23,22 @@ type Result struct {
 	Stderr []byte
 }
 
+func (r Result) StdoutString(trim bool) string {
+	output := string(r.Stdout)
+	if trim {
+		return strings.TrimSpace(output)
+	}
+	return output
+}
+
+func (r Result) StderrString(trim bool) string {
+	output := string(r.Stderr)
+	if trim {
+		return strings.TrimSpace(output)
+	}
+	return output
+}
+
 func (r Runner) withDefaults() Runner {
 	if r.Logger == nil {
 		r.Logger = os.Stderr
