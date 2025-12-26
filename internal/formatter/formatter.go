@@ -36,7 +36,7 @@ func BuildPrompt(role string, changedFiles []string, diff string, userPrompt str
 
 	changedFilesStr := strings.Join(changedFiles, "\n")
 
-	cfg := config.GetConfig()
+	cfg := config.MustGetConfig()
 	templateName := cfg.PromptTemplate
 	if templateName == "" {
 		templateName = "default"
@@ -69,7 +69,7 @@ func BuildPrompt(role string, changedFiles []string, diff string, userPrompt str
 }
 
 func FormatCommitMessage(message string) string {
-	cfg := config.GetConfig()
+	cfg := config.MustGetConfig()
 	message = strings.TrimSpace(message)
 
 	lines := strings.Split(message, "\n")
@@ -146,7 +146,7 @@ func truncateToValidUTF8(input string, maxBytes int) string {
 }
 
 func buildSimplePrompt(role, changedFilesStr, diff string) string {
-	cfg := config.GetConfig()
+	cfg := config.MustGetConfig()
 
 	typeInstruction := `Use the "type(scope): description" syntax`
 	if cfg.EnableEmoji {

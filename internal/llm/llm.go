@@ -24,7 +24,10 @@ var (
 )
 
 func newOpenAIClient(model string) (*openai.Client, context.Context, context.CancelFunc, string, error) {
-	cfg := config.GetConfig()
+	cfg, err := config.GetConfig()
+	if err != nil {
+		return nil, nil, nil, "", err
+	}
 
 	if cfg.APIKey == "" {
 		return nil, nil, nil, "", errMissingAPIKey

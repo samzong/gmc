@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/samzong/gmc/internal/gitcmd"
+	"github.com/samzong/gmc/internal/gitutil"
 )
 
 // Verbose controls whether to print debug output
@@ -17,14 +18,6 @@ var Verbose bool
 
 func gitRunner() gitcmd.Runner {
 	return gitcmd.Runner{Verbose: Verbose}
-}
-
-func wrapGitError(action string, result gitcmd.Result, err error) error {
-	errMsg := strings.TrimSpace(string(result.Stderr))
-	if errMsg != "" {
-		return fmt.Errorf("failed to %s: %s", action, errMsg)
-	}
-	return fmt.Errorf("failed to %s: %w", action, err)
 }
 
 // RepoType represents the type of git repository
@@ -307,7 +300,7 @@ func Add(name string, opts AddOptions) error {
 
 	result, err := gitRunner().RunLogged(args...)
 	if err != nil {
-		return wrapGitError("create worktree", result, err)
+		return gitutil.WrapGitError("failed to create worktree", result, err)
 	}
 
 	if branchExistsFlag {
@@ -386,7 +379,7 @@ func Remove(name string, opts RemoveOptions) error {
 
 	result, err := gitRunner().RunLogged(args...)
 	if err != nil {
-		return wrapGitError("remove worktree", result, err)
+		return gitutil.WrapGitError("failed to remove worktree", result, err)
 	}
 
 	fmt.Fprintf(os.Stderr, "Removed worktree '%s'\n", name)
@@ -396,7 +389,7 @@ func Remove(name string, opts RemoveOptions) error {
 		args := []string{"branch", "-D", wtInfo.Branch}
 		result, err := gitRunner().RunLogged(args...)
 		if err != nil {
-			return wrapGitError("delete branch", result, err)
+			return gitutil.WrapGitError("failed to delete branch", result, err)
 		}
 
 		fmt.Fprintf(os.Stderr, "Deleted branch '%s'\n", wtInfo.Branch)
@@ -509,7 +502,7 @@ func Dup(opts DupOptions) (*DupResult, error) {
 		args := []string{"worktree", "add", "-b", branchName, targetPath, opts.BaseBranch}
 		runResult, err := gitRunner().RunLogged(args...)
 		if err != nil {
-			return nil, wrapGitError(fmt.Sprintf("create worktree %s", dirName), runResult, err)
+			return nil, gitutil.WrapGitError(fmt.Sprintf("failed to create worktree %s", dirName), runResult, err)
 		}
 
 		dupResult.Worktrees = append(dupResult.Worktrees, dirName)
@@ -559,7 +552,7 @@ func Promote(worktreeName, newBranchName string) error {
 	args := []string{"-C", targetPath, "branch", "-m", newBranchName}
 	result, err = gitRunner().RunLogged(args...)
 	if err != nil {
-		return wrapGitError("rename branch", result, err)
+		return gitutil.WrapGitError("failed to rename branch", result, err)
 	}
 
 	fmt.Printf("Promoted '%s' -> '%s'\n", oldBranch, newBranchName)

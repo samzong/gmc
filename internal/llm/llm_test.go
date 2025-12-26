@@ -98,7 +98,8 @@ func TestGenerateCommitMessage_Success(t *testing.T) {
 			// This test requires actual OpenAI API setup which we can't mock easily
 			// since the client is created inside the function
 			// For now, we'll test the basic validation logic
-			cfg := config.GetConfig()
+			cfg, err := config.GetConfig()
+			assert.NoError(t, err)
 			assert.NotEmpty(t, cfg.APIKey, "API key should be set")
 
 			// Skip actual API call for unit tests
@@ -146,11 +147,12 @@ func TestGenerateCommitMessage_ModelFallback(t *testing.T) {
 	viper.Set("model", "gpt-4")
 
 	// Test that empty model parameter falls back to config model
-	cfg := config.GetConfig()
+	cfg, err := config.GetConfig()
+	assert.NoError(t, err)
 	assert.Equal(t, "gpt-4", cfg.Model)
 
 	// Test with empty model - should fall back to config model
-	_, err := GenerateCommitMessage("test prompt", "")
+	_, err = GenerateCommitMessage("test prompt", "")
 
 	// We expect an error due to fake API key, but the model fallback logic was exercised
 	if err != nil {
@@ -201,7 +203,8 @@ func TestGenerateCommitMessage_ConfigValidation(t *testing.T) {
 			viper.Set("model", tt.model)
 
 			// Test the validation part only
-			cfg := config.GetConfig()
+			cfg, err := config.GetConfig()
+			assert.NoError(t, err)
 
 			if tt.wantError {
 				assert.Empty(t, cfg.APIKey, "API key should be empty for error case")
@@ -289,7 +292,8 @@ func TestGenerateCommitMessage_MessageConstruction(t *testing.T) {
 	viper.Set("api_key", "test-api-key")
 	viper.Set("model", "gpt-3.5-turbo")
 
-	cfg := config.GetConfig()
+	cfg, err := config.GetConfig()
+	assert.NoError(t, err)
 	assert.Equal(t, "test-api-key", cfg.APIKey)
 	assert.Equal(t, "gpt-3.5-turbo", cfg.Model)
 
@@ -353,7 +357,8 @@ func TestGenerateCommitMessage_ErrorScenarios(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.setupConfig()
 
-			cfg := config.GetConfig()
+			cfg, err := config.GetConfig()
+			assert.NoError(t, err)
 
 			if tt.expectedError != "" {
 				assert.Empty(t, cfg.APIKey, "Should have empty API key for error case")
@@ -412,7 +417,8 @@ func TestGenerateCommitMessage_ClientConfiguration(t *testing.T) {
 	viper.Set("model", "gpt-3.5-turbo")
 	viper.Set("api_base", "https://custom-api.example.com/v1")
 
-	cfg := config.GetConfig()
+	cfg, err := config.GetConfig()
+	assert.NoError(t, err)
 
 	// Verify config is loaded correctly
 	assert.Equal(t, "test-key-12345", cfg.APIKey)
@@ -420,7 +426,7 @@ func TestGenerateCommitMessage_ClientConfiguration(t *testing.T) {
 	assert.Equal(t, "https://custom-api.example.com/v1", cfg.APIBase)
 
 	// Test with custom API base - this will exercise the client configuration code
-	_, err := GenerateCommitMessage("test prompt", "gpt-3.5-turbo")
+	_, err = GenerateCommitMessage("test prompt", "gpt-3.5-turbo")
 
 	// We expect an error due to custom API base + fake key, but configuration logic was exercised
 	if err != nil {

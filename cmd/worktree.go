@@ -177,7 +177,7 @@ func runWorktreeDefault() error {
 
 	// If not using bare worktree pattern, show status + help
 	if !isBareWorktree {
-		fmt.Fprintln(os.Stderr, "Current repository is not using the bare worktree pattern.")
+		fmt.Fprintln(outWriter(), "Current repository is not using the bare worktree pattern.")
 		return nil
 	}
 
@@ -190,24 +190,24 @@ func runWorktreeDefault() error {
 	// Filter out bare worktrees
 	filtered := filterBareWorktrees(worktrees)
 
-	fmt.Fprintln(os.Stderr, "Current Worktrees:")
+	fmt.Fprintln(outWriter(), "Current Worktrees:")
 	printWorktreeTable(filtered)
 
 	// Print common commands
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "Common Commands:")
-	fmt.Fprintln(os.Stderr, "  gmc wt add <branch>      Create new worktree with branch")
-	fmt.Fprintln(os.Stderr, "  gmc wt add <branch> -b   Create based on specific branch")
-	fmt.Fprintln(os.Stderr, "  gmc wt rm <name>         Remove worktree (keeps branch)")
-	fmt.Fprintln(os.Stderr, "  gmc wt rm <name> -D      Remove worktree and delete branch")
+	fmt.Fprintln(outWriter())
+	fmt.Fprintln(outWriter(), "Common Commands:")
+	fmt.Fprintln(outWriter(), "  gmc wt add <branch>      Create new worktree with branch")
+	fmt.Fprintln(outWriter(), "  gmc wt add <branch> -b   Create based on specific branch")
+	fmt.Fprintln(outWriter(), "  gmc wt rm <name>         Remove worktree (keeps branch)")
+	fmt.Fprintln(outWriter(), "  gmc wt rm <name> -D      Remove worktree and delete branch")
 
 	// Show current location
 	cwd, err := os.Getwd()
 	if err == nil {
 		for _, wt := range filtered {
 			if strings.HasPrefix(cwd, wt.Path) {
-				fmt.Fprintln(os.Stderr)
-				fmt.Fprintf(os.Stderr, "You are here: ./%s (branch: %s)\n", filepath.Base(wt.Path), wt.Branch)
+				fmt.Fprintln(outWriter())
+				fmt.Fprintf(outWriter(), "You are here: ./%s (branch: %s)\n", filepath.Base(wt.Path), wt.Branch)
 				break
 			}
 		}
@@ -247,7 +247,7 @@ func runWorktreeList() error {
 	filtered := filterBareWorktrees(worktrees)
 
 	if len(filtered) == 0 {
-		fmt.Fprintln(os.Stderr, "No worktrees found.")
+		fmt.Fprintln(outWriter(), "No worktrees found.")
 		return nil
 	}
 
@@ -295,7 +295,7 @@ func printWorktreeTable(worktrees []worktree.WorktreeInfo) {
 	maxBranch += 2
 
 	// Print header
-	fmt.Printf("%-*s %-*s %s\n", maxName, "NAME", maxBranch, "BRANCH", "STATUS")
+	fmt.Fprintf(outWriter(), "%-*s %-*s %s\n", maxName, "NAME", maxBranch, "BRANCH", "STATUS")
 
 	// Print rows
 	for _, wt := range worktrees {
@@ -304,7 +304,7 @@ func printWorktreeTable(worktrees []worktree.WorktreeInfo) {
 		if wt.IsBare {
 			status = "bare"
 		}
-		fmt.Printf("%-*s %-*s %s\n", maxName, name, maxBranch, wt.Branch, status)
+		fmt.Fprintf(outWriter(), "%-*s %-*s %s\n", maxName, name, maxBranch, wt.Branch, status)
 	}
 }
 
@@ -327,16 +327,16 @@ func runWorktreeDup(args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "Created %d worktrees based on '%s':\n", len(result.Worktrees), opts.BaseBranch)
+	fmt.Fprintf(outWriter(), "Created %d worktrees based on '%s':\n", len(result.Worktrees), opts.BaseBranch)
 	for i, wt := range result.Worktrees {
-		fmt.Fprintf(os.Stderr, "  %s -> %s\n", wt, result.Branches[i])
+		fmt.Fprintf(outWriter(), "  %s -> %s\n", wt, result.Branches[i])
 	}
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "Next steps:")
-	fmt.Fprintln(os.Stderr, "  1. Work in each directory with different AI tools")
-	fmt.Fprintln(os.Stderr, "  2. Evaluate and pick the best solution")
-	fmt.Fprintf(os.Stderr, "  3. Run: gmc wt promote <worktree> <branch-name>\n")
-	fmt.Fprintln(os.Stderr, "  4. Clean up: gmc wt rm <other-worktrees> -D")
+	fmt.Fprintln(outWriter())
+	fmt.Fprintln(outWriter(), "Next steps:")
+	fmt.Fprintln(outWriter(), "  1. Work in each directory with different AI tools")
+	fmt.Fprintln(outWriter(), "  2. Evaluate and pick the best solution")
+	fmt.Fprintf(outWriter(), "  3. Run: gmc wt promote <worktree> <branch-name>\n")
+	fmt.Fprintln(outWriter(), "  4. Clean up: gmc wt rm <other-worktrees> -D")
 
 	return nil
 }

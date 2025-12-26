@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/samzong/gmc/internal/gitcmd"
+	"github.com/samzong/gmc/internal/gitutil"
 	"github.com/samzong/gmc/internal/stringsutil"
 )
 
@@ -24,14 +25,6 @@ func logVerboseOutput(label string, data []byte) {
 		return
 	}
 	fmt.Fprintln(os.Stderr, label, string(data))
-}
-
-func wrapGitError(action string, result gitcmd.Result, err error) error {
-	errMsg := strings.TrimSpace(string(result.Stderr))
-	if errMsg != "" {
-		return fmt.Errorf("%s: %s: %w", action, errMsg, err)
-	}
-	return fmt.Errorf("%s: %w", action, err)
 }
 
 // CommitInfo represents information about a single commit
@@ -185,7 +178,7 @@ func Commit(message string, args ...string) error {
 
 	if err != nil {
 		// Include git error output in the error message
-		return wrapGitError("Failed to run git commit", result, err)
+		return gitutil.WrapGitError("Failed to run git commit", result, err)
 	}
 
 	return nil
@@ -237,7 +230,7 @@ func createAndSwitchBranch(branchName string) error {
 
 	result, err := gitRunner().Run("checkout", "-b", branchName)
 	if err != nil {
-		return wrapGitError(fmt.Sprintf("failed to create and switch to branch '%s'", branchName), result, err)
+		return gitutil.WrapGitError(fmt.Sprintf("failed to create and switch to branch '%s'", branchName), result, err)
 	}
 
 	if Verbose && len(result.Stdout) > 0 {
@@ -349,7 +342,7 @@ func CreateAnnotatedTag(tag string, message string) error {
 
 	result, err := gitRunner().Run("tag", "-a", tag, "-m", message)
 	if err != nil {
-		return wrapGitError(fmt.Sprintf("failed to create tag '%s'", tag), result, err)
+		return gitutil.WrapGitError(fmt.Sprintf("failed to create tag '%s'", tag), result, err)
 	}
 
 	return nil
@@ -618,7 +611,7 @@ func StageFiles(files []string) error {
 	for _, file := range files {
 		result, err := gitRunner().RunLogged("add", file)
 		if err != nil {
-			return wrapGitError("failed to stage file "+file, result, err)
+			return gitutil.WrapGitError("failed to stage file "+file, result, err)
 		}
 	}
 
@@ -669,7 +662,7 @@ func CommitFiles(message string, files []string, args ...string) error {
 
 	if err != nil {
 		// Include git error output in the error message
-		return wrapGitError("Failed to commit files", result, err)
+		return gitutil.WrapGitError("Failed to commit files", result, err)
 	}
 
 	return nil

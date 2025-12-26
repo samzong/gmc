@@ -99,14 +99,14 @@ func handleErrors(err error) error {
 	}
 
 	if errors.Is(err, errNoChangesDetected) {
-		fmt.Fprintln(os.Stderr, "No changes detected in the staging area files.")
+		fmt.Fprintln(errWriter(), "No changes detected in the staging area files.")
 		if !addAll {
-			fmt.Fprintln(os.Stderr, "Hint: You can use -a or --all to automatically add all changes to the staging area.")
+			fmt.Fprintln(errWriter(), "Hint: You can use -a or --all to automatically add all changes to the staging area.")
 		}
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "gmc: %v\n", err)
+	fmt.Fprintf(errWriter(), "gmc: %v\n", err)
 	return err
 }
 
@@ -158,11 +158,11 @@ func handleBranchCreation() error {
 		return errors.New("invalid branch description: cannot generate branch name")
 	}
 
-	fmt.Fprintf(os.Stderr, "Creating and switching to branch: %s\n", branchName)
+	fmt.Fprintf(errWriter(), "Creating and switching to branch: %s\n", branchName)
 	if err := git.CreateAndSwitchBranch(branchName); err != nil {
 		return fmt.Errorf("failed to create branch: %w", err)
 	}
-	fmt.Fprintln(os.Stderr, "Successfully created and switched to new branch!")
+	fmt.Fprintln(errWriter(), "Successfully created and switched to new branch!")
 	return nil
 }
 
@@ -174,7 +174,7 @@ func handleStaging() error {
 	if err := git.AddAll(); err != nil {
 		return fmt.Errorf("git add failed: %w", err)
 	}
-	fmt.Fprintln(os.Stderr, "All changes have been added to the staging area.")
+	fmt.Fprintln(errWriter(), "All changes have been added to the staging area.")
 	return nil
 }
 
@@ -204,32 +204,28 @@ func handleStdinDiff() error {
 	}
 
 	// Read diff from stdin
-	var sb strings.Builder
-	scanner := bufio.NewScanner(os.Stdin)
-	// Increase buffer size for large diffs
-	buf := make([]byte, 1024*1024)
-	scanner.Buffer(buf, 10*1024*1024)
-	for scanner.Scan() {
-		sb.WriteString(scanner.Text())
-		sb.WriteString("\n")
-	}
-	if err := scanner.Err(); err != nil {
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
 		return fmt.Errorf("failed to read stdin: %w", err)
 	}
 
-	diff := strings.TrimSpace(sb.String())
+	diff := strings.TrimSpace(string(data))
 	if diff == "" {
 		return errors.New("empty diff received from stdin")
 	}
 
 	if debug {
-		fmt.Fprintf(os.Stderr, "[debug] Read %d bytes from stdin\n", len(diff))
+		fmt.Fprintf(errWriter(), "[debug] Read %d bytes from stdin\n", len(diff))
 	}
 
 	// Extract file names from diff
 	changedFiles := extractFilesFromDiff(diff)
 
-	cfg, proceed, err := ensureConfiguredAndGetConfig(config.GetConfig(), os.Stdin, os.Stderr, runInitWizard)
+	cfg, cfgErr := config.GetConfig()
+	if cfgErr != nil {
+		return cfgErr
+	}
+	cfg, proceed, err := ensureConfiguredAndGetConfig(cfg, os.Stdin, errWriter(), runInitWizard)
 	if err != nil {
 		return err
 	}
@@ -244,8 +240,8 @@ func handleStdinDiff() error {
 	}
 
 	// In stdin mode, always output the message and exit (no commit)
-	fmt.Fprintln(os.Stderr, "\n[stdin mode: message only, no commit]")
-	fmt.Println(message)
+	fmt.Fprintln(errWriter(), "\n[stdin mode: message only, no commit]")
+	fmt.Fprintln(outWriter(), message)
 	return nil
 }
 
@@ -259,7 +255,11 @@ func ensureConfiguredAndGetConfig(
 	if err != nil || !proceed {
 		return nil, proceed, err
 	}
-	return config.GetConfig(), true, nil
+	updatedCfg, cfgErr := config.GetConfig()
+	if cfgErr != nil {
+		return nil, false, cfgErr
+	}
+	return updatedCfg, true, nil
 }
 
 // extractFilesFromDiff parses file names from unified diff format
@@ -280,7 +280,11 @@ func extractFilesFromDiff(diff string) []string {
 }
 
 func handleCommitFlow(diff string, changedFiles []string) error {
-	cfg, proceed, err := ensureConfiguredAndGetConfig(config.GetConfig(), os.Stdin, os.Stderr, runInitWizard)
+	cfg, cfgErr := config.GetConfig()
+	if cfgErr != nil {
+		return cfgErr
+	}
+	cfg, proceed, err := ensureConfiguredAndGetConfig(cfg, os.Stdin, errWriter(), runInitWizard)
 	if err != nil {
 		return err
 	}
@@ -309,14 +313,14 @@ func generateCommitMessage(cfg *config.Config, changedFiles []string, diff strin
 		formattedMessage = fmt.Sprintf("%s (#%s)", formattedMessage, issueNum)
 	}
 
-	fmt.Fprintln(os.Stderr, "\nGenerated Commit Message:")
-	fmt.Println(formattedMessage)
+	fmt.Fprintln(errWriter(), "\nGenerated Commit Message:")
+	fmt.Fprintln(outWriter(), formattedMessage)
 	return formattedMessage, nil
 }
 
 func getUserConfirmation(message string) (string, string, error) {
 	if autoYes {
-		fmt.Fprintln(os.Stderr, "Auto-confirming commit message (-y flag is set)")
+		fmt.Fprintln(errWriter(), "Auto-confirming commit message (-y flag is set)")
 		return "commit", "", nil
 	}
 
@@ -324,7 +328,7 @@ func getUserConfirmation(message string) (string, string, error) {
 		return "", "", errors.New("stdin is not a terminal, use --yes to skip interactive confirmation")
 	}
 
-	fmt.Fprint(os.Stderr,
+	fmt.Fprint(errWriter(),
 		"\nDo you want to proceed with this commit message? [y/n/r/e] (y/n/r=regenerate/e=edit): ")
 	reader := bufio.NewReader(os.Stdin)
 	response, err := reader.ReadString('\n')
@@ -343,17 +347,17 @@ func getUserConfirmation(message string) (string, string, error) {
 		return "commit", editedMessage, err
 	case "y", "":
 		if response == "" {
-			fmt.Fprintln(os.Stderr, "Using default option (yes)")
+			fmt.Fprintln(errWriter(), "Using default option (yes)")
 		}
 		return "commit", "", nil
 	default:
-		fmt.Fprintln(os.Stderr, "Invalid input. Commit cancelled")
+		fmt.Fprintln(errWriter(), "Invalid input. Commit cancelled")
 		return "cancel", "", nil
 	}
 }
 
 func openEditor(message string) (string, error) {
-	fmt.Fprintln(os.Stderr, "Opening editor to modify commit message...")
+	fmt.Fprintln(errWriter(), "Opening editor to modify commit message...")
 
 	tmpFile, err := os.CreateTemp("", "gmc-commit-")
 	if err != nil {
@@ -390,12 +394,12 @@ func openEditor(message string) (string, error) {
 		if issueNum != "" {
 			formattedMessage = fmt.Sprintf("%s (#%s)", formattedMessage, issueNum)
 		}
-		fmt.Fprintln(os.Stderr, "Using edited message:")
-		fmt.Fprintln(os.Stderr, formattedMessage)
+		fmt.Fprintln(errWriter(), "Using edited message:")
+		fmt.Fprintln(errWriter(), formattedMessage)
 		return formattedMessage, nil
 	}
 
-	fmt.Fprintln(os.Stderr, "Empty message provided, using original message")
+	fmt.Fprintln(errWriter(), "Empty message provided, using original message")
 	return "", nil
 }
 
@@ -447,7 +451,7 @@ func stageAndCommitFiles(files []string) error {
 		if err := git.StageFiles(toStage); err != nil {
 			return fmt.Errorf("failed to stage files: %w", err)
 		}
-		fmt.Fprintf(os.Stderr, "Staged files: %v\n", toStage)
+		fmt.Fprintf(errWriter(), "Staged files: %v\n", toStage)
 	}
 
 	// Get all files to commit (staged + newly staged)
@@ -496,7 +500,11 @@ func commitStagedFiles(files []string) error {
 }
 
 func handleSelectiveCommitFlow(diff string, files []string) error {
-	cfg, proceed, err := ensureConfiguredAndGetConfig(config.GetConfig(), os.Stdin, os.Stderr, runInitWizard)
+	cfg, cfgErr := config.GetConfig()
+	if cfgErr != nil {
+		return cfgErr
+	}
+	cfg, proceed, err := ensureConfiguredAndGetConfig(cfg, os.Stdin, errWriter(), runInitWizard)
 	if err != nil {
 		return err
 	}
@@ -523,7 +531,7 @@ func buildCommitArgs() []string {
 
 func performCommit(message string) error {
 	if dryRun {
-		fmt.Fprintln(os.Stderr, "Dry run mode, no actual commit")
+		fmt.Fprintln(errWriter(), "Dry run mode, no actual commit")
 		return nil
 	}
 
@@ -533,14 +541,14 @@ func performCommit(message string) error {
 		return fmt.Errorf("failed to commit changes: %w", err)
 	}
 
-	fmt.Fprintln(os.Stderr, "Successfully committed changes!")
+	fmt.Fprintln(errWriter(), "Successfully committed changes!")
 	return nil
 }
 
 func performSelectiveCommit(message string, files []string) error {
 	if dryRun {
-		fmt.Fprintln(os.Stderr, "Dry run mode, no actual commit")
-		fmt.Fprintf(os.Stderr, "Would commit files: %v\n", files)
+		fmt.Fprintln(errWriter(), "Dry run mode, no actual commit")
+		fmt.Fprintf(errWriter(), "Would commit files: %v\n", files)
 		return nil
 	}
 
@@ -550,7 +558,7 @@ func performSelectiveCommit(message string, files []string) error {
 		return fmt.Errorf("failed to commit files: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Successfully committed files: %v!\n", files)
+	fmt.Fprintf(errWriter(), "Successfully committed files: %v!\n", files)
 	return nil
 }
 
@@ -568,10 +576,10 @@ func runCommitFlow(cfg *config.Config, files []string, diff string, commitExec f
 
 		switch action {
 		case "cancel":
-			fmt.Fprintln(os.Stderr, "Commit cancelled by user")
+			fmt.Fprintln(errWriter(), "Commit cancelled by user")
 			return nil
 		case "regenerate":
-			fmt.Fprintln(os.Stderr, "Regenerating commit message...")
+			fmt.Fprintln(errWriter(), "Regenerating commit message...")
 			continue
 		case "commit":
 			finalMessage := message

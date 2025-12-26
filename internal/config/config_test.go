@@ -269,7 +269,8 @@ func TestGetConfig(t *testing.T) {
 	viper.Set("api_base", "https://test-api.com/v1")
 	viper.Set("prompt_template", "/test/prompts/test_template.yaml")
 
-	cfg := GetConfig()
+	cfg, err := GetConfig()
+	require.NoError(t, err)
 
 	assert.Equal(t, "Test Developer", cfg.Role)
 	assert.Equal(t, "gpt-4", cfg.Model)
@@ -283,11 +284,11 @@ func TestGetConfig_UnmarshalError(t *testing.T) {
 	viper.Reset()
 
 	// For this test, we'll just ensure GetConfig() works with defaults
-	cfg := GetConfig()
+	cfg, err := GetConfig()
 
+	require.NoError(t, err)
 	assert.NotNil(t, cfg)
-	// Should have some defaults set (either empty string or default values)
-	assert.True(t, cfg.Role == "" || cfg.Role == DefaultRole)
+	assert.Equal(t, DefaultRole, cfg.Role)
 }
 
 func TestSaveConfig(t *testing.T) {

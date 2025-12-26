@@ -26,7 +26,8 @@ var (
 	configSetCmd = &cobra.Command{
 		Use:   "set",
 		Short: "Set configuration item",
-		Run: func(_ *cobra.Command, _ []string) {
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
 		},
 	}
 
@@ -35,19 +36,7 @@ var (
 		Short: "Set Current Role",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			role := args[0]
-			if !config.IsValidRole(role) {
-				return fmt.Errorf("invalid role: %s", role)
-			}
-
-			config.SetConfigValue("role", role)
-
-			if err := saveConfig(); err != nil {
-				return err
-			}
-
-			fmt.Fprintf(os.Stderr, "The role has been set to: %s\n", role)
-			return nil
+			return runConfigSetRole(args)
 		},
 	}
 
@@ -56,19 +45,7 @@ var (
 		Short: "Set up the LLM model",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			model := args[0]
-			if !config.IsValidModel(model) {
-				return fmt.Errorf("invalid model: %s", model)
-			}
-
-			config.SetConfigValue("model", model)
-
-			if err := saveConfig(); err != nil {
-				return err
-			}
-
-			fmt.Fprintf(os.Stderr, "The model has been set to: %s\n", model)
-			return nil
+			return runConfigSetModel(args)
 		},
 	}
 
@@ -84,30 +61,7 @@ Usage:
   gmc config set apikey`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			if !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd()) {
-				return errors.New("this command requires an interactive terminal")
-			}
-
-			fmt.Fprint(os.Stderr, "Enter API Key: ")
-			keyBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
-			fmt.Fprintln(os.Stderr) // newline after hidden input
-			if err != nil {
-				return fmt.Errorf("failed to read API key: %w", err)
-			}
-
-			apiKey := strings.TrimSpace(string(keyBytes))
-			if apiKey == "" {
-				return errors.New("API key cannot be empty")
-			}
-
-			config.SetConfigValue("api_key", apiKey)
-
-			if err := saveConfig(); err != nil {
-				return err
-			}
-
-			fmt.Fprintln(os.Stderr, "The API key has been set")
-			return nil
+			return runConfigSetAPIKey()
 		},
 	}
 
@@ -116,17 +70,7 @@ Usage:
 		Short: "Set OpenAI API Base URL",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			apiBase := args[0]
-
-			config.SetConfigValue("api_base", apiBase)
-
-			if err := saveConfig(); err != nil {
-				return err
-			}
-
-			fmt.Fprintln(os.Stderr, "The API base URL has been set to:", apiBase)
-			fmt.Fprintln(os.Stderr, "Note: This setting is used for proxy OpenAI API, leave it empty if you don't need a proxy")
-			return nil
+			return runConfigSetAPIBase(args)
 		},
 	}
 
@@ -135,21 +79,7 @@ Usage:
 		Short: "Set Prompt Template",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			templateName := args[0]
-
-			_, err := formatter.GetPromptTemplate(templateName)
-			if err != nil {
-				return fmt.Errorf("invalid prompt template: %s, error: %w", templateName, err)
-			}
-
-			config.SetConfigValue("prompt_template", templateName)
-
-			if err := saveConfig(); err != nil {
-				return err
-			}
-
-			fmt.Fprintf(os.Stderr, "The prompt template has been set to: %s\n", templateName)
-			return nil
+			return runConfigSetPromptTemplate(args)
 		},
 	}
 
@@ -158,29 +88,7 @@ Usage:
 		Short: "Enable or disable emoji in commit messages",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			value := args[0]
-			var enableEmoji bool
-			switch value {
-			case "true":
-				enableEmoji = true
-			case "false":
-				enableEmoji = false
-			default:
-				return fmt.Errorf("invalid value: %s (must be 'true' or 'false')", value)
-			}
-
-			config.SetConfigValue("enable_emoji", enableEmoji)
-
-			if err := saveConfig(); err != nil {
-				return err
-			}
-
-			if enableEmoji {
-				fmt.Fprintln(os.Stderr, "Emoji support has been enabled")
-			} else {
-				fmt.Fprintln(os.Stderr, "Emoji support has been disabled")
-			}
-			return nil
+			return runConfigSetEnableEmoji(args)
 		},
 	}
 
@@ -188,36 +96,7 @@ Usage:
 		Use:   "get",
 		Short: "Get Current Configuration",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			cfg := config.GetConfig()
-
-			if configOutputJSON {
-				// JSON output to stdout for machine consumption
-				output := configJSONOutput{
-					Role:           cfg.Role,
-					Model:          cfg.Model,
-					APIKeySet:      cfg.APIKey != "",
-					APIBase:        cfg.APIBase,
-					PromptTemplate: cfg.PromptTemplate,
-					EnableEmoji:    cfg.EnableEmoji,
-				}
-				encoder := json.NewEncoder(os.Stdout)
-				encoder.SetIndent("", "  ")
-				return encoder.Encode(output)
-			}
-
-			// Human-readable output to stdout (main data output)
-			fmt.Println("Current Configuration:")
-			fmt.Printf("Role: %s\n", cfg.Role)
-			fmt.Printf("Model: %s\n", cfg.Model)
-			fmt.Println("API Key: ********")
-			if cfg.APIBase != "" {
-				fmt.Printf("API Base URL: %s\n", cfg.APIBase)
-			} else {
-				fmt.Println("API Base URL: <Not Set>")
-			}
-			fmt.Printf("Prompt Template: %s\n", cfg.PromptTemplate)
-			fmt.Printf("Enable Emoji: %v\n", cfg.EnableEmoji)
-			return nil
+			return runConfigGet()
 		},
 	}
 )
@@ -236,6 +115,159 @@ func saveConfig() error {
 	if err := config.SaveConfig(); err != nil {
 		return fmt.Errorf("failed to save configuration: %w", err)
 	}
+	return nil
+}
+
+func runConfigSetRole(args []string) error {
+	role := args[0]
+	if !config.IsValidRole(role) {
+		return fmt.Errorf("invalid role: %s", role)
+	}
+
+	config.SetConfigValue("role", role)
+
+	if err := saveConfig(); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(outWriter(), "The role has been set to: %s\n", role)
+	return nil
+}
+
+func runConfigSetModel(args []string) error {
+	model := args[0]
+	if !config.IsValidModel(model) {
+		return fmt.Errorf("invalid model: %s", model)
+	}
+
+	config.SetConfigValue("model", model)
+
+	if err := saveConfig(); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(outWriter(), "The model has been set to: %s\n", model)
+	return nil
+}
+
+func runConfigSetAPIKey() error {
+	if !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd()) {
+		return errors.New("this command requires an interactive terminal")
+	}
+
+	fmt.Fprint(errWriter(), "Enter API Key: ")
+	keyBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Fprintln(errWriter()) // newline after hidden input
+	if err != nil {
+		return fmt.Errorf("failed to read API key: %w", err)
+	}
+
+	apiKey := strings.TrimSpace(string(keyBytes))
+	if apiKey == "" {
+		return errors.New("API key cannot be empty")
+	}
+
+	config.SetConfigValue("api_key", apiKey)
+
+	if err := saveConfig(); err != nil {
+		return err
+	}
+
+	fmt.Fprintln(outWriter(), "The API key has been set")
+	return nil
+}
+
+func runConfigSetAPIBase(args []string) error {
+	apiBase := args[0]
+
+	config.SetConfigValue("api_base", apiBase)
+
+	if err := saveConfig(); err != nil {
+		return err
+	}
+
+	fmt.Fprintln(outWriter(), "The API base URL has been set to:", apiBase)
+	fmt.Fprintln(outWriter(), "Note: This setting is used for proxy OpenAI API, leave it empty if you don't need a proxy")
+	return nil
+}
+
+func runConfigSetPromptTemplate(args []string) error {
+	templateName := args[0]
+
+	_, err := formatter.GetPromptTemplate(templateName)
+	if err != nil {
+		return fmt.Errorf("invalid prompt template: %s, error: %w", templateName, err)
+	}
+
+	config.SetConfigValue("prompt_template", templateName)
+
+	if err := saveConfig(); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(outWriter(), "The prompt template has been set to: %s\n", templateName)
+	return nil
+}
+
+func runConfigSetEnableEmoji(args []string) error {
+	value := args[0]
+	var enableEmoji bool
+	switch value {
+	case "true":
+		enableEmoji = true
+	case "false":
+		enableEmoji = false
+	default:
+		return fmt.Errorf("invalid value: %s (must be 'true' or 'false')", value)
+	}
+
+	config.SetConfigValue("enable_emoji", enableEmoji)
+
+	if err := saveConfig(); err != nil {
+		return err
+	}
+
+	if enableEmoji {
+		fmt.Fprintln(outWriter(), "Emoji support has been enabled")
+	} else {
+		fmt.Fprintln(outWriter(), "Emoji support has been disabled")
+	}
+	return nil
+}
+
+func runConfigGet() error {
+	cfg, err := config.GetConfig()
+	if err != nil {
+		return err
+	}
+
+	if configOutputJSON {
+		// JSON output to stdout for machine consumption
+		output := configJSONOutput{
+			Role:           cfg.Role,
+			Model:          cfg.Model,
+			APIKeySet:      cfg.APIKey != "",
+			APIBase:        cfg.APIBase,
+			PromptTemplate: cfg.PromptTemplate,
+			EnableEmoji:    cfg.EnableEmoji,
+		}
+		encoder := json.NewEncoder(outWriter())
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(output)
+	}
+
+	// Human-readable output to stdout (main data output)
+	fmt.Fprintln(outWriter(), "Current Configuration:")
+	fmt.Fprintf(outWriter(), "Role: %s\n", cfg.Role)
+	fmt.Fprintf(outWriter(), "Model: %s\n", cfg.Model)
+	fmt.Fprintln(outWriter(), "API Key: ********")
+	if cfg.APIBase != "" {
+		fmt.Fprintf(outWriter(), "API Base URL: %s\n", cfg.APIBase)
+	} else {
+		fmt.Fprintln(outWriter(), "API Base URL: <Not Set>")
+	}
+	fmt.Fprintf(outWriter(), "Prompt Template: %s\n", cfg.PromptTemplate)
+	fmt.Fprintf(outWriter(), "Enable Emoji: %v\n", cfg.EnableEmoji)
 	return nil
 }
 

@@ -68,9 +68,9 @@ func runTagCommand() error {
 
 	if len(commits) == 0 {
 		if lastTag == "" {
-			fmt.Fprintln(os.Stderr, "No commits found in the repository; nothing to tag yet.")
+			fmt.Fprintln(outWriter(), "No commits found in the repository; nothing to tag yet.")
 		} else {
-			fmt.Fprintf(os.Stderr, "No new commits since %s; no tag created.\n", lastTag)
+			fmt.Fprintf(outWriter(), "No new commits since %s; no tag created.\n", lastTag)
 		}
 		return nil
 	}
@@ -90,18 +90,21 @@ func runTagCommand() error {
 		displayTag = "initial commit"
 	}
 
-	fmt.Fprintf(os.Stderr, "Commits since %s (%d total):\n", displayTag, len(commits))
+	fmt.Fprintf(outWriter(), "Commits since %s (%d total):\n", displayTag, len(commits))
 	for _, commit := range commits {
-		fmt.Fprintf(os.Stderr, "  - %s\n", commit.Message)
+		fmt.Fprintf(outWriter(), "  - %s\n", commit.Message)
 	}
-	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(outWriter())
 
 	ruleResult := version.SuggestWithRules(baseVersion, commits)
 	finalVersion := ruleResult.NextVersion
 	finalReason := ruleResult.Reason
 	source := "rule engine"
 
-	cfg := config.GetConfig()
+	cfg, cfgErr := config.GetConfig()
+	if cfgErr != nil {
+		return cfgErr
+	}
 	if cfg.APIKey != "" {
 		commitSummaries := make([]string, 0, len(commits))
 		for _, commit := range commits {
@@ -120,21 +123,21 @@ func runTagCommand() error {
 
 		llmVersionStr, llmReason, err := llm.SuggestVersion(baseVersion.String(), commitSummaries, cfg.Model)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: LLM version suggestion failed: %v\n", err)
+			fmt.Fprintf(errWriter(), "Warning: LLM version suggestion failed: %v\n", err)
 		} else {
 			llmVersion, parseErr := version.ParseSemVer(llmVersionStr)
 
 			switch {
 			case parseErr != nil:
 				fmt.Fprintf(
-					os.Stderr,
+					errWriter(),
 					"Warning: Invalid LLM version suggestion %q: %v\n",
 					llmVersionStr,
 					parseErr,
 				)
 			case llmVersion.LessThan(ruleResult.NextVersion):
 				fmt.Fprintf(
-					os.Stderr,
+					errWriter(),
 					"Warning: LLM suggested %s which is lower than rule-based %s; keeping rule result.\n",
 					llmVersion.String(),
 					ruleResult.NextVersion.String(),
@@ -149,19 +152,19 @@ func runTagCommand() error {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Suggested version (%s): %s\n", source, finalVersion.String())
+	fmt.Fprintf(outWriter(), "Suggested version (%s): %s\n", source, finalVersion.String())
 	if strings.TrimSpace(finalReason) != "" {
-		fmt.Fprintf(os.Stderr, "Reason: %s\n", finalReason)
+		fmt.Fprintf(outWriter(), "Reason: %s\n", finalReason)
 	}
-	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(outWriter())
 
 	if lastTag != "" && finalVersion.Equal(baseVersion) {
-		fmt.Fprintln(os.Stderr, "No version bump recommended. No tag created.")
+		fmt.Fprintln(outWriter(), "No version bump recommended. No tag created.")
 		return nil
 	}
 
 	if lastTag == "" && finalVersion.Equal(baseVersion) {
-		fmt.Fprintf(os.Stderr, "Suggested version matches base version %s; skipping tag creation.\n", baseVersion.String())
+		fmt.Fprintf(outWriter(), "Suggested version matches base version %s; skipping tag creation.\n", baseVersion.String())
 		return nil
 	}
 
@@ -171,7 +174,7 @@ func runTagCommand() error {
 	}
 
 	if !confirmed {
-		fmt.Fprintln(os.Stderr, "Tag creation cancelled.")
+		fmt.Fprintln(outWriter(), "Tag creation cancelled.")
 		return nil
 	}
 
@@ -184,14 +187,14 @@ func runTagCommand() error {
 		return fmt.Errorf("failed to create tag: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Tag %s created successfully.\n", finalVersion.String())
-	fmt.Fprintf(os.Stderr, "Hint: run `git push origin %s` to share the tag.\n", finalVersion.String())
+	fmt.Fprintf(outWriter(), "Tag %s created successfully.\n", finalVersion.String())
+	fmt.Fprintf(outWriter(), "Hint: run `git push origin %s` to share the tag.\n", finalVersion.String())
 	return nil
 }
 
 func confirmTagCreation(tag string) (bool, error) {
 	if tagAutoYes {
-		fmt.Fprintln(os.Stderr, "Auto-confirming tag creation (-y flag is set)")
+		fmt.Fprintln(errWriter(), "Auto-confirming tag creation (-y flag is set)")
 		return true, nil
 	}
 
@@ -199,7 +202,7 @@ func confirmTagCreation(tag string) (bool, error) {
 		return false, errors.New("stdin is not a terminal, use --yes to skip interactive confirmation")
 	}
 
-	fmt.Fprintf(os.Stderr, "Create tag %s? [y/N]: ", tag)
+	fmt.Fprintf(errWriter(), "Create tag %s? [y/N]: ", tag)
 	reader := bufio.NewReader(os.Stdin)
 	input, err := reader.ReadString('\n')
 	if err != nil {

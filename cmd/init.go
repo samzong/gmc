@@ -18,11 +18,14 @@ var (
 		Use:   "init",
 		Short: "Initialize gmc configuration",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			cfg := config.GetConfig()
-			if err := runInitWizard(os.Stdin, os.Stdout, cfg); err != nil {
+			cfg, err := config.GetConfig()
+			if err != nil {
 				return err
 			}
-			fmt.Fprintln(os.Stdout, "Initialization complete.")
+			if err := runInitWizard(os.Stdin, outWriter(), cfg); err != nil {
+				return err
+			}
+			fmt.Fprintln(outWriter(), "Initialization complete.")
 			return nil
 		},
 	}
@@ -40,7 +43,11 @@ var (
 func runInitWizard(in io.Reader, out io.Writer, current *config.Config) error {
 	cfg := current
 	if cfg == nil {
-		cfg = config.GetConfig()
+		var err error
+		cfg, err = config.GetConfig()
+		if err != nil {
+			return err
+		}
 	}
 
 	reader := bufio.NewReader(in)
@@ -144,7 +151,11 @@ func ensureLLMConfigured(
 ) (bool, error) {
 	current := cfg
 	if current == nil {
-		current = config.GetConfig()
+		var err error
+		current, err = config.GetConfig()
+		if err != nil {
+			return false, err
+		}
 	}
 	if strings.TrimSpace(current.APIKey) != "" {
 		return true, nil

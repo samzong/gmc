@@ -358,10 +358,11 @@ func TestGenerateCommitMessage_IssueNumber(t *testing.T) {
 	diff := "test diff content"
 
 	// Get config for the test
-	cfg := config.GetConfig()
+	cfg, err := config.GetConfig()
+	assert.NoError(t, err)
 
 	// The function will fail at LLM call, but issue number formatting logic will be exercised
-	_, err := generateCommitMessage(cfg, changedFiles, diff, "")
+	_, err = generateCommitMessage(cfg, changedFiles, diff, "")
 
 	// We expect an error due to fake API key
 	if err != nil {
@@ -608,7 +609,8 @@ func TestGenerateCommitMessage_Complete(t *testing.T) {
 	originalIssueNum := issueNum
 	defer func() { issueNum = originalIssueNum }()
 
-	cfg := config.GetConfig()
+	cfg, err := config.GetConfig()
+	assert.NoError(t, err)
 	changedFiles := []string{"main.go", "cmd/root.go", "internal/config/config.go"}
 	diff := `diff --git a/main.go b/main.go
 index 1234567..abcdefg 100644
@@ -623,7 +625,7 @@ index 1234567..abcdefg 100644
 
 	// Test without issue number
 	issueNum = ""
-	_, err := generateCommitMessage(cfg, changedFiles, diff, "")
+	_, err = generateCommitMessage(cfg, changedFiles, diff, "")
 	if err != nil {
 		assert.Contains(t, err.Error(), "failed to generate commit message")
 	}

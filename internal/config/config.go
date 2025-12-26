@@ -166,20 +166,31 @@ func findRepoConfig() string {
 	return ""
 }
 
-func GetConfig() *Config {
-	cfg := &Config{}
+func GetConfig() (*Config, error) {
+	cfg := defaultConfig()
 	if err := viper.Unmarshal(cfg); err != nil {
-		fmt.Fprintln(os.Stderr, "Error: Failed to parse configuration:", err)
-		return &Config{
-			Role:           DefaultRole,
-			Model:          DefaultModel,
-			APIKey:         "",
-			APIBase:        "",
-			PromptTemplate: DefaultPromptTemplate,
-			EnableEmoji:    false,
-		}
+		return cfg, fmt.Errorf("failed to parse configuration: %w", err)
+	}
+	return cfg, nil
+}
+
+func MustGetConfig() *Config {
+	cfg, err := GetConfig()
+	if err != nil {
+		return defaultConfig()
 	}
 	return cfg
+}
+
+func defaultConfig() *Config {
+	return &Config{
+		Role:           DefaultRole,
+		Model:          DefaultModel,
+		APIKey:         "",
+		APIBase:        "",
+		PromptTemplate: DefaultPromptTemplate,
+		EnableEmoji:    false,
+	}
 }
 
 func SaveConfig() error {

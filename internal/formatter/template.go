@@ -56,7 +56,7 @@ func init() {
 
 // buildDefaultTemplateContent builds the default template content based on enable_emoji configuration
 func buildDefaultTemplateContent() string {
-	cfg := config.GetConfig()
+	cfg := config.MustGetConfig()
 	enableEmoji := cfg.EnableEmoji
 
 	formatMsg := templateParts.Format
