@@ -49,6 +49,14 @@ func (r Runner) log(args []string) {
 	fmt.Fprintf(r.Logger, "Running: git %s\n", strings.Join(args, " "))
 }
 
+func (r Runner) prepare(args []string, log bool) *exec.Cmd {
+	r = r.withDefaults()
+	if log {
+		r.log(args)
+	}
+	return r.command(args...)
+}
+
 // Run executes a git command and captures stdout/stderr.
 func (r Runner) Run(args ...string) (Result, error) {
 	return r.run(args, false)
@@ -75,12 +83,7 @@ func (r Runner) RunWithWriters(log bool, stdout io.Writer, stderr io.Writer, arg
 }
 
 func (r Runner) run(args []string, log bool) (Result, error) {
-	r = r.withDefaults()
-	if log {
-		r.log(args)
-	}
-
-	cmd := r.command(args...)
+	cmd := r.prepare(args, log)
 	var outBuf bytes.Buffer
 	var errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
@@ -91,12 +94,7 @@ func (r Runner) run(args []string, log bool) (Result, error) {
 }
 
 func (r Runner) runWithWriters(args []string, log bool, stdout io.Writer, stderr io.Writer) error {
-	r = r.withDefaults()
-	if log {
-		r.log(args)
-	}
-
-	cmd := r.command(args...)
+	cmd := r.prepare(args, log)
 	if stdout != nil {
 		cmd.Stdout = stdout
 	}

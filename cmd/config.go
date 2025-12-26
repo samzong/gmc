@@ -42,8 +42,8 @@ var (
 
 			config.SetConfigValue("role", role)
 
-			if err := config.SaveConfig(); err != nil {
-				return fmt.Errorf("failed to save configuration: %w", err)
+			if err := saveConfig(); err != nil {
+				return err
 			}
 
 			fmt.Fprintf(os.Stderr, "The role has been set to: %s\n", role)
@@ -63,8 +63,8 @@ var (
 
 			config.SetConfigValue("model", model)
 
-			if err := config.SaveConfig(); err != nil {
-				return fmt.Errorf("failed to save configuration: %w", err)
+			if err := saveConfig(); err != nil {
+				return err
 			}
 
 			fmt.Fprintf(os.Stderr, "The model has been set to: %s\n", model)
@@ -102,8 +102,8 @@ Usage:
 
 			config.SetConfigValue("api_key", apiKey)
 
-			if err := config.SaveConfig(); err != nil {
-				return fmt.Errorf("failed to save configuration: %w", err)
+			if err := saveConfig(); err != nil {
+				return err
 			}
 
 			fmt.Fprintln(os.Stderr, "The API key has been set")
@@ -120,8 +120,8 @@ Usage:
 
 			config.SetConfigValue("api_base", apiBase)
 
-			if err := config.SaveConfig(); err != nil {
-				return fmt.Errorf("failed to save configuration: %w", err)
+			if err := saveConfig(); err != nil {
+				return err
 			}
 
 			fmt.Fprintln(os.Stderr, "The API base URL has been set to:", apiBase)
@@ -144,8 +144,8 @@ Usage:
 
 			config.SetConfigValue("prompt_template", templateName)
 
-			if err := config.SaveConfig(); err != nil {
-				return fmt.Errorf("failed to save configuration: %w", err)
+			if err := saveConfig(); err != nil {
+				return err
 			}
 
 			fmt.Fprintf(os.Stderr, "The prompt template has been set to: %s\n", templateName)
@@ -171,8 +171,8 @@ Usage:
 
 			config.SetConfigValue("enable_emoji", enableEmoji)
 
-			if err := config.SaveConfig(); err != nil {
-				return fmt.Errorf("failed to save configuration: %w", err)
+			if err := saveConfig(); err != nil {
+				return err
 			}
 
 			if enableEmoji {
@@ -230,6 +230,13 @@ type configJSONOutput struct {
 	APIBase        string `json:"api_base"`
 	PromptTemplate string `json:"prompt_template"`
 	EnableEmoji    bool   `json:"enable_emoji"`
+}
+
+func saveConfig() error {
+	if err := config.SaveConfig(); err != nil {
+		return fmt.Errorf("failed to save configuration: %w", err)
+	}
+	return nil
 }
 
 func init() {

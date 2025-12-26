@@ -18,6 +18,13 @@ func gitRunner() gitcmd.Runner {
 	return gitcmd.Runner{Verbose: Verbose}
 }
 
+func logVerboseOutput(label string, data []byte) {
+	if !Verbose || len(data) == 0 {
+		return
+	}
+	fmt.Fprintln(os.Stderr, label, string(data))
+}
+
 // CommitInfo represents information about a single commit
 type CommitInfo struct {
 	Hash    string `json:"hash"`
@@ -71,9 +78,7 @@ func GetStagedDiff() (string, error) {
 
 	result, err := gitRunner().RunLogged("diff", "--cached")
 	if err != nil {
-		if Verbose && len(result.Stderr) > 0 {
-			fmt.Fprintln(os.Stderr, "Git stderr:", string(result.Stderr))
-		}
+		logVerboseOutput("Git stderr:", result.Stderr)
 		return "", fmt.Errorf("failed to run git diff --cached: %w", err)
 	}
 
@@ -128,9 +133,7 @@ func ParseStagedFiles() ([]string, error) {
 
 	runResult, err := gitRunner().RunLogged("diff", "--cached", "--name-only")
 	if err != nil {
-		if Verbose && len(runResult.Stderr) > 0 {
-			fmt.Fprintln(os.Stderr, "Git stderr:", string(runResult.Stderr))
-		}
+		logVerboseOutput("Git stderr:", runResult.Stderr)
 		return nil, fmt.Errorf("failed to run git diff --cached --name-only: %w", err)
 	}
 
@@ -153,15 +156,11 @@ func AddAll() error {
 
 	result, err := gitRunner().RunLogged("add", ".")
 	if err != nil {
-		if Verbose && len(result.Stderr) > 0 {
-			fmt.Fprintln(os.Stderr, "Git stderr:", string(result.Stderr))
-		}
+		logVerboseOutput("Git stderr:", result.Stderr)
 		return fmt.Errorf("failed to run git add .: %w", err)
 	}
 
-	if Verbose && len(result.Stderr) > 0 {
-		fmt.Fprintln(os.Stderr, "Git output:", string(result.Stderr))
-	}
+	logVerboseOutput("Git output:", result.Stderr)
 
 	return nil
 }
@@ -176,12 +175,8 @@ func Commit(message string, args ...string) error {
 
 	// Always show output in verbose mode
 	if Verbose {
-		if len(result.Stdout) > 0 {
-			fmt.Fprintln(os.Stderr, "Git output:", string(result.Stdout))
-		}
-		if len(result.Stderr) > 0 {
-			fmt.Fprintln(os.Stderr, "Git stderr:", string(result.Stderr))
-		}
+		logVerboseOutput("Git output:", result.Stdout)
+		logVerboseOutput("Git stderr:", result.Stderr)
 	}
 
 	if err != nil {
@@ -407,9 +402,7 @@ func GetCommitHistory(limit int, teamMode bool) ([]CommitInfo, error) {
 
 	result, err := gitRunner().RunLogged(args...)
 	if err != nil {
-		if Verbose && len(result.Stderr) > 0 {
-			fmt.Fprintln(os.Stderr, "Git stderr:", string(result.Stderr))
-		}
+		logVerboseOutput("Git stderr:", result.Stderr)
 		return nil, fmt.Errorf("failed to run git log: %w", err)
 	}
 
@@ -517,9 +510,7 @@ func isPathInStagedDiff(path string) (bool, error) {
 
 	result, err := gitRunner().RunLogged("diff", "--cached", "--name-only", "--", gitPath)
 	if err != nil {
-		if Verbose && len(result.Stderr) > 0 {
-			fmt.Fprintln(os.Stderr, "Git stderr:", string(result.Stderr))
-		}
+		logVerboseOutput("Git stderr:", result.Stderr)
 		return false, fmt.Errorf("failed to inspect staged diff: %w", err)
 	}
 
@@ -671,9 +662,7 @@ func GetFilesDiff(files []string) (string, error) {
 
 	result, err := gitRunner().RunLogged(args...)
 	if err != nil {
-		if Verbose && len(result.Stderr) > 0 {
-			fmt.Fprintln(os.Stderr, "Git stderr:", string(result.Stderr))
-		}
+		logVerboseOutput("Git stderr:", result.Stderr)
 		return "", fmt.Errorf("failed to get diff for files: %w", err)
 	}
 
@@ -695,12 +684,8 @@ func CommitFiles(message string, files []string, args ...string) error {
 
 	// Always show output in verbose mode
 	if Verbose {
-		if len(result.Stdout) > 0 {
-			fmt.Fprintln(os.Stderr, "Git output:", string(result.Stdout))
-		}
-		if len(result.Stderr) > 0 {
-			fmt.Fprintln(os.Stderr, "Git stderr:", string(result.Stderr))
-		}
+		logVerboseOutput("Git output:", result.Stdout)
+		logVerboseOutput("Git stderr:", result.Stderr)
 	}
 
 	if err != nil {
