@@ -164,6 +164,8 @@ func TestCleanProjectName(t *testing.T) {
 }
 
 func TestDetectRepositoryType_NotRepo(t *testing.T) {
+	client := NewClient(Options{})
+
 	// Create a temp directory that's not a git repo
 	tmpDir, err := os.MkdirTemp("", "gmc_test_")
 	if err != nil {
@@ -171,7 +173,7 @@ func TestDetectRepositoryType_NotRepo(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	repoType, err := DetectRepositoryType(tmpDir)
+	repoType, err := client.DetectRepositoryType(tmpDir)
 	if err != nil {
 		t.Fatalf("DetectRepositoryType() error = %v", err)
 	}
@@ -217,8 +219,10 @@ func TestFindBareRoot_Found(t *testing.T) {
 }
 
 func TestGetWorktreeStatus(t *testing.T) {
+	client := NewClient(Options{})
+
 	// For a non-existent path, should return unknown
-	status := GetWorktreeStatus("/nonexistent/path")
+	status := client.GetWorktreeStatus("/nonexistent/path")
 	if status != "unknown" {
 		t.Errorf("GetWorktreeStatus() = %q, want 'unknown'", status)
 	}

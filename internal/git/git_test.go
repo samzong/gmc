@@ -120,10 +120,12 @@ func TestCommitInfo(t *testing.T) {
 
 // Test ParseChangedFiles function signature
 func TestParseChangedFiles(t *testing.T) {
+	client := NewClient(Options{})
+
 	// Test that ParseChangedFiles has correct signature
 	// If we're in a git repo, it should succeed, otherwise error
-	files, err := ParseChangedFiles()
-	if IsGitRepository() {
+	files, err := client.ParseChangedFiles()
+	if client.IsGitRepository() {
 		assert.NoError(t, err, "ParseChangedFiles should succeed in git repo")
 		assert.NotNil(t, files, "Files slice should not be nil")
 	} else {
@@ -132,46 +134,42 @@ func TestParseChangedFiles(t *testing.T) {
 	}
 }
 
-// Test functions that don't require actual git commands
-func TestVerboseFlag(t *testing.T) {
-	// Test the global Verbose flag
-	originalVerbose := Verbose
-	defer func() { Verbose = originalVerbose }()
-
-	Verbose = true
-	assert.True(t, Verbose)
-
-	Verbose = false
-	assert.False(t, Verbose)
+func TestClientOptions_Verbose(t *testing.T) {
+	client := NewClient(Options{Verbose: true})
+	assert.True(t, client.verbose)
 }
 
 // Integration tests that require a real git repository
 // These tests will be skipped if not in a git repository
 func TestGitIntegration(t *testing.T) {
+	client := NewClient(Options{})
+
 	// Check if we're in a git repository
-	if !IsGitRepository() {
+	if !client.IsGitRepository() {
 		t.Skip("Not in a git repository, skipping integration tests")
 	}
 
 	t.Run("IsGitRepository", func(t *testing.T) {
-		result := IsGitRepository()
+		result := client.IsGitRepository()
 		assert.True(t, result, "Should detect git repository")
 	})
 
 	t.Run("CheckGitRepository", func(t *testing.T) {
-		err := CheckGitRepository()
+		err := client.CheckGitRepository()
 		assert.NoError(t, err, "Should not error in git repository")
 	})
 }
 
 // Test git functions with a temporary git repository
 func TestWithTempGitRepo(t *testing.T) {
+	client := NewClient(Options{})
+
 	if os.Getenv("RUN_INTEGRATION_TESTS") != "1" {
 		t.Skip("Skipping integration test that performs real git operations; set RUN_INTEGRATION_TESTS=1 to enable")
 	}
 
 	// SAFETY CHECK: Ensure we're not in a real git repository
-	if IsGitRepository() {
+	if client.IsGitRepository() {
 		t.Fatal("SAFETY: Refusing to run integration tests in an existing git repository. Tests must run in isolation.")
 	}
 
@@ -215,12 +213,12 @@ func TestWithTempGitRepo(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("IsGitRepository_InTempRepo", func(t *testing.T) {
-		result := IsGitRepository()
+		result := client.IsGitRepository()
 		assert.True(t, result)
 	})
 
 	t.Run("CheckGitRepository_InTempRepo", func(t *testing.T) {
-		err := CheckGitRepository()
+		err := client.CheckGitRepository()
 		assert.NoError(t, err)
 	})
 
@@ -230,19 +228,19 @@ func TestWithTempGitRepo(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("AddAll", func(t *testing.T) {
-		err := AddAll()
+		err := client.AddAll()
 		assert.NoError(t, err, "AddAll should succeed")
 	})
 
 	// Check staged files after add
 	t.Run("ParseStagedFiles", func(t *testing.T) {
-		files, err := ParseStagedFiles()
+		files, err := client.ParseStagedFiles()
 		assert.NoError(t, err)
 		assert.Contains(t, files, "test.txt", "Should contain staged test file")
 	})
 
 	t.Run("GetStagedDiff", func(t *testing.T) {
-		diff, err := GetStagedDiff()
+		diff, err := client.GetStagedDiff()
 		assert.NoError(t, err)
 		assert.Contains(t, diff, "test.txt", "Staged diff should contain test file")
 		assert.Contains(t, diff, "Hello World", "Staged diff should contain file content")
@@ -255,13 +253,13 @@ func TestWithTempGitRepo(t *testing.T) {
 			t.Fatal("SAFETY: Not in temporary test directory, refusing to commit")
 		}
 
-		err := Commit("test: safe commit in temp repo")
+		err := client.Commit("test: safe commit in temp repo")
 		assert.NoError(t, err, "Commit should succeed in temp repo")
 	})
 
 	// Test after commit
 	t.Run("GetCommitHistory", func(t *testing.T) {
-		commits, err := GetCommitHistory(10, false)
+		commits, err := client.GetCommitHistory(10, false)
 		assert.NoError(t, err)
 		assert.Len(t, commits, 1, "Should have one commit")
 		assert.Equal(t, "test: safe commit in temp repo", commits[0].Message)
@@ -269,7 +267,7 @@ func TestWithTempGitRepo(t *testing.T) {
 	})
 
 	t.Run("GetLatestTag_NoTags", func(t *testing.T) {
-		tag, err := GetLatestTag()
+		tag, err := client.GetLatestTag()
 		assert.NoError(t, err)
 		assert.Equal(t, "", tag)
 	})
@@ -280,30 +278,30 @@ func TestWithTempGitRepo(t *testing.T) {
 		err := os.WriteFile(testFile, []byte("Hello World\nSecond line"), 0644)
 		require.NoError(t, err)
 
-		diff, err := GetDiff()
+		diff, err := client.GetDiff()
 		assert.NoError(t, err)
 		assert.Contains(t, diff, "test.txt", "Diff should contain modified file")
 		assert.Contains(t, diff, "+Second line", "Diff should show added line")
 	})
 
 	t.Run("CreateAndSwitchBranch", func(t *testing.T) {
-		err := CreateAndSwitchBranch("feature/test-branch")
+		err := client.CreateAndSwitchBranch("feature/test-branch")
 		assert.NoError(t, err, "Should create and switch to new branch")
 	})
 
 	t.Run("CreateAnnotatedTag", func(t *testing.T) {
-		err := CreateAnnotatedTag("v0.1.0", "Release v0.1.0")
+		err := client.CreateAnnotatedTag("v0.1.0", "Release v0.1.0")
 		assert.NoError(t, err)
 	})
 
 	t.Run("GetLatestTag_WithTag", func(t *testing.T) {
-		tag, err := GetLatestTag()
+		tag, err := client.GetLatestTag()
 		assert.NoError(t, err)
 		assert.Equal(t, "v0.1.0", tag)
 	})
 
 	t.Run("GetCommitsSinceTag_NoNewCommits", func(t *testing.T) {
-		commits, err := GetCommitsSinceTag("v0.1.0")
+		commits, err := client.GetCommitsSinceTag("v0.1.0")
 		assert.NoError(t, err)
 		assert.Len(t, commits, 0)
 	})
@@ -312,13 +310,13 @@ func TestWithTempGitRepo(t *testing.T) {
 		err := os.WriteFile("feature.txt", []byte("new feature"), 0644)
 		require.NoError(t, err)
 
-		err = AddAll()
+		err = client.AddAll()
 		require.NoError(t, err)
 
-		err = Commit("feat: add new capability", "-m", "Additional context for feature")
+		err = client.Commit("feat: add new capability", "-m", "Additional context for feature")
 		assert.NoError(t, err)
 
-		commits, err := GetCommitsSinceTag("v0.1.0")
+		commits, err := client.GetCommitsSinceTag("v0.1.0")
 		assert.NoError(t, err)
 		require.Len(t, commits, 1)
 		assert.Equal(t, "feat: add new capability", commits[0].Message)
@@ -326,13 +324,15 @@ func TestWithTempGitRepo(t *testing.T) {
 	})
 
 	t.Run("GetCommitsSinceTag_UnknownTag", func(t *testing.T) {
-		commits, err := GetCommitsSinceTag("v9.9.9")
+		commits, err := client.GetCommitsSinceTag("v9.9.9")
 		assert.NoError(t, err)
 		assert.GreaterOrEqual(t, len(commits), 2)
 	})
 }
 
 func TestResolveFilesIncludesUntracked(t *testing.T) {
+	client := NewClient(Options{})
+
 	tempDir, err := os.MkdirTemp("", "gmc_git_dir_test")
 	require.NoError(t, err)
 	defer os.RemoveAll(tempDir)
@@ -361,7 +361,7 @@ func TestResolveFilesIncludesUntracked(t *testing.T) {
 	require.NoError(t, os.Chdir(tempDir))
 	AssertNotInRealRepo(t)
 
-	files, err := ResolveFiles([]string{"pkg"})
+	files, err := client.ResolveFiles([]string{"pkg"})
 	require.NoError(t, err)
 
 	assert.Contains(t, files, "pkg/tracked.txt")
@@ -382,6 +382,8 @@ func runGitCommand(t *testing.T, dir string, args ...string) {
 
 // Test functions outside of git repository
 func TestOutsideGitRepo(t *testing.T) {
+	client := NewClient(Options{})
+
 	// Create a temporary directory that's not a git repo
 	tempDir, err := os.MkdirTemp("", "gmc_non_git_test")
 	require.NoError(t, err)
@@ -414,50 +416,50 @@ func TestOutsideGitRepo(t *testing.T) {
 	}
 
 	t.Run("IsGitRepository_OutsideRepo", func(t *testing.T) {
-		result := IsGitRepository()
+		result := client.IsGitRepository()
 		assert.False(t, result, "Should not detect git repository")
 	})
 
 	t.Run("CheckGitRepository_OutsideRepo", func(t *testing.T) {
-		err := CheckGitRepository()
+		err := client.CheckGitRepository()
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not in a git repository")
 	})
 
 	t.Run("GetDiff_OutsideRepo", func(t *testing.T) {
-		_, err := GetDiff()
+		_, err := client.GetDiff()
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not in a git repository")
 	})
 
 	t.Run("GetStagedDiff_OutsideRepo", func(t *testing.T) {
-		_, err := GetStagedDiff()
+		_, err := client.GetStagedDiff()
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not in a git repository")
 	})
 
 	t.Run("AddAll_OutsideRepo", func(t *testing.T) {
-		err := AddAll()
+		err := client.AddAll()
 		assert.Error(t, err)
 	})
 
 	t.Run("ParseStagedFiles_OutsideRepo", func(t *testing.T) {
-		_, err := ParseStagedFiles()
+		_, err := client.ParseStagedFiles()
 		assert.Error(t, err)
 	})
 
 	t.Run("Commit_OutsideRepo", func(t *testing.T) {
-		err := Commit("test message")
+		err := client.Commit("test message")
 		assert.Error(t, err)
 	})
 
 	t.Run("CreateAndSwitchBranch_OutsideRepo", func(t *testing.T) {
-		err := CreateAndSwitchBranch("test-branch")
+		err := client.CreateAndSwitchBranch("test-branch")
 		assert.Error(t, err)
 	})
 
 	t.Run("GetCommitHistory_OutsideRepo", func(t *testing.T) {
-		_, err := GetCommitHistory(10, false)
+		_, err := client.GetCommitHistory(10, false)
 		assert.Error(t, err)
 	})
 }
@@ -465,9 +467,11 @@ func TestOutsideGitRepo(t *testing.T) {
 // Test edge cases and error conditions
 func TestEdgeCases(t *testing.T) {
 	t.Run("ParseChangedFiles_EdgeCases", func(t *testing.T) {
+		client := NewClient(Options{})
+
 		// ParseChangedFiles calls git directly, test behavior based on repo status
-		files, err := ParseChangedFiles()
-		if IsGitRepository() {
+		files, err := client.ParseChangedFiles()
+		if client.IsGitRepository() {
 			assert.NoError(t, err, "Should succeed in git repo")
 			assert.NotNil(t, files, "Should return files slice")
 		} else {
@@ -494,13 +498,15 @@ func TestBranchValidation(t *testing.T) {
 	// They should only test validation logic without side effects
 
 	t.Run("CreateAndSwitchBranch_InvalidBranch", func(t *testing.T) {
+		client := NewClient(Options{})
+
 		// Skip if in a real git repo to avoid any operations
-		if IsGitRepository() {
+		if client.IsGitRepository() {
 			t.Skip("Skipping test in real git repository for safety")
 		}
 
 		// This will fail because we're not in a git repo
-		err := CreateAndSwitchBranch("invalid..branch..name")
+		err := client.CreateAndSwitchBranch("invalid..branch..name")
 		assert.Error(t, err, "Should error outside git repository")
 	})
 

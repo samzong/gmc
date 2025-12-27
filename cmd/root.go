@@ -111,44 +111,40 @@ func handleErrors(err error) error {
 }
 
 func generateAndCommit(fileArgs []string) error {
-	git.Verbose = verbose
-
-	// Set LLM timeout from flag
-	if timeoutSeconds > 0 {
-		llm.Timeout = time.Duration(timeoutSeconds) * time.Second
-	}
+	gitClient := git.NewClient(git.Options{Verbose: verbose})
+	llmClient := llm.NewClient(llm.Options{Timeout: time.Duration(timeoutSeconds) * time.Second})
 
 	// Check for stdin input via "-" argument
 	if len(fileArgs) == 1 && fileArgs[0] == "-" {
-		return handleStdinDiff()
+		return handleStdinDiff(llmClient)
 	}
 
 	// Handle branch creation
-	if err := handleBranchCreation(); err != nil {
+	if err := handleBranchCreation(gitClient); err != nil {
 		return err
 	}
 
 	// Check if selective file mode
 	if len(fileArgs) > 0 {
-		return handleSelectiveCommit(fileArgs)
+		return handleSelectiveCommit(gitClient, llmClient, fileArgs)
 	}
 
 	// Handle staging
-	if err := handleStaging(); err != nil {
+	if err := handleStaging(gitClient); err != nil {
 		return err
 	}
 
 	// Get staged changes
-	diff, changedFiles, err := getStagedChanges()
+	diff, changedFiles, err := getStagedChanges(gitClient)
 	if err != nil {
 		return err
 	}
 
 	// Generate and process commit message
-	return handleCommitFlow(diff, changedFiles)
+	return handleCommitFlow(gitClient, llmClient, diff, changedFiles)
 }
 
-func handleBranchCreation() error {
+func handleBranchCreation(gitClient *git.Client) error {
 	if branchDesc == "" {
 		return nil
 	}
@@ -159,27 +155,27 @@ func handleBranchCreation() error {
 	}
 
 	fmt.Fprintf(errWriter(), "Creating and switching to branch: %s\n", branchName)
-	if err := git.CreateAndSwitchBranch(branchName); err != nil {
+	if err := gitClient.CreateAndSwitchBranch(branchName); err != nil {
 		return fmt.Errorf("failed to create branch: %w", err)
 	}
 	fmt.Fprintln(errWriter(), "Successfully created and switched to new branch!")
 	return nil
 }
 
-func handleStaging() error {
+func handleStaging(gitClient *git.Client) error {
 	if !addAll {
 		return nil
 	}
 
-	if err := git.AddAll(); err != nil {
+	if err := gitClient.AddAll(); err != nil {
 		return fmt.Errorf("git add failed: %w", err)
 	}
 	fmt.Fprintln(errWriter(), "All changes have been added to the staging area.")
 	return nil
 }
 
-func getStagedChanges() (string, []string, error) {
-	diff, err := git.GetStagedDiff()
+func getStagedChanges(gitClient *git.Client) (string, []string, error) {
+	diff, err := gitClient.GetStagedDiff()
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to get git diff: %w", err)
 	}
@@ -188,7 +184,7 @@ func getStagedChanges() (string, []string, error) {
 		return "", nil, errNoChangesDetected
 	}
 
-	changedFiles, err := git.ParseStagedFiles()
+	changedFiles, err := gitClient.ParseStagedFiles()
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to parse staged files: %w", err)
 	}
@@ -198,7 +194,7 @@ func getStagedChanges() (string, []string, error) {
 
 // handleStdinDiff reads diff from stdin and generates commit message
 // Usage: git diff | gmc -
-func handleStdinDiff() error {
+func handleStdinDiff(llmClient *llm.Client) error {
 	if isatty.IsTerminal(os.Stdin.Fd()) {
 		return errors.New("no input from stdin: use 'git diff | gmc -' or 'gmc - < diff.txt'")
 	}
@@ -221,11 +217,7 @@ func handleStdinDiff() error {
 	// Extract file names from diff
 	changedFiles := extractFilesFromDiff(diff)
 
-	cfg, cfgErr := config.GetConfig()
-	if cfgErr != nil {
-		return cfgErr
-	}
-	cfg, proceed, err := ensureConfiguredAndGetConfig(cfg, os.Stdin, errWriter(), runInitWizard)
+	cfg, proceed, err := ensureConfiguredAndGetConfig(nil, os.Stdin, errWriter(), runInitWizard)
 	if err != nil {
 		return err
 	}
@@ -234,7 +226,7 @@ func handleStdinDiff() error {
 	}
 
 	// Generate commit message
-	message, err := generateCommitMessage(cfg, changedFiles, diff, userPrompt)
+	message, err := generateCommitMessage(llmClient, cfg, changedFiles, diff, userPrompt)
 	if err != nil {
 		return err
 	}
@@ -279,12 +271,8 @@ func extractFilesFromDiff(diff string) []string {
 	return stringsutil.UniqueStrings(files)
 }
 
-func handleCommitFlow(diff string, changedFiles []string) error {
-	cfg, cfgErr := config.GetConfig()
-	if cfgErr != nil {
-		return cfgErr
-	}
-	cfg, proceed, err := ensureConfiguredAndGetConfig(cfg, os.Stdin, errWriter(), runInitWizard)
+func handleCommitFlow(gitClient *git.Client, llmClient *llm.Client, diff string, changedFiles []string) error {
+	cfg, proceed, err := ensureConfiguredAndGetConfig(nil, os.Stdin, errWriter(), runInitWizard)
 	if err != nil {
 		return err
 	}
@@ -292,16 +280,24 @@ func handleCommitFlow(diff string, changedFiles []string) error {
 		return nil
 	}
 
-	return runCommitFlow(cfg, changedFiles, diff, performCommit)
+	return runCommitFlow(llmClient, cfg, changedFiles, diff, func(message string) error {
+		return performCommit(gitClient, message)
+	})
 }
 
-func generateCommitMessage(cfg *config.Config, changedFiles []string, diff string, userPrompt string) (string, error) {
+func generateCommitMessage(
+	llmClient *llm.Client,
+	cfg *config.Config,
+	changedFiles []string,
+	diff string,
+	userPrompt string,
+) (string, error) {
 	prompt := formatter.BuildPrompt(cfg.Role, changedFiles, diff, userPrompt)
 
 	// Show spinner during LLM call
 	sp := ui.NewSpinner("Generating commit message...")
 	sp.Start()
-	message, err := llm.GenerateCommitMessage(prompt, cfg.Model)
+	message, err := llmClient.GenerateCommitMessage(prompt, cfg.Model)
 	sp.Stop()
 
 	if err != nil {
@@ -413,9 +409,9 @@ func getEditor() string {
 	return "vi"
 }
 
-func handleSelectiveCommit(fileArgs []string) error {
+func handleSelectiveCommit(gitClient *git.Client, llmClient *llm.Client, fileArgs []string) error {
 	// Resolve and validate file paths
-	files, err := git.ResolveFiles(fileArgs)
+	files, err := gitClient.ResolveFiles(fileArgs)
 	if err != nil {
 		return fmt.Errorf("failed to resolve files: %w", err)
 	}
@@ -426,14 +422,14 @@ func handleSelectiveCommit(fileArgs []string) error {
 
 	// Check mode based on -a flag
 	if addAll {
-		return stageAndCommitFiles(files)
+		return stageAndCommitFiles(gitClient, llmClient, files)
 	}
-	return commitStagedFiles(files)
+	return commitStagedFiles(gitClient, llmClient, files)
 }
 
-func stageAndCommitFiles(files []string) error {
+func stageAndCommitFiles(gitClient *git.Client, llmClient *llm.Client, files []string) error {
 	// Check which files have changes
-	staged, modified, untracked, err := git.CheckFileStatus(files)
+	staged, modified, untracked, err := gitClient.CheckFileStatus(files)
 	if err != nil {
 		return fmt.Errorf("failed to check file status: %w", err)
 	}
@@ -448,7 +444,7 @@ func stageAndCommitFiles(files []string) error {
 
 	// Stage files if needed
 	if len(toStage) > 0 {
-		if err := git.StageFiles(toStage); err != nil {
+		if err := gitClient.StageFiles(toStage); err != nil {
 			return fmt.Errorf("failed to stage files: %w", err)
 		}
 		fmt.Fprintf(errWriter(), "Staged files: %v\n", toStage)
@@ -460,7 +456,7 @@ func stageAndCommitFiles(files []string) error {
 	allFiles = append(allFiles, toStage...)
 
 	// Get diff and generate commit message
-	diff, err := git.GetFilesDiff(allFiles)
+	diff, err := gitClient.GetFilesDiff(allFiles)
 	if err != nil {
 		return fmt.Errorf("failed to get diff: %w", err)
 	}
@@ -470,12 +466,12 @@ func stageAndCommitFiles(files []string) error {
 	}
 
 	// Generate and process commit message
-	return handleSelectiveCommitFlow(diff, allFiles)
+	return handleSelectiveCommitFlow(gitClient, llmClient, diff, allFiles)
 }
 
-func commitStagedFiles(files []string) error {
+func commitStagedFiles(gitClient *git.Client, llmClient *llm.Client, files []string) error {
 	// Check which specified files are staged
-	staged, _, _, err := git.CheckFileStatus(files)
+	staged, _, _, err := gitClient.CheckFileStatus(files)
 	if err != nil {
 		return fmt.Errorf("failed to check file status: %w", err)
 	}
@@ -486,7 +482,7 @@ func commitStagedFiles(files []string) error {
 	}
 
 	// Get diff for staged files
-	diff, err := git.GetFilesDiff(staged)
+	diff, err := gitClient.GetFilesDiff(staged)
 	if err != nil {
 		return fmt.Errorf("failed to get diff: %w", err)
 	}
@@ -496,15 +492,11 @@ func commitStagedFiles(files []string) error {
 	}
 
 	// Generate and process commit message
-	return handleSelectiveCommitFlow(diff, staged)
+	return handleSelectiveCommitFlow(gitClient, llmClient, diff, staged)
 }
 
-func handleSelectiveCommitFlow(diff string, files []string) error {
-	cfg, cfgErr := config.GetConfig()
-	if cfgErr != nil {
-		return cfgErr
-	}
-	cfg, proceed, err := ensureConfiguredAndGetConfig(cfg, os.Stdin, errWriter(), runInitWizard)
+func handleSelectiveCommitFlow(gitClient *git.Client, llmClient *llm.Client, diff string, files []string) error {
+	cfg, proceed, err := ensureConfiguredAndGetConfig(nil, os.Stdin, errWriter(), runInitWizard)
 	if err != nil {
 		return err
 	}
@@ -512,8 +504,8 @@ func handleSelectiveCommitFlow(diff string, files []string) error {
 		return nil
 	}
 
-	return runCommitFlow(cfg, files, diff, func(message string) error {
-		return performSelectiveCommit(message, files)
+	return runCommitFlow(llmClient, cfg, files, diff, func(message string) error {
+		return performSelectiveCommit(gitClient, message, files)
 	})
 }
 
@@ -529,7 +521,7 @@ func buildCommitArgs() []string {
 	return commitArgs
 }
 
-func performCommit(message string) error {
+func performCommit(gitClient *git.Client, message string) error {
 	if dryRun {
 		fmt.Fprintln(errWriter(), "Dry run mode, no actual commit")
 		return nil
@@ -537,7 +529,7 @@ func performCommit(message string) error {
 
 	commitArgs := buildCommitArgs()
 
-	if err := git.Commit(message, commitArgs...); err != nil {
+	if err := gitClient.Commit(message, commitArgs...); err != nil {
 		return fmt.Errorf("failed to commit changes: %w", err)
 	}
 
@@ -545,7 +537,7 @@ func performCommit(message string) error {
 	return nil
 }
 
-func performSelectiveCommit(message string, files []string) error {
+func performSelectiveCommit(gitClient *git.Client, message string, files []string) error {
 	if dryRun {
 		fmt.Fprintln(errWriter(), "Dry run mode, no actual commit")
 		fmt.Fprintf(errWriter(), "Would commit files: %v\n", files)
@@ -554,7 +546,7 @@ func performSelectiveCommit(message string, files []string) error {
 
 	commitArgs := buildCommitArgs()
 
-	if err := git.CommitFiles(message, files, commitArgs...); err != nil {
+	if err := gitClient.CommitFiles(message, files, commitArgs...); err != nil {
 		return fmt.Errorf("failed to commit files: %w", err)
 	}
 
@@ -562,9 +554,15 @@ func performSelectiveCommit(message string, files []string) error {
 	return nil
 }
 
-func runCommitFlow(cfg *config.Config, files []string, diff string, commitExec func(string) error) error {
+func runCommitFlow(
+	llmClient *llm.Client,
+	cfg *config.Config,
+	files []string,
+	diff string,
+	commitExec func(string) error,
+) error {
 	for {
-		message, err := generateCommitMessage(cfg, files, diff, userPrompt)
+		message, err := generateCommitMessage(llmClient, cfg, files, diff, userPrompt)
 		if err != nil {
 			return err
 		}

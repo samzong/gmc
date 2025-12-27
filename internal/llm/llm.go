@@ -12,18 +12,40 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
+type Options struct {
+	Timeout time.Duration
+}
+
+type Client struct {
+	timeout time.Duration
+}
+
+const defaultTimeout = 30 * time.Second
+
+func NewClient(opts Options) *Client {
+	timeout := opts.Timeout
+	if timeout <= 0 {
+		timeout = defaultTimeout
+	}
+	return &Client{timeout: timeout}
+}
+
 var (
 	versionPattern   = regexp.MustCompile(`(?i)version:\s*(v?\d+\.\d+\.\d+)`)
 	reasonPattern    = regexp.MustCompile(`(?is)reason:\s*(.+)$`)
 	errMissingAPIKey = errors.New(
 		"API key not set, please set the API key first: gmc config set apikey YOUR_API_KEY",
 	)
-
-	// Timeout is the default timeout for LLM API calls, can be overridden
-	Timeout = 30 * time.Second
 )
 
-func newOpenAIClient(model string) (*openai.Client, context.Context, context.CancelFunc, string, error) {
+func (c *Client) effectiveTimeout() time.Duration {
+	if c == nil || c.timeout <= 0 {
+		return defaultTimeout
+	}
+	return c.timeout
+}
+
+func (c *Client) newOpenAIClient(model string) (*openai.Client, context.Context, context.CancelFunc, string, error) {
 	cfg, err := config.GetConfig()
 	if err != nil {
 		return nil, nil, nil, "", err
@@ -40,7 +62,7 @@ func newOpenAIClient(model string) (*openai.Client, context.Context, context.Can
 	}
 
 	client := openai.NewClientWithConfig(clientConfig)
-	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), c.effectiveTimeout())
 
 	if model == "" {
 		model = cfg.Model
@@ -49,8 +71,8 @@ func newOpenAIClient(model string) (*openai.Client, context.Context, context.Can
 	return client, ctx, cancel, model, nil
 }
 
-func GenerateCommitMessage(prompt string, model string) (string, error) {
-	client, ctx, cancel, chosenModel, err := newOpenAIClient(model)
+func (c *Client) GenerateCommitMessage(prompt string, model string) (string, error) {
+	client, ctx, cancel, chosenModel, err := c.newOpenAIClient(model)
 	if err != nil {
 		return "", err
 	}
@@ -87,12 +109,12 @@ func GenerateCommitMessage(prompt string, model string) (string, error) {
 	return strings.TrimSpace(resp.Choices[0].Message.Content), nil
 }
 
-func SuggestVersion(baseVersion string, commits []string, model string) (string, string, error) {
+func (c *Client) SuggestVersion(baseVersion string, commits []string, model string) (string, string, error) {
 	if len(commits) == 0 {
 		return "", "", errors.New("no commits provided for version suggestion")
 	}
 
-	client, ctx, cancel, chosenModel, err := newOpenAIClient(model)
+	client, ctx, cancel, chosenModel, err := c.newOpenAIClient(model)
 	if err != nil {
 		return "", "", err
 	}
@@ -136,8 +158,8 @@ func SuggestVersion(baseVersion string, commits []string, model string) (string,
 	return version, reason, nil
 }
 
-func TestConnection(model string) error {
-	client, ctx, cancel, chosenModel, err := newOpenAIClient(model)
+func (c *Client) TestConnection(model string) error {
+	client, ctx, cancel, chosenModel, err := c.newOpenAIClient(model)
 	if err != nil {
 		return err
 	}
@@ -168,6 +190,22 @@ func TestConnection(model string) error {
 	}
 
 	return nil
+}
+
+func DefaultClient() *Client {
+	return NewClient(Options{})
+}
+
+func GenerateCommitMessage(prompt string, model string) (string, error) {
+	return DefaultClient().GenerateCommitMessage(prompt, model)
+}
+
+func SuggestVersion(baseVersion string, commits []string, model string) (string, string, error) {
+	return DefaultClient().SuggestVersion(baseVersion, commits, model)
+}
+
+func TestConnection(model string) error {
+	return DefaultClient().TestConnection(model)
 }
 
 func buildVersionPrompt(baseVersion string, commits []string) string {

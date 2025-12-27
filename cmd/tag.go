@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/mattn/go-isatty"
 	"github.com/samzong/gmc/internal/config"
@@ -52,16 +53,19 @@ func init() {
 }
 
 func runTagCommand() error {
-	if err := git.CheckGitRepository(); err != nil {
+	gitClient := git.NewClient(git.Options{Verbose: verbose})
+	llmClient := llm.NewClient(llm.Options{Timeout: time.Duration(timeoutSeconds) * time.Second})
+
+	if err := gitClient.CheckGitRepository(); err != nil {
 		return fmt.Errorf("tagging failed: %w", err)
 	}
 
-	lastTag, err := git.GetLatestTag()
+	lastTag, err := gitClient.GetLatestTag()
 	if err != nil {
 		return fmt.Errorf("failed to determine latest tag: %w", err)
 	}
 
-	commits, err := git.GetCommitsSinceTag(lastTag)
+	commits, err := gitClient.GetCommitsSinceTag(lastTag)
 	if err != nil {
 		return fmt.Errorf("failed to collect commits: %w", err)
 	}
@@ -121,7 +125,7 @@ func runTagCommand() error {
 			commitSummaries = append(commitSummaries, summary)
 		}
 
-		llmVersionStr, llmReason, err := llm.SuggestVersion(baseVersion.String(), commitSummaries, cfg.Model)
+		llmVersionStr, llmReason, err := llmClient.SuggestVersion(baseVersion.String(), commitSummaries, cfg.Model)
 		if err != nil {
 			fmt.Fprintf(errWriter(), "Warning: LLM version suggestion failed: %v\n", err)
 		} else {
@@ -183,7 +187,7 @@ func runTagCommand() error {
 		tagMessage = fmt.Sprintf("%s: %s", tagMessage, finalReason)
 	}
 
-	if err := git.CreateAnnotatedTag(finalVersion.String(), tagMessage); err != nil {
+	if err := gitClient.CreateAnnotatedTag(finalVersion.String(), tagMessage); err != nil {
 		return fmt.Errorf("failed to create tag: %w", err)
 	}
 

@@ -6,8 +6,11 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/samzong/gmc/internal/config"
+	"github.com/samzong/gmc/internal/git"
+	"github.com/samzong/gmc/internal/llm"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
@@ -137,7 +140,8 @@ func TestHandleBranchCreation_NoBranch(t *testing.T) {
 	// Test with empty branch description
 	branchDesc = ""
 
-	err := handleBranchCreation()
+	gitClient := git.NewClient(git.Options{})
+	err := handleBranchCreation(gitClient)
 	assert.NoError(t, err)
 }
 
@@ -154,12 +158,13 @@ func TestHandleBranchCreation_InvalidBranch(t *testing.T) {
 
 	// The actual branch creation will likely fail in test environment
 	// but we're testing the validation logic
-	_ = handleBranchCreation()
+	gitClient := git.NewClient(git.Options{})
+	_ = handleBranchCreation(gitClient)
 
 	// We expect either no error (if validation passes) or an error about branch creation
 	// The important thing is that the function doesn't panic
 	assert.NotPanics(t, func() {
-		_ = handleBranchCreation()
+		_ = handleBranchCreation(gitClient)
 	})
 
 	// Reset for other tests
@@ -170,7 +175,8 @@ func TestHandleStaging_NoAddAll(t *testing.T) {
 	// Test with addAll flag disabled
 	addAll = false
 
-	err := handleStaging()
+	gitClient := git.NewClient(git.Options{})
+	err := handleStaging(gitClient)
 	assert.NoError(t, err)
 }
 
@@ -184,7 +190,8 @@ func TestHandleStaging_WithAddAll(t *testing.T) {
 
 	// This will likely fail because we're not in a proper git repo or staging area
 	// But it tests that the function executes the logic
-	err := handleStaging()
+	gitClient := git.NewClient(git.Options{})
+	err := handleStaging(gitClient)
 
 	// We expect an error in test environment, but function should not panic
 	if err != nil {
@@ -202,7 +209,8 @@ func TestPerformCommit_DryRun(t *testing.T) {
 
 	dryRun = true
 
-	err := performCommit("test commit message")
+	gitClient := git.NewClient(git.Options{})
+	err := performCommit(gitClient, "test commit message")
 	assert.NoError(t, err)
 
 	// Reset
@@ -221,7 +229,8 @@ func TestPerformCommit_WithNoVerify(t *testing.T) {
 	dryRun = true // Enable dry run to avoid actual commit
 	noVerify = true
 
-	err := performCommit("test commit message")
+	gitClient := git.NewClient(git.Options{})
+	err := performCommit(gitClient, "test commit message")
 	assert.NoError(t, err)
 
 	// Reset
@@ -241,7 +250,8 @@ func TestPerformCommit_WithNoSignoff(t *testing.T) {
 	dryRun = true // Enable dry run to avoid actual commit
 	noSignoff = true
 
-	err := performCommit("test commit message")
+	gitClient := git.NewClient(git.Options{})
+	err := performCommit(gitClient, "test commit message")
 	assert.NoError(t, err)
 
 	// Reset
@@ -261,7 +271,8 @@ func TestPerformSelectiveCommit_WithNoSignoff(t *testing.T) {
 	dryRun = true // Enable dry run to avoid actual commit
 	noSignoff = true
 
-	err := performSelectiveCommit("test commit message", []string{"test.go"})
+	gitClient := git.NewClient(git.Options{})
+	err := performSelectiveCommit(gitClient, "test commit message", []string{"test.go"})
 	assert.NoError(t, err)
 
 	// Reset
@@ -345,6 +356,7 @@ func TestGenerateCommitMessage_IssueNumber(t *testing.T) {
 	viper.Reset()
 	viper.Set("api_key", "test-api-key")
 	viper.Set("model", "gpt-3.5-turbo")
+	viper.Set("api_base", "http://127.0.0.1:1")
 	viper.Set("role", "Developer")
 
 	// Save original issueNum
@@ -362,7 +374,8 @@ func TestGenerateCommitMessage_IssueNumber(t *testing.T) {
 	assert.NoError(t, err)
 
 	// The function will fail at LLM call, but issue number formatting logic will be exercised
-	_, err = generateCommitMessage(cfg, changedFiles, diff, "")
+	llmClient := llm.NewClient(llm.Options{Timeout: 250 * time.Millisecond})
+	_, err = generateCommitMessage(llmClient, cfg, changedFiles, diff, "")
 
 	// We expect an error due to fake API key
 	if err != nil {
@@ -492,7 +505,8 @@ func TestErrorHandlingPatterns(t *testing.T) {
 func TestGetStagedChanges(t *testing.T) {
 	// This will test the getStagedChanges function
 	// It will likely fail in test environment but exercises the code paths
-	_, _, err := getStagedChanges()
+	gitClient := git.NewClient(git.Options{})
+	_, _, err := getStagedChanges(gitClient)
 
 	// We expect an error in test environment (not a git repo or no staging area)
 	// But the function should execute without panic
@@ -549,6 +563,7 @@ func TestHandleCommitFlow(t *testing.T) {
 	viper.Reset()
 	viper.Set("api_key", "test-api-key")
 	viper.Set("model", "gpt-3.5-turbo")
+	viper.Set("api_base", "http://127.0.0.1:1")
 	viper.Set("role", "Developer")
 
 	// Save original autoYes value
@@ -562,7 +577,9 @@ func TestHandleCommitFlow(t *testing.T) {
 	changedFiles := []string{"test.go", "main.go"}
 
 	// This will exercise the handleCommitFlow function
-	err := handleCommitFlow(diff, changedFiles)
+	gitClient := git.NewClient(git.Options{})
+	llmClient := llm.NewClient(llm.Options{Timeout: 250 * time.Millisecond})
+	err := handleCommitFlow(gitClient, llmClient, diff, changedFiles)
 
 	// We expect an error due to fake API key or git operations
 	if err != nil {
@@ -591,7 +608,8 @@ func TestPerformCommit_ActualCommit(t *testing.T) {
 	dryRun = true // Always use dry run in tests
 	noVerify = false
 
-	err := performCommit("test commit message")
+	gitClient := git.NewClient(git.Options{})
+	err := performCommit(gitClient, "test commit message")
 
 	// In dry run mode, we should not get an error
 	assert.NoError(t, err, "performCommit should succeed in dry run mode")
@@ -603,6 +621,7 @@ func TestGenerateCommitMessage_Complete(t *testing.T) {
 	viper.Reset()
 	viper.Set("api_key", "test-api-key")
 	viper.Set("model", "gpt-3.5-turbo")
+	viper.Set("api_base", "http://127.0.0.1:1")
 	viper.Set("role", "Senior Go Developer")
 
 	// Save original issueNum
@@ -625,14 +644,15 @@ index 1234567..abcdefg 100644
 
 	// Test without issue number
 	issueNum = ""
-	_, err = generateCommitMessage(cfg, changedFiles, diff, "")
+	llmClient := llm.NewClient(llm.Options{Timeout: 250 * time.Millisecond})
+	_, err = generateCommitMessage(llmClient, cfg, changedFiles, diff, "")
 	if err != nil {
 		assert.Contains(t, err.Error(), "failed to generate commit message")
 	}
 
 	// Test with issue number
 	issueNum = "456"
-	_, err = generateCommitMessage(cfg, changedFiles, diff, "")
+	_, err = generateCommitMessage(llmClient, cfg, changedFiles, diff, "")
 	if err != nil {
 		assert.Contains(t, err.Error(), "failed to generate commit message")
 	}

@@ -167,6 +167,6 @@ func TestHandleSelectiveCommitFlow_MissingKeyDeclineInit(t *testing.T) {
 	viper.Reset()
 	viper.Set("api_key", "")
 
-	err = handleSelectiveCommitFlow("diff", []string{"file.go"})
+	err = handleSelectiveCommitFlow(nil, nil, "diff", []string{"file.go"})
 	assert.NoError(t, err)
 }

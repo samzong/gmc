@@ -14,6 +14,8 @@ import (
 func TestSafetyCheck(t *testing.T) {
 	t.Helper()
 
+	client := NewClient(Options{})
+
 	// Check if we're in a temporary directory
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -28,7 +30,7 @@ func TestSafetyCheck(t *testing.T) {
 		strings.HasPrefix(filepath.Base(cwd), "gmc_git_test")
 
 	// If we're in a git repository and NOT in a temp directory, refuse to run
-	if IsGitRepository() && !isTempDir {
+	if client.IsGitRepository() && !isTempDir {
 		t.Fatal("SAFETY: Test is attempting to run git operations in a real repository. " +
 			"Tests must run in isolated temporary directories. " +
 			"Current directory: " + cwd)
@@ -40,8 +42,10 @@ func TestSafetyCheck(t *testing.T) {
 func CreateSafeTempRepo(t *testing.T) (tempDir string, cleanup func()) {
 	t.Helper()
 
+	client := NewClient(Options{})
+
 	// First, ensure we're not already in a git repo
-	if IsGitRepository() {
+	if client.IsGitRepository() {
 		t.Fatal("SAFETY: Cannot create temp repo while in an existing git repository")
 	}
 

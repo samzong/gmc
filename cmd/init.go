@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/samzong/gmc/internal/config"
 	"github.com/samzong/gmc/internal/llm"
@@ -37,7 +38,10 @@ var (
 		return config.SaveConfig()
 	}
 
-	testLLMConnection = llm.TestConnection
+	testLLMConnection = func(model string) error {
+		client := llm.NewClient(llm.Options{Timeout: time.Duration(timeoutSeconds) * time.Second})
+		return client.TestConnection(model)
+	}
 )
 
 func runInitWizard(in io.Reader, out io.Writer, current *config.Config) error {

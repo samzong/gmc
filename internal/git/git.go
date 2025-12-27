@@ -14,14 +14,24 @@ import (
 	"github.com/samzong/gmc/internal/stringsutil"
 )
 
-var Verbose bool
-
-func gitRunner() gitcmd.Runner {
-	return gitcmd.Runner{Verbose: Verbose}
+type Options struct {
+	Verbose bool
 }
 
-func logVerboseOutput(label string, data []byte) {
-	if !Verbose || len(data) == 0 {
+type Client struct {
+	runner  gitcmd.Runner
+	verbose bool
+}
+
+func NewClient(opts Options) *Client {
+	return &Client{
+		runner:  gitcmd.Runner{Verbose: opts.Verbose},
+		verbose: opts.Verbose,
+	}
+}
+
+func (c *Client) logVerboseOutput(label string, data []byte) {
+	if c == nil || !c.verbose || len(data) == 0 {
 		return
 	}
 	fmt.Fprintln(os.Stderr, label, string(data))
@@ -37,24 +47,24 @@ type CommitInfo struct {
 }
 
 // IsGitRepository checks if the current directory is a git repository
-func IsGitRepository() bool {
-	_, err := gitRunner().Run("rev-parse", "--is-inside-work-tree")
+func (c *Client) IsGitRepository() bool {
+	_, err := c.runner.Run("rev-parse", "--is-inside-work-tree")
 	return err == nil
 }
 
-func CheckGitRepository() error {
-	if !IsGitRepository() {
+func (c *Client) CheckGitRepository() error {
+	if !c.IsGitRepository() {
 		return errors.New("not in a git repository. Please run this command in a git repository directory")
 	}
 	return nil
 }
 
-func GetDiff() (string, error) {
-	if err := CheckGitRepository(); err != nil {
+func (c *Client) GetDiff() (string, error) {
+	if err := c.CheckGitRepository(); err != nil {
 		return "", err
 	}
 
-	runner := gitRunner()
+	runner := c.runner
 	result, err := runner.Run("diff")
 	if err != nil {
 		return "", fmt.Errorf("failed to run git diff: %w", err)
@@ -73,26 +83,26 @@ func GetDiff() (string, error) {
 	return diff, nil
 }
 
-func GetStagedDiff() (string, error) {
-	if err := CheckGitRepository(); err != nil {
+func (c *Client) GetStagedDiff() (string, error) {
+	if err := c.CheckGitRepository(); err != nil {
 		return "", err
 	}
 
-	result, err := gitRunner().RunLogged("diff", "--cached")
+	result, err := c.runner.RunLogged("diff", "--cached")
 	if err != nil {
-		logVerboseOutput("Git stderr:", result.Stderr)
+		c.logVerboseOutput("Git stderr:", result.Stderr)
 		return "", fmt.Errorf("failed to run git diff --cached: %w", err)
 	}
 
 	return string(result.Stdout), nil
 }
 
-func ParseChangedFiles() ([]string, error) {
-	if err := CheckGitRepository(); err != nil {
+func (c *Client) ParseChangedFiles() ([]string, error) {
+	if err := c.CheckGitRepository(); err != nil {
 		return nil, err
 	}
 
-	runner := gitRunner()
+	runner := c.runner
 	result, err := runner.Run("diff", "--name-only")
 	if err != nil {
 		return nil, fmt.Errorf("failed to run git diff --name-only: %w", err)
@@ -123,14 +133,14 @@ func ParseChangedFiles() ([]string, error) {
 	return stringsutil.UniqueStrings(files), nil
 }
 
-func ParseStagedFiles() ([]string, error) {
-	if err := CheckGitRepository(); err != nil {
+func (c *Client) ParseStagedFiles() ([]string, error) {
+	if err := c.CheckGitRepository(); err != nil {
 		return nil, err
 	}
 
-	runResult, err := gitRunner().RunLogged("diff", "--cached", "--name-only")
+	runResult, err := c.runner.RunLogged("diff", "--cached", "--name-only")
 	if err != nil {
-		logVerboseOutput("Git stderr:", runResult.Stderr)
+		c.logVerboseOutput("Git stderr:", runResult.Stderr)
 		return nil, fmt.Errorf("failed to run git diff --cached --name-only: %w", err)
 	}
 
@@ -146,34 +156,34 @@ func ParseStagedFiles() ([]string, error) {
 	return files, nil
 }
 
-func AddAll() error {
-	if err := CheckGitRepository(); err != nil {
+func (c *Client) AddAll() error {
+	if err := c.CheckGitRepository(); err != nil {
 		return err
 	}
 
-	result, err := gitRunner().RunLogged("add", ".")
+	result, err := c.runner.RunLogged("add", ".")
 	if err != nil {
-		logVerboseOutput("Git stderr:", result.Stderr)
+		c.logVerboseOutput("Git stderr:", result.Stderr)
 		return fmt.Errorf("failed to run git add .: %w", err)
 	}
 
-	logVerboseOutput("Git output:", result.Stderr)
+	c.logVerboseOutput("Git output:", result.Stderr)
 
 	return nil
 }
 
-func Commit(message string, args ...string) error {
-	if err := CheckGitRepository(); err != nil {
+func (c *Client) Commit(message string, args ...string) error {
+	if err := c.CheckGitRepository(); err != nil {
 		return err
 	}
 
 	commitArgs := append([]string{"commit", "-m", message}, args...)
-	result, err := gitRunner().RunLogged(commitArgs...)
+	result, err := c.runner.RunLogged(commitArgs...)
 
 	// Always show output in verbose mode
-	if Verbose {
-		logVerboseOutput("Git output:", result.Stdout)
-		logVerboseOutput("Git stderr:", result.Stderr)
+	if c.verbose {
+		c.logVerboseOutput("Git output:", result.Stdout)
+		c.logVerboseOutput("Git stderr:", result.Stderr)
 	}
 
 	if err != nil {
@@ -184,8 +194,8 @@ func Commit(message string, args ...string) error {
 	return nil
 }
 
-func CreateAndSwitchBranch(branchName string) error {
-	if err := CheckGitRepository(); err != nil {
+func (c *Client) CreateAndSwitchBranch(branchName string) error {
+	if err := c.CheckGitRepository(); err != nil {
 		return err
 	}
 
@@ -193,13 +203,13 @@ func CreateAndSwitchBranch(branchName string) error {
 		return err
 	}
 
-	if exists, err := branchExists(branchName); err != nil {
+	if exists, err := c.branchExists(branchName); err != nil {
 		return err
 	} else if exists {
 		return fmt.Errorf("branch '%s' already exists", branchName)
 	}
 
-	return createAndSwitchBranch(branchName)
+	return c.createAndSwitchBranch(branchName)
 }
 
 func validateBranchName(branchName string) error {
@@ -214,26 +224,26 @@ func validateBranchName(branchName string) error {
 	return nil
 }
 
-func branchExists(branchName string) (bool, error) {
-	if Verbose {
+func (c *Client) branchExists(branchName string) (bool, error) {
+	if c.verbose {
 		fmt.Fprintf(os.Stderr, "Checking if branch exists: git rev-parse --verify %s\n", branchName)
 	}
 
-	_, err := gitRunner().Run("rev-parse", "--verify", branchName)
+	_, err := c.runner.Run("rev-parse", "--verify", branchName)
 	return err == nil, nil
 }
 
-func createAndSwitchBranch(branchName string) error {
-	if Verbose {
+func (c *Client) createAndSwitchBranch(branchName string) error {
+	if c.verbose {
 		fmt.Fprintf(os.Stderr, "Creating and switching to branch: git checkout -b %s\n", branchName)
 	}
 
-	result, err := gitRunner().Run("checkout", "-b", branchName)
+	result, err := c.runner.Run("checkout", "-b", branchName)
 	if err != nil {
 		return gitutil.WrapGitError(fmt.Sprintf("failed to create and switch to branch '%s'", branchName), result, err)
 	}
 
-	if Verbose && len(result.Stdout) > 0 {
+	if c.verbose && len(result.Stdout) > 0 {
 		fmt.Fprintln(os.Stderr, "Git output:", string(result.Stdout))
 	}
 
@@ -241,12 +251,12 @@ func createAndSwitchBranch(branchName string) error {
 }
 
 // GetLatestTag returns the most recently created tag in the repository.
-func GetLatestTag() (string, error) {
-	if err := CheckGitRepository(); err != nil {
+func (c *Client) GetLatestTag() (string, error) {
+	if err := c.CheckGitRepository(); err != nil {
 		return "", err
 	}
 
-	result, err := gitRunner().RunLogged("tag", "--sort=-creatordate")
+	result, err := c.runner.RunLogged("tag", "--sort=-creatordate")
 	if err != nil {
 		return "", fmt.Errorf("failed to list tags: %w", err)
 	}
@@ -262,8 +272,8 @@ func GetLatestTag() (string, error) {
 
 // GetCommitsSinceTag returns the commits between the given tag (exclusive) and HEAD.
 // If the tag is empty or not found, all commits up to HEAD are returned.
-func GetCommitsSinceTag(tag string) ([]CommitInfo, error) {
-	if err := CheckGitRepository(); err != nil {
+func (c *Client) GetCommitsSinceTag(tag string) ([]CommitInfo, error) {
+	if err := c.CheckGitRepository(); err != nil {
 		return nil, err
 	}
 
@@ -271,7 +281,7 @@ func GetCommitsSinceTag(tag string) ([]CommitInfo, error) {
 	args := []string{"log", "--pretty=format:" + format, "--date=short"}
 
 	if tag != "" {
-		exists, err := tagExists(tag)
+		exists, err := c.tagExists(tag)
 		if err != nil {
 			return nil, err
 		}
@@ -280,7 +290,7 @@ func GetCommitsSinceTag(tag string) ([]CommitInfo, error) {
 		}
 	}
 
-	result, err := gitRunner().RunLogged(args...)
+	result, err := c.runner.RunLogged(args...)
 	if err != nil {
 		if len(result.Stderr) > 0 {
 			return nil, fmt.Errorf("failed to run git log: %s", strings.TrimSpace(string(result.Stderr)))
@@ -322,8 +332,8 @@ func GetCommitsSinceTag(tag string) ([]CommitInfo, error) {
 }
 
 // CreateAnnotatedTag creates an annotated tag with the provided message.
-func CreateAnnotatedTag(tag string, message string) error {
-	if err := CheckGitRepository(); err != nil {
+func (c *Client) CreateAnnotatedTag(tag string, message string) error {
+	if err := c.CheckGitRepository(); err != nil {
 		return err
 	}
 
@@ -336,11 +346,11 @@ func CreateAnnotatedTag(tag string, message string) error {
 		message = "Release " + tag
 	}
 
-	if Verbose {
+	if c.verbose {
 		fmt.Fprintf(os.Stderr, "Running: git tag -a %s -m %q\n", tag, message)
 	}
 
-	result, err := gitRunner().Run("tag", "-a", tag, "-m", message)
+	result, err := c.runner.Run("tag", "-a", tag, "-m", message)
 	if err != nil {
 		return gitutil.WrapGitError(fmt.Sprintf("failed to create tag '%s'", tag), result, err)
 	}
@@ -348,13 +358,13 @@ func CreateAnnotatedTag(tag string, message string) error {
 	return nil
 }
 
-func tagExists(tag string) (bool, error) {
+func (c *Client) tagExists(tag string) (bool, error) {
 	if tag == "" {
 		return false, nil
 	}
 
 	ref := "refs/tags/" + tag
-	_, err := gitRunner().Run("rev-parse", "--verify", ref)
+	_, err := c.runner.Run("rev-parse", "--verify", ref)
 	if err != nil {
 		if _, ok := err.(*exec.ExitError); ok {
 			return false, nil
@@ -366,8 +376,8 @@ func tagExists(tag string) (bool, error) {
 }
 
 // GetCommitHistory retrieves commit history with different modes
-func GetCommitHistory(limit int, teamMode bool) ([]CommitInfo, error) {
-	if err := CheckGitRepository(); err != nil {
+func (c *Client) GetCommitHistory(limit int, teamMode bool) ([]CommitInfo, error) {
+	if err := c.CheckGitRepository(); err != nil {
 		return nil, err
 	}
 
@@ -377,7 +387,7 @@ func GetCommitHistory(limit int, teamMode bool) ([]CommitInfo, error) {
 		args = []string{"log", "--pretty=format:%h|%an|%ad|%s", "--date=short", fmt.Sprintf("-n%d", limit)}
 	} else {
 		// Personal mode: get commits from current user only
-		currentUser, err := getCurrentGitUser()
+		currentUser, err := c.getCurrentGitUser()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get current git user: %w", err)
 		}
@@ -385,9 +395,9 @@ func GetCommitHistory(limit int, teamMode bool) ([]CommitInfo, error) {
 			"--author=" + currentUser, fmt.Sprintf("-n%d", limit)}
 	}
 
-	result, err := gitRunner().RunLogged(args...)
+	result, err := c.runner.RunLogged(args...)
 	if err != nil {
-		logVerboseOutput("Git stderr:", result.Stderr)
+		c.logVerboseOutput("Git stderr:", result.Stderr)
 		return nil, fmt.Errorf("failed to run git log: %w", err)
 	}
 
@@ -400,8 +410,8 @@ func GetCommitHistory(limit int, teamMode bool) ([]CommitInfo, error) {
 }
 
 // getCurrentGitUser gets the current git user name
-func getCurrentGitUser() (string, error) {
-	result, err := gitRunner().Run("config", "user.name")
+func (c *Client) getCurrentGitUser() (string, error) {
+	result, err := c.runner.Run("config", "user.name")
 	if err != nil {
 		return "", fmt.Errorf("failed to get git user name: %w", err)
 	}
@@ -439,8 +449,8 @@ func parseCommitOutput(output string) ([]CommitInfo, error) {
 }
 
 // ResolveFiles expands directories to individual files and validates file paths
-func ResolveFiles(paths []string) ([]string, error) {
-	if err := CheckGitRepository(); err != nil {
+func (c *Client) ResolveFiles(paths []string) ([]string, error) {
+	if err := c.CheckGitRepository(); err != nil {
 		return nil, err
 	}
 
@@ -452,7 +462,7 @@ func ResolveFiles(paths []string) ([]string, error) {
 		info, err := os.Stat(cleanPath)
 		if err != nil {
 			if os.IsNotExist(err) {
-				inIndex, indexErr := isPathInStagedDiff(cleanPath)
+				inIndex, indexErr := c.isPathInStagedDiff(cleanPath)
 				if indexErr != nil {
 					return nil, fmt.Errorf("failed to resolve path %s: %w", path, indexErr)
 				}
@@ -467,7 +477,7 @@ func ResolveFiles(paths []string) ([]string, error) {
 
 		if info.IsDir() {
 			// Expand directory to git-tracked files
-			dirFiles, err := getGitTrackedFilesInDir(cleanPath)
+			dirFiles, err := c.getGitTrackedFilesInDir(cleanPath)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get files in directory %s: %w", path, err)
 			}
@@ -481,12 +491,12 @@ func ResolveFiles(paths []string) ([]string, error) {
 	return stringsutil.UniqueStrings(resolvedFiles), nil
 }
 
-func isPathInStagedDiff(path string) (bool, error) {
+func (c *Client) isPathInStagedDiff(path string) (bool, error) {
 	gitPath := filepath.ToSlash(path)
 
-	result, err := gitRunner().RunLogged("diff", "--cached", "--name-only", "--", gitPath)
+	result, err := c.runner.RunLogged("diff", "--cached", "--name-only", "--", gitPath)
 	if err != nil {
-		logVerboseOutput("Git stderr:", result.Stderr)
+		c.logVerboseOutput("Git stderr:", result.Stderr)
 		return false, fmt.Errorf("failed to inspect staged diff: %w", err)
 	}
 
@@ -509,8 +519,8 @@ func isPathInStagedDiff(path string) (bool, error) {
 }
 
 // getGitTrackedFilesInDir gets all git-tracked files in a directory, including untracked files that are not ignored.
-func getGitTrackedFilesInDir(dir string) ([]string, error) {
-	runResult, err := gitRunner().RunLogged("ls-files", "--cached", "--others", "--exclude-standard", dir)
+func (c *Client) getGitTrackedFilesInDir(dir string) ([]string, error) {
+	runResult, err := c.runner.RunLogged("ls-files", "--cached", "--others", "--exclude-standard", dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list git files in directory: %w", err)
 	}
@@ -533,8 +543,8 @@ func getGitTrackedFilesInDir(dir string) ([]string, error) {
 
 // CheckFileStatus checks the git status of specified files
 // Returns: staged, modified, untracked files
-func CheckFileStatus(files []string) ([]string, []string, []string, error) {
-	if err := CheckGitRepository(); err != nil {
+func (c *Client) CheckFileStatus(files []string) ([]string, []string, []string, error) {
+	if err := c.CheckGitRepository(); err != nil {
 		return nil, nil, nil, err
 	}
 
@@ -542,19 +552,19 @@ func CheckFileStatus(files []string) ([]string, []string, []string, error) {
 
 	for _, file := range files {
 		// Check if file is staged
-		isStaged, err := isFileStaged(file)
+		isStaged, err := c.isFileStaged(file)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to check staged status for %s: %w", file, err)
 		}
 
 		// Check if file is modified
-		isModified, err := isFileModified(file)
+		isModified, err := c.isFileModified(file)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to check modified status for %s: %w", file, err)
 		}
 
 		// Check if file is tracked
-		isTracked, err := isFileTracked(file)
+		isTracked, err := c.isFileTracked(file)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to check tracked status for %s: %w", file, err)
 		}
@@ -573,8 +583,8 @@ func CheckFileStatus(files []string) ([]string, []string, []string, error) {
 }
 
 // isFileStaged checks if a file is staged
-func isFileStaged(file string) (bool, error) {
-	result, err := gitRunner().Run("diff", "--cached", "--name-only", file)
+func (c *Client) isFileStaged(file string) (bool, error) {
+	result, err := c.runner.Run("diff", "--cached", "--name-only", file)
 	if err != nil {
 		return false, err
 	}
@@ -583,8 +593,8 @@ func isFileStaged(file string) (bool, error) {
 }
 
 // isFileModified checks if a file is modified (unstaged changes)
-func isFileModified(file string) (bool, error) {
-	result, err := gitRunner().Run("diff", "--name-only", file)
+func (c *Client) isFileModified(file string) (bool, error) {
+	result, err := c.runner.Run("diff", "--name-only", file)
 	if err != nil {
 		return false, err
 	}
@@ -593,8 +603,8 @@ func isFileModified(file string) (bool, error) {
 }
 
 // isFileTracked checks if a file is tracked by git
-func isFileTracked(file string) (bool, error) {
-	result, err := gitRunner().Run("ls-files", file)
+func (c *Client) isFileTracked(file string) (bool, error) {
+	result, err := c.runner.Run("ls-files", file)
 	if err != nil {
 		return false, err
 	}
@@ -603,13 +613,13 @@ func isFileTracked(file string) (bool, error) {
 }
 
 // StageFiles stages specific files
-func StageFiles(files []string) error {
-	if err := CheckGitRepository(); err != nil {
+func (c *Client) StageFiles(files []string) error {
+	if err := c.CheckGitRepository(); err != nil {
 		return err
 	}
 
 	for _, file := range files {
-		result, err := gitRunner().RunLogged("add", file)
+		result, err := c.runner.RunLogged("add", file)
 		if err != nil {
 			return gitutil.WrapGitError("failed to stage file "+file, result, err)
 		}
@@ -619,8 +629,8 @@ func StageFiles(files []string) error {
 }
 
 // GetFilesDiff gets diff for specific files
-func GetFilesDiff(files []string) (string, error) {
-	if err := CheckGitRepository(); err != nil {
+func (c *Client) GetFilesDiff(files []string) (string, error) {
+	if err := c.CheckGitRepository(); err != nil {
 		return "", err
 	}
 
@@ -632,9 +642,9 @@ func GetFilesDiff(files []string) (string, error) {
 	args = append(args, "--")
 	args = append(args, files...)
 
-	result, err := gitRunner().RunLogged(args...)
+	result, err := c.runner.RunLogged(args...)
 	if err != nil {
-		logVerboseOutput("Git stderr:", result.Stderr)
+		c.logVerboseOutput("Git stderr:", result.Stderr)
 		return "", fmt.Errorf("failed to get diff for files: %w", err)
 	}
 
@@ -642,8 +652,8 @@ func GetFilesDiff(files []string) (string, error) {
 }
 
 // CommitFiles commits specific files only
-func CommitFiles(message string, files []string, args ...string) error {
-	if err := CheckGitRepository(); err != nil {
+func (c *Client) CommitFiles(message string, files []string, args ...string) error {
+	if err := c.CheckGitRepository(); err != nil {
 		return err
 	}
 
@@ -652,12 +662,12 @@ func CommitFiles(message string, files []string, args ...string) error {
 	commitArgs = append(commitArgs, "--")
 	commitArgs = append(commitArgs, files...)
 
-	result, err := gitRunner().RunLogged(commitArgs...)
+	result, err := c.runner.RunLogged(commitArgs...)
 
 	// Always show output in verbose mode
-	if Verbose {
-		logVerboseOutput("Git output:", result.Stdout)
-		logVerboseOutput("Git stderr:", result.Stderr)
+	if c.verbose {
+		c.logVerboseOutput("Git output:", result.Stdout)
+		c.logVerboseOutput("Git stderr:", result.Stderr)
 	}
 
 	if err != nil {

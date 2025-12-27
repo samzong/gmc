@@ -30,8 +30,8 @@ This command simplifies multi-branch parallel development using the
 bare repository (.bare) + worktree pattern.
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		worktree.Verbose = verbose
-		return runWorktreeDefault()
+		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		return runWorktreeDefault(wtClient)
 	},
 }
 
@@ -48,8 +48,8 @@ Examples:
   gmc wt add hotfix-bug123 -b release`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		worktree.Verbose = verbose
-		return runWorktreeAdd(args[0])
+		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		return runWorktreeAdd(wtClient, args[0])
 	},
 }
 
@@ -59,8 +59,8 @@ var wtListCmd = &cobra.Command{
 	Short:   "List all worktrees (alias: ls)",
 	Long:    `List all worktrees in the current repository.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		worktree.Verbose = verbose
-		return runWorktreeList()
+		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		return runWorktreeList(wtClient)
 	},
 }
 
@@ -80,8 +80,8 @@ Examples:
   gmc wt rm feature-login --dry-run  # Preview what would be removed`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		worktree.Verbose = verbose
-		return runWorktreeRemove(args[0])
+		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		return runWorktreeRemove(wtClient, args[0])
 	},
 }
 
@@ -101,8 +101,8 @@ Examples:
   gmc wt clone https://github.com/me/fork.git --upstream https://github.com/org/repo.git`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		worktree.Verbose = verbose
-		return runWorktreeClone(args[0])
+		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		return runWorktreeClone(wtClient, args[0])
 	},
 }
 
@@ -121,8 +121,8 @@ Examples:
   gmc wt dup 3 -b dev  # Create 3 worktrees based on dev`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		worktree.Verbose = verbose
-		return runWorktreeDup(args)
+		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		return runWorktreeDup(wtClient, args)
 	},
 }
 
@@ -138,8 +138,8 @@ Examples:
   gmc wt promote .dup-1 fix/login-bug`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		worktree.Verbose = verbose
-		return runWorktreePromote(args[0], args[1])
+		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		return runWorktreePromote(wtClient, args[0], args[1])
 	},
 }
 
@@ -171,9 +171,9 @@ func init() {
 	rootCmd.AddCommand(wtCmd)
 }
 
-func runWorktreeDefault() error {
+func runWorktreeDefault(wtClient *worktree.Client) error {
 	// Check if this is a bare worktree setup
-	isBareWorktree := worktree.IsBareWorktree()
+	isBareWorktree := wtClient.IsBareWorktree()
 
 	// If not using bare worktree pattern, show status + help
 	if !isBareWorktree {
@@ -182,7 +182,7 @@ func runWorktreeDefault() error {
 	}
 
 	// In bare worktree mode - show full worktree info
-	worktrees, err := worktree.List()
+	worktrees, err := wtClient.List()
 	if err != nil {
 		return err
 	}
@@ -191,7 +191,7 @@ func runWorktreeDefault() error {
 	filtered := filterBareWorktrees(worktrees)
 
 	fmt.Fprintln(outWriter(), "Current Worktrees:")
-	printWorktreeTable(filtered)
+	printWorktreeTable(wtClient, filtered)
 
 	// Print common commands
 	fmt.Fprintln(outWriter())
@@ -229,16 +229,16 @@ func filterBareWorktrees(worktrees []worktree.WorktreeInfo) []worktree.WorktreeI
 	return filtered
 }
 
-func runWorktreeAdd(name string) error {
+func runWorktreeAdd(wtClient *worktree.Client, name string) error {
 	opts := worktree.AddOptions{
 		BaseBranch: wtBaseBranch,
 		Fetch:      false,
 	}
-	return worktree.Add(name, opts)
+	return wtClient.Add(name, opts)
 }
 
-func runWorktreeList() error {
-	worktrees, err := worktree.List()
+func runWorktreeList(wtClient *worktree.Client) error {
+	worktrees, err := wtClient.List()
 	if err != nil {
 		return err
 	}
@@ -251,28 +251,28 @@ func runWorktreeList() error {
 		return nil
 	}
 
-	printWorktreeTable(filtered)
+	printWorktreeTable(wtClient, filtered)
 	return nil
 }
 
-func runWorktreeRemove(name string) error {
+func runWorktreeRemove(wtClient *worktree.Client, name string) error {
 	opts := worktree.RemoveOptions{
 		Force:        wtForce,
 		DeleteBranch: wtDeleteBranch,
 		DryRun:       wtDryRun,
 	}
-	return worktree.Remove(name, opts)
+	return wtClient.Remove(name, opts)
 }
 
-func runWorktreeClone(url string) error {
+func runWorktreeClone(wtClient *worktree.Client, url string) error {
 	opts := worktree.CloneOptions{
 		Name:     wtProjectName,
 		Upstream: wtUpstream,
 	}
-	return worktree.Clone(url, opts)
+	return wtClient.Clone(url, opts)
 }
 
-func printWorktreeTable(worktrees []worktree.WorktreeInfo) {
+func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.WorktreeInfo) {
 	if len(worktrees) == 0 {
 		return
 	}
@@ -300,7 +300,7 @@ func printWorktreeTable(worktrees []worktree.WorktreeInfo) {
 	// Print rows
 	for _, wt := range worktrees {
 		name := filepath.Base(wt.Path)
-		status := worktree.GetWorktreeStatus(wt.Path)
+		status := wtClient.GetWorktreeStatus(wt.Path)
 		if wt.IsBare {
 			status = "bare"
 		}
@@ -308,7 +308,7 @@ func printWorktreeTable(worktrees []worktree.WorktreeInfo) {
 	}
 }
 
-func runWorktreeDup(args []string) error {
+func runWorktreeDup(wtClient *worktree.Client, args []string) error {
 	opts := worktree.DupOptions{
 		BaseBranch: wtBaseBranch,
 		Count:      2,
@@ -322,7 +322,7 @@ func runWorktreeDup(args []string) error {
 		opts.Count = count
 	}
 
-	result, err := worktree.Dup(opts)
+	result, err := wtClient.Dup(opts)
 	if err != nil {
 		return err
 	}
@@ -341,6 +341,6 @@ func runWorktreeDup(args []string) error {
 	return nil
 }
 
-func runWorktreePromote(worktreeName, branchName string) error {
-	return worktree.Promote(worktreeName, branchName)
+func runWorktreePromote(wtClient *worktree.Client, worktreeName, branchName string) error {
+	return wtClient.Promote(worktreeName, branchName)
 }

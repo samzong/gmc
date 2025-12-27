@@ -13,11 +13,20 @@ import (
 	"github.com/samzong/gmc/internal/gitutil"
 )
 
-// Verbose controls whether to print debug output
-var Verbose bool
+type Options struct {
+	Verbose bool
+}
 
-func gitRunner() gitcmd.Runner {
-	return gitcmd.Runner{Verbose: Verbose}
+type Client struct {
+	runner  gitcmd.Runner
+	verbose bool
+}
+
+func NewClient(opts Options) *Client {
+	return &Client{
+		runner:  gitcmd.Runner{Verbose: opts.Verbose},
+		verbose: opts.Verbose,
+	}
 }
 
 // RepoType represents the type of git repository
@@ -68,7 +77,7 @@ type RemoveOptions struct {
 }
 
 // DetectRepositoryType detects the type of git repository in the current or specified directory
-func DetectRepositoryType(dir string) (RepoType, error) {
+func (c *Client) DetectRepositoryType(dir string) (RepoType, error) {
 	if dir == "" {
 		var err error
 		dir, err = os.Getwd()
@@ -78,10 +87,10 @@ func DetectRepositoryType(dir string) (RepoType, error) {
 	}
 
 	// Check if it's inside a git repository
-	if isInsideWorkTree(dir) {
+	if c.isInsideWorkTree(dir) {
 		// It's a work tree, check if it's a worktree or normal repo
-		commonDir := getGitOutput(dir, "rev-parse", "--git-common-dir")
-		gitDir := getGitOutput(dir, "rev-parse", "--git-dir")
+		commonDir := c.getGitOutput(dir, "rev-parse", "--git-common-dir")
+		gitDir := c.getGitOutput(dir, "rev-parse", "--git-dir")
 
 		// If git-dir != git-common-dir, it's a worktree
 		if commonDir != "" && gitDir != "" && gitDir != commonDir && gitDir != "." {
@@ -91,7 +100,7 @@ func DetectRepositoryType(dir string) (RepoType, error) {
 	}
 
 	// Not inside work tree, check if it's a bare repository
-	if isBareRepository(dir) {
+	if c.isBareRepository(dir) {
 		return RepoTypeBare, nil
 	}
 
@@ -99,21 +108,21 @@ func DetectRepositoryType(dir string) (RepoType, error) {
 }
 
 // isInsideWorkTree checks if the directory is inside a git work tree
-func isInsideWorkTree(dir string) bool {
-	result, err := gitRunner().Run("-C", dir, "rev-parse", "--is-inside-work-tree")
+func (c *Client) isInsideWorkTree(dir string) bool {
+	result, err := c.runner.Run("-C", dir, "rev-parse", "--is-inside-work-tree")
 	return err == nil && result.StdoutString(true) == "true"
 }
 
 // isBareRepository checks if the directory is a bare git repository
-func isBareRepository(dir string) bool {
-	result, err := gitRunner().Run("-C", dir, "rev-parse", "--is-bare-repository")
+func (c *Client) isBareRepository(dir string) bool {
+	result, err := c.runner.Run("-C", dir, "rev-parse", "--is-bare-repository")
 	return err == nil && result.StdoutString(true) == "true"
 }
 
 // getGitOutput runs a git command and returns the trimmed output, or empty string on error
-func getGitOutput(dir string, args ...string) string {
+func (c *Client) getGitOutput(dir string, args ...string) string {
 	fullArgs := append([]string{"-C", dir}, args...)
-	result, err := gitRunner().Run(fullArgs...)
+	result, err := c.runner.Run(fullArgs...)
 	if err != nil {
 		return ""
 	}
@@ -148,7 +157,7 @@ func FindBareRoot(startDir string) (string, error) {
 }
 
 // GetWorktreeRoot returns the root directory for worktrees (parent of .bare)
-func GetWorktreeRoot() (string, error) {
+func (c *Client) GetWorktreeRoot() (string, error) {
 	// First try to find .bare directory
 	root, err := FindBareRoot("")
 	if err == nil {
@@ -156,7 +165,7 @@ func GetWorktreeRoot() (string, error) {
 	}
 
 	// Fall back to git-common-dir
-	result, err := gitRunner().Run("rev-parse", "--git-common-dir")
+	result, err := c.runner.Run("rev-parse", "--git-common-dir")
 	if err != nil {
 		return "", fmt.Errorf("not in a git repository: %w", err)
 	}
@@ -182,14 +191,14 @@ func GetWorktreeRoot() (string, error) {
 }
 
 // IsBareWorktree checks if the current repository uses the .bare worktree pattern
-func IsBareWorktree() bool {
+func (c *Client) IsBareWorktree() bool {
 	_, err := FindBareRoot("")
 	return err == nil
 }
 
 // List returns all worktrees for the current repository
-func List() ([]WorktreeInfo, error) {
-	result, err := gitRunner().RunLogged("worktree", "list", "--porcelain")
+func (c *Client) List() ([]WorktreeInfo, error) {
+	result, err := c.runner.RunLogged("worktree", "list", "--porcelain")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list worktrees: %w", err)
 	}
@@ -248,7 +257,7 @@ func parseWorktreeList(output string) ([]WorktreeInfo, error) {
 }
 
 // Add creates a new worktree with a new branch
-func Add(name string, opts AddOptions) error {
+func (c *Client) Add(name string, opts AddOptions) error {
 	if name == "" {
 		return errors.New("worktree name cannot be empty")
 	}
@@ -259,7 +268,7 @@ func Add(name string, opts AddOptions) error {
 	}
 
 	// Find the worktree root
-	root, err := GetWorktreeRoot()
+	root, err := c.GetWorktreeRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find worktree root: %w", err)
 	}
@@ -281,15 +290,15 @@ func Add(name string, opts AddOptions) error {
 
 	// Optionally fetch first
 	if opts.Fetch {
-		if Verbose {
+		if c.verbose {
 			fmt.Fprintln(os.Stderr, "Fetching latest changes...")
 		}
-		_ = gitRunner().RunWithWriters(false, nil, os.Stderr, "fetch", "--all") // Ignore fetch errors
+		_ = c.runner.RunWithWriters(false, nil, os.Stderr, "fetch", "--all") // Ignore fetch errors
 	}
 
 	// Check if branch already exists
 	var args []string
-	branchExistsFlag, _ := branchExists(name)
+	branchExistsFlag, _ := c.branchExists(name)
 	if branchExistsFlag {
 		// Branch exists: create worktree from existing branch
 		args = []string{"worktree", "add", targetPath, name}
@@ -298,7 +307,7 @@ func Add(name string, opts AddOptions) error {
 		args = []string{"worktree", "add", "-b", name, targetPath, baseBranch}
 	}
 
-	result, err := gitRunner().RunLogged(args...)
+	result, err := c.runner.RunLogged(args...)
 	if err != nil {
 		return gitutil.WrapGitError("failed to create worktree", result, err)
 	}
@@ -316,13 +325,13 @@ func Add(name string, opts AddOptions) error {
 }
 
 // Remove removes a worktree
-func Remove(name string, opts RemoveOptions) error {
+func (c *Client) Remove(name string, opts RemoveOptions) error {
 	if name == "" {
 		return errors.New("worktree name cannot be empty")
 	}
 
 	// Find the worktree root
-	root, err := GetWorktreeRoot()
+	root, err := c.GetWorktreeRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find worktree root: %w", err)
 	}
@@ -331,7 +340,7 @@ func Remove(name string, opts RemoveOptions) error {
 	targetPath := filepath.Join(root, name)
 
 	// Check if worktree exists
-	worktrees, err := List()
+	worktrees, err := c.List()
 	if err != nil {
 		return err
 	}
@@ -357,7 +366,7 @@ func Remove(name string, opts RemoveOptions) error {
 
 	// Dry run: preview what would be done
 	if opts.DryRun {
-		status := GetWorktreeStatus(targetPath)
+		status := c.GetWorktreeStatus(targetPath)
 		fmt.Fprintf(os.Stderr, "Would remove worktree: %s\n", targetPath)
 		fmt.Fprintf(os.Stderr, "  Branch: %s\n", wtInfo.Branch)
 		fmt.Fprintf(os.Stderr, "  Status: %s\n", status)
@@ -377,7 +386,7 @@ func Remove(name string, opts RemoveOptions) error {
 	}
 	args = append(args, targetPath)
 
-	result, err := gitRunner().RunLogged(args...)
+	result, err := c.runner.RunLogged(args...)
 	if err != nil {
 		return gitutil.WrapGitError("failed to remove worktree", result, err)
 	}
@@ -387,7 +396,7 @@ func Remove(name string, opts RemoveOptions) error {
 	// Optionally delete branch
 	if opts.DeleteBranch && wtInfo.Branch != "" && wtInfo.Branch != "(detached)" {
 		args := []string{"branch", "-D", wtInfo.Branch}
-		result, err := gitRunner().RunLogged(args...)
+		result, err := c.runner.RunLogged(args...)
 		if err != nil {
 			return gitutil.WrapGitError("failed to delete branch", result, err)
 		}
@@ -399,8 +408,8 @@ func Remove(name string, opts RemoveOptions) error {
 }
 
 // GetWorktreeStatus returns the git status of a worktree (clean/modified)
-func GetWorktreeStatus(path string) string {
-	result, err := gitRunner().Run("-C", path, "status", "--porcelain")
+func (c *Client) GetWorktreeStatus(path string) string {
+	result, err := c.runner.Run("-C", path, "status", "--porcelain")
 	if err != nil {
 		return "unknown"
 	}
@@ -433,9 +442,9 @@ func validateBranchName(name string) error {
 }
 
 // branchExists checks if a branch exists in the repository
-func branchExists(name string) (bool, error) {
+func (c *Client) branchExists(name string) (bool, error) {
 	// Try to find the bare repo root for proper -C path
-	root, _ := GetWorktreeRoot()
+	root, _ := c.GetWorktreeRoot()
 
 	var args []string
 	if root == "" {
@@ -452,7 +461,7 @@ func branchExists(name string) (bool, error) {
 		}
 	}
 
-	_, err := gitRunner().Run(args...)
+	_, err := c.runner.Run(args...)
 	return err == nil, nil
 }
 
@@ -469,7 +478,7 @@ type DupResult struct {
 }
 
 // Dup creates multiple worktrees with temporary branches for parallel development
-func Dup(opts DupOptions) (*DupResult, error) {
+func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 	if opts.BaseBranch == "" {
 		opts.BaseBranch = "HEAD"
 	}
@@ -477,7 +486,7 @@ func Dup(opts DupOptions) (*DupResult, error) {
 		opts.Count = 2
 	}
 
-	root, err := GetWorktreeRoot()
+	root, err := c.GetWorktreeRoot()
 	if err != nil {
 		return nil, fmt.Errorf("failed to find worktree root: %w", err)
 	}
@@ -500,7 +509,7 @@ func Dup(opts DupOptions) (*DupResult, error) {
 
 		// Create worktree with new branch
 		args := []string{"worktree", "add", "-b", branchName, targetPath, opts.BaseBranch}
-		runResult, err := gitRunner().RunLogged(args...)
+		runResult, err := c.runner.RunLogged(args...)
 		if err != nil {
 			return nil, gitutil.WrapGitError(fmt.Sprintf("failed to create worktree %s", dirName), runResult, err)
 		}
@@ -513,7 +522,7 @@ func Dup(opts DupOptions) (*DupResult, error) {
 }
 
 // Promote renames the branch of a worktree to a permanent name
-func Promote(worktreeName, newBranchName string) error {
+func (c *Client) Promote(worktreeName, newBranchName string) error {
 	if worktreeName == "" {
 		return errors.New("worktree name cannot be empty")
 	}
@@ -525,7 +534,7 @@ func Promote(worktreeName, newBranchName string) error {
 		return err
 	}
 
-	root, err := GetWorktreeRoot()
+	root, err := c.GetWorktreeRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find worktree root: %w", err)
 	}
@@ -538,7 +547,7 @@ func Promote(worktreeName, newBranchName string) error {
 	}
 
 	// Get current branch name
-	result, err := gitRunner().Run("-C", targetPath, "rev-parse", "--abbrev-ref", "HEAD")
+	result, err := c.runner.Run("-C", targetPath, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		return fmt.Errorf("failed to get current branch: %w", err)
 	}
@@ -550,7 +559,7 @@ func Promote(worktreeName, newBranchName string) error {
 
 	// Rename branch
 	args := []string{"-C", targetPath, "branch", "-m", newBranchName}
-	result, err = gitRunner().RunLogged(args...)
+	result, err = c.runner.RunLogged(args...)
 	if err != nil {
 		return gitutil.WrapGitError("failed to rename branch", result, err)
 	}

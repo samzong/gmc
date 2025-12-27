@@ -53,6 +53,7 @@ func TestCommitAllowsNonTempDirInTestEnv(t *testing.T) {
 	require.NoError(t, os.WriteFile("test.txt", []byte("test"), 0644))
 	require.NoError(t, exec.Command("git", "add", "test.txt").Run())
 
-	err = Commit("test: safe commit outside temp patterns")
+	client := NewClient(Options{})
+	err = client.Commit("test: safe commit outside temp patterns")
 	assert.NoError(t, err, "Commit should succeed outside hardcoded temp patterns")
 }
