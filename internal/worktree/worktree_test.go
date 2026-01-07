@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -271,11 +272,27 @@ func TestCloneOptions(t *testing.T) {
 	}
 }
 
-func TestResolveBaseBranch_UpstreamPreferred(t *testing.T) {
+func TestResolveBaseBranch_OriginPreferred(t *testing.T) {
 	repoDir := initTestRepo(t)
 
 	runGit(t, repoDir, "update-ref", "refs/remotes/origin/main", "HEAD")
 	runGit(t, repoDir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+	runGit(t, repoDir, "update-ref", "refs/remotes/upstream/main", "HEAD")
+	runGit(t, repoDir, "symbolic-ref", "refs/remotes/upstream/HEAD", "refs/remotes/upstream/main")
+
+	client := NewClient(Options{})
+	base, err := client.resolveBaseBranch(repoDir, "")
+	if err != nil {
+		t.Fatalf("resolveBaseBranch() error = %v", err)
+	}
+	if base != "origin/main" {
+		t.Errorf("resolveBaseBranch() = %q, want %q", base, "origin/main")
+	}
+}
+
+func TestResolveBaseBranch_UpstreamFallback(t *testing.T) {
+	repoDir := initTestRepo(t)
+
 	runGit(t, repoDir, "update-ref", "refs/remotes/upstream/main", "HEAD")
 	runGit(t, repoDir, "symbolic-ref", "refs/remotes/upstream/HEAD", "refs/remotes/upstream/main")
 
@@ -289,22 +306,6 @@ func TestResolveBaseBranch_UpstreamPreferred(t *testing.T) {
 	}
 }
 
-func TestResolveBaseBranch_OriginFallback(t *testing.T) {
-	repoDir := initTestRepo(t)
-
-	runGit(t, repoDir, "update-ref", "refs/remotes/origin/main", "HEAD")
-	runGit(t, repoDir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
-
-	client := NewClient(Options{})
-	base, err := client.resolveBaseBranch(repoDir, "")
-	if err != nil {
-		t.Fatalf("resolveBaseBranch() error = %v", err)
-	}
-	if base != "origin/main" {
-		t.Errorf("resolveBaseBranch() = %q, want %q", base, "origin/main")
-	}
-}
-
 func TestResolveBaseBranch_LocalFallback(t *testing.T) {
 	repoDir := initTestRepo(t)
 
@@ -315,6 +316,162 @@ func TestResolveBaseBranch_LocalFallback(t *testing.T) {
 	}
 	if base != "main" {
 		t.Errorf("resolveBaseBranch() = %q, want %q", base, "main")
+	}
+}
+
+func TestResolveSyncBaseBranch_OriginPreferred(t *testing.T) {
+	repoDir := initTestRepo(t)
+
+	runGit(t, repoDir, "update-ref", "refs/remotes/origin/main", "HEAD")
+	runGit(t, repoDir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+	runGit(t, repoDir, "update-ref", "refs/remotes/upstream/main", "HEAD")
+	runGit(t, repoDir, "symbolic-ref", "refs/remotes/upstream/HEAD", "refs/remotes/upstream/main")
+
+	client := NewClient(Options{})
+	base, err := client.resolveSyncBaseBranch(repoDir, "")
+	if err != nil {
+		t.Fatalf("resolveSyncBaseBranch() error = %v", err)
+	}
+	if base != "origin/main" {
+		t.Errorf("resolveSyncBaseBranch() = %q, want %q", base, "origin/main")
+	}
+}
+
+func TestResolveSyncBaseBranch_UpstreamFallback(t *testing.T) {
+	repoDir := initTestRepo(t)
+
+	runGit(t, repoDir, "update-ref", "refs/remotes/upstream/main", "HEAD")
+	runGit(t, repoDir, "symbolic-ref", "refs/remotes/upstream/HEAD", "refs/remotes/upstream/main")
+
+	client := NewClient(Options{})
+	base, err := client.resolveSyncBaseBranch(repoDir, "")
+	if err != nil {
+		t.Fatalf("resolveSyncBaseBranch() error = %v", err)
+	}
+	if base != "upstream/main" {
+		t.Errorf("resolveSyncBaseBranch() = %q, want %q", base, "upstream/main")
+	}
+}
+
+func TestResolveSyncBaseBranch_MainFallback(t *testing.T) {
+	repoDir := initTestRepo(t)
+
+	client := NewClient(Options{})
+	base, err := client.resolveSyncBaseBranch(repoDir, "")
+	if err != nil {
+		t.Fatalf("resolveSyncBaseBranch() error = %v", err)
+	}
+	if base != "main" {
+		t.Errorf("resolveSyncBaseBranch() = %q, want %q", base, "main")
+	}
+}
+
+func TestResolveSyncBaseBranch_MasterFallback(t *testing.T) {
+	repoDir := initTestRepoWithBranch(t, "master")
+
+	client := NewClient(Options{})
+	base, err := client.resolveSyncBaseBranch(repoDir, "")
+	if err != nil {
+		t.Fatalf("resolveSyncBaseBranch() error = %v", err)
+	}
+	if base != "master" {
+		t.Errorf("resolveSyncBaseBranch() = %q, want %q", base, "master")
+	}
+}
+
+func TestSelectSyncRemote_PrefersUpstream(t *testing.T) {
+	repoDir := initTestRepo(t)
+
+	runGit(t, repoDir, "remote", "add", "origin", "https://example.com/origin/repo.git")
+	runGit(t, repoDir, "remote", "add", "upstream", "https://example.com/upstream/repo.git")
+
+	client := NewClient(Options{})
+	remote, err := client.selectSyncRemote(repoDir)
+	if err != nil {
+		t.Fatalf("selectSyncRemote() error = %v", err)
+	}
+	if remote != "upstream" {
+		t.Errorf("selectSyncRemote() = %q, want %q", remote, "upstream")
+	}
+}
+
+func TestSelectSyncRemote_OriginFallback(t *testing.T) {
+	repoDir := initTestRepo(t)
+
+	runGit(t, repoDir, "remote", "add", "origin", "https://example.com/origin/repo.git")
+
+	client := NewClient(Options{})
+	remote, err := client.selectSyncRemote(repoDir)
+	if err != nil {
+		t.Fatalf("selectSyncRemote() error = %v", err)
+	}
+	if remote != "origin" {
+		t.Errorf("selectSyncRemote() = %q, want %q", remote, "origin")
+	}
+}
+
+func TestSelectSyncRemote_None(t *testing.T) {
+	repoDir := initTestRepo(t)
+
+	client := NewClient(Options{})
+	_, err := client.selectSyncRemote(repoDir)
+	if err == nil {
+		t.Fatal("selectSyncRemote() expected error, got nil")
+	}
+}
+
+func TestSync_UpstreamFastForwardAndPushOrigin(t *testing.T) {
+	repoDir := initTestRepo(t)
+	upstreamDir := initBareRepo(t)
+	originDir := initBareRepo(t)
+
+	runGit(t, repoDir, "remote", "add", "upstream", upstreamDir)
+	runGit(t, repoDir, "remote", "add", "origin", originDir)
+	runGit(t, repoDir, "push", "upstream", "main:refs/heads/main")
+	runGit(t, repoDir, "push", "origin", "main:refs/heads/main")
+
+	runGit(t, repoDir, "fetch", "origin")
+	runGit(t, repoDir, "fetch", "upstream")
+	runGit(t, repoDir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+	runGit(t, repoDir, "symbolic-ref", "refs/remotes/upstream/HEAD", "refs/remotes/upstream/main")
+
+	advanceRepoDir := t.TempDir()
+	runGit(t, advanceRepoDir, "clone", upstreamDir, ".")
+	runGit(t, advanceRepoDir, "checkout", "-B", "main", "origin/main")
+	runGit(t, advanceRepoDir, "config", "user.name", "Test User")
+	runGit(t, advanceRepoDir, "config", "user.email", "test@example.com")
+	writeFile(t, filepath.Join(advanceRepoDir, "upstream.txt"), "upstream")
+	runGit(t, advanceRepoDir, "add", ".")
+	runGit(t, advanceRepoDir, "commit", "-m", "upstream")
+	runGit(t, advanceRepoDir, "push", "origin", "main")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if chdirErr := os.Chdir(cwd); chdirErr != nil {
+			t.Fatalf("failed to restore cwd: %v", chdirErr)
+		}
+	}()
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("failed to chdir: %v", err)
+	}
+
+	client := NewClient(Options{})
+	if err := client.Sync(SyncOptions{}); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+
+	localHash := strings.TrimSpace(runGit(t, repoDir, "rev-parse", "refs/heads/main"))
+	upstreamHash := strings.TrimSpace(runGit(t, repoDir, "rev-parse", "refs/remotes/upstream/main"))
+	originHash := strings.TrimSpace(runGit(t, originDir, "rev-parse", "refs/heads/main"))
+
+	if localHash != upstreamHash {
+		t.Errorf("local main hash = %s, want %s", localHash, upstreamHash)
+	}
+	if originHash != upstreamHash {
+		t.Errorf("origin main hash = %s, want %s", originHash, upstreamHash)
 	}
 }
 
@@ -413,16 +570,27 @@ func TestLocalBranchName(t *testing.T) {
 }
 
 func initTestRepo(t *testing.T) string {
+	return initTestRepoWithBranch(t, "main")
+}
+
+func initTestRepoWithBranch(t *testing.T, branch string) string {
 	t.Helper()
 	repoDir := t.TempDir()
 
-	runGit(t, repoDir, "init", "-b", "main")
+	runGit(t, repoDir, "init", "-b", branch)
 	runGit(t, repoDir, "config", "user.name", "Test User")
 	runGit(t, repoDir, "config", "user.email", "test@example.com")
 	writeFile(t, filepath.Join(repoDir, "README.md"), "init")
 	runGit(t, repoDir, "add", ".")
 	runGit(t, repoDir, "commit", "-m", "init")
 
+	return repoDir
+}
+
+func initBareRepo(t *testing.T) string {
+	t.Helper()
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init", "--bare")
 	return repoDir
 }
 

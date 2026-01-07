@@ -118,10 +118,10 @@ func (c *Client) resolveBaseBranch(root string, override string) (string, error)
 
 	repoDir := repoDirForGit(root)
 
-	if ref := c.gitSymbolicRef(repoDir, "refs/remotes/upstream/HEAD"); ref != "" {
+	if ref := c.gitSymbolicRef(repoDir, "refs/remotes/origin/HEAD"); ref != "" {
 		return ref, nil
 	}
-	if ref := c.gitSymbolicRef(repoDir, "refs/remotes/origin/HEAD"); ref != "" {
+	if ref := c.gitSymbolicRef(repoDir, "refs/remotes/upstream/HEAD"); ref != "" {
 		return ref, nil
 	}
 	if ref := c.gitSymbolicRef(repoDir, "HEAD"); ref != "" {

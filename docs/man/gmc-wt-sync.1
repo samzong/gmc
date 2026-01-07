@@ -2,20 +2,32 @@
 .TH "GMC" "1" "Jan 2026" "gmc" "GMC Manual"
 
 .SH NAME
-gmc-wt-list - List all worktrees (alias: ls)
+gmc-wt-sync - Sync the base branch used for worktrees
 
 
 .SH SYNOPSIS
-\fBgmc wt list [flags]\fP
+\fBgmc wt sync [flags]\fP
 
 
 .SH DESCRIPTION
-List all worktrees in the current repository.
+Sync the base branch used for worktrees.
+
+.PP
+This updates the base branch using fast-forward only and optionally
+updates the base worktree when it's clean.
 
 
 .SH OPTIONS
+\fB-b\fP, \fB--base\fP=""
+	Base branch to sync
+
+.PP
+\fB--dry-run\fP[=false]
+	Preview what would be updated without making changes
+
+.PP
 \fB-h\fP, \fB--help\fP[=false]
-	help for list
+	help for sync
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
