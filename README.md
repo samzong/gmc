@@ -148,11 +148,10 @@ Then work from the default branch worktree (usually `main/` or `master/`) and ke
 
 ```bash
 cd upstream-repo/main
-git fetch upstream
-git merge upstream/main
+gmc wt sync
 
 # Create a feature worktree based on the updated default branch
-gmc wt add feature-login  # defaults source main
+gmc wt add feature-login --sync  # syncs base before add
 ```
 
 ### Shell completion

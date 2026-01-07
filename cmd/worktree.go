@@ -45,6 +45,7 @@ The branch name will be the same as the worktree directory name.
 Examples:
   gmc wt add feature-login           # Create based on current HEAD
   gmc wt add feature-login -b main   # Create based on main branch
+  gmc wt add feature-login --sync    # Sync base branch before add
   gmc wt add hotfix-bug123 -b release`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -204,6 +205,7 @@ func runWorktreeDefault(wtClient *worktree.Client) error {
 	fmt.Fprintln(outWriter(), "Common Commands:")
 	fmt.Fprintln(outWriter(), "  gmc wt add <branch>      Create new worktree with branch")
 	fmt.Fprintln(outWriter(), "  gmc wt add <branch> -b   Create based on specific branch")
+	fmt.Fprintln(outWriter(), "  gmc wt sync              Sync base branch (fast-forward only)")
 	fmt.Fprintln(outWriter(), "  gmc wt rm <name>         Remove worktree (keeps branch)")
 	fmt.Fprintln(outWriter(), "  gmc wt rm <name> -D      Remove worktree and delete branch")
 	fmt.Fprintln(outWriter(), "  gmc wt prune             Remove merged worktrees and branches")
@@ -237,8 +239,25 @@ func filterBareWorktrees(worktrees []worktree.WorktreeInfo) []worktree.WorktreeI
 }
 
 func runWorktreeAdd(wtClient *worktree.Client, name string) error {
+	baseBranch := wtBaseBranch
+	if wtAddSync {
+		if baseBranch == "" {
+			resolved, err := wtClient.ResolveSyncBaseBranch("")
+			if err != nil {
+				return err
+			}
+			baseBranch = resolved
+		}
+		syncOpts := worktree.SyncOptions{
+			BaseBranch: baseBranch,
+			DryRun:     false,
+		}
+		if err := wtClient.Sync(syncOpts); err != nil {
+			return err
+		}
+	}
 	opts := worktree.AddOptions{
-		BaseBranch: wtBaseBranch,
+		BaseBranch: baseBranch,
 		Fetch:      false,
 	}
 	return wtClient.Add(name, opts)
