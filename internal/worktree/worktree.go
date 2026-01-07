@@ -312,6 +312,11 @@ func (c *Client) Add(name string, opts AddOptions) error {
 		return gitutil.WrapGitError("failed to create worktree", result, err)
 	}
 
+	// Sync shared resources
+	if err := c.SyncSharedResources(name); err != nil {
+		fmt.Printf("Warning: failed to sync shared resources: %v\n", err)
+	}
+
 	if branchExistsFlag {
 		fmt.Printf("Created worktree '%s' at %s\n", name, targetPath)
 		fmt.Printf("Branch: %s (existing)\n", name)
@@ -512,6 +517,11 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 		runResult, err := c.runner.RunLogged(args...)
 		if err != nil {
 			return nil, gitutil.WrapGitError(fmt.Sprintf("failed to create worktree %s", dirName), runResult, err)
+		}
+
+		// Sync shared resources
+		if err := c.SyncSharedResources(dirName); err != nil {
+			fmt.Printf("Warning: failed to sync shared resources for %s: %v\n", dirName, err)
 		}
 
 		dupResult.Worktrees = append(dupResult.Worktrees, dirName)
