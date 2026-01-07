@@ -1,6 +1,13 @@
 # Changelog
 
 
+## [v0.6.0] - 2026-01-07
+### Features
+- **worktree:** add support for shared resources across worktrees
+- **worktree:** add sync command and --sync option
+- **worktree:** add prune command to clean merged worktrees
+
+
 ## [v0.5.0] - 2025-12-27
 ### Code Refactoring
 - **cmd:** pass git/llm clients as args, add tests & update man pages
@@ -156,7 +163,8 @@
 - **gma:** add option to automatically stage all changes ([#123](https://github.com/samzong/gmc/issues/123))
 
 
-[Unreleased]: https://github.com/samzong/gmc/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/samzong/gmc/compare/v0.6.0...HEAD
+[v0.6.0]: https://github.com/samzong/gmc/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/samzong/gmc/compare/v0.4.3...v0.5.0
 [v0.4.3]: https://github.com/samzong/gmc/compare/v0.4.2...v0.4.3
 [v0.4.2]: https://github.com/samzong/gmc/compare/v0.4.1...v0.4.2
