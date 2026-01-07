@@ -19,7 +19,7 @@ options:
       perf: Performance Improvements
       refactor: Code Refactoring
   header:
-    pattern: "^(\\w*)(?:\\(([\\w\\$\\.\\-\\*\\s]*)\\))?\\:\\s(.*)$"
+    pattern: "^.*?(feat|fix|perf|refactor)(?:\\(([\\w\\$\\.\\-\\*\\s]*)\\))?\\:\\s(.*)$"
     pattern_maps:
       - Type
       - Scope
