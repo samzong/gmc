@@ -198,7 +198,20 @@ func (c *Client) IsBareWorktree() bool {
 
 // List returns all worktrees for the current repository
 func (c *Client) List() ([]WorktreeInfo, error) {
-	result, err := c.runner.RunLogged("worktree", "list", "--porcelain")
+	// Find the bare root to support running from any directory
+	root, err := FindBareRoot("")
+	if err != nil {
+		// Fallback to current directory if not in a bare repo structure
+		result, err := c.runner.RunLogged("worktree", "list", "--porcelain")
+		if err != nil {
+			return nil, fmt.Errorf("failed to list worktrees: %w", err)
+		}
+		return parseWorktreeList(string(result.Stdout))
+	}
+
+	// Run git command from the .bare directory
+	bareDir := filepath.Join(root, ".bare")
+	result, err := c.runner.RunLogged("-C", bareDir, "worktree", "list", "--porcelain")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list worktrees: %w", err)
 	}
