@@ -151,6 +151,7 @@ func init() {
 	wtCmd.AddCommand(wtCloneCmd)
 	wtCmd.AddCommand(wtDupCmd)
 	wtCmd.AddCommand(wtPromoteCmd)
+	wtCmd.AddCommand(wtPruneCmd)
 
 	// Flags for add command
 	wtAddCmd.Flags().StringVarP(&wtBaseBranch, "base", "b", "", "Base branch to create from")
@@ -166,6 +167,11 @@ func init() {
 
 	// Flags for dup command
 	wtDupCmd.Flags().StringVarP(&wtBaseBranch, "base", "b", "main", "Base branch to create from")
+
+	// Flags for prune command
+	wtPruneCmd.Flags().StringVarP(&wtPruneBase, "base", "b", "", "Base branch to check merge status against")
+	wtPruneCmd.Flags().BoolVarP(&wtPruneForce, "force", "f", false, "Force removal even if worktree is dirty")
+	wtPruneCmd.Flags().BoolVar(&wtPruneDryRun, "dry-run", false, "Preview what would be removed without making changes")
 
 	// Add to root command
 	rootCmd.AddCommand(wtCmd)
@@ -200,6 +206,7 @@ func runWorktreeDefault(wtClient *worktree.Client) error {
 	fmt.Fprintln(outWriter(), "  gmc wt add <branch> -b   Create based on specific branch")
 	fmt.Fprintln(outWriter(), "  gmc wt rm <name>         Remove worktree (keeps branch)")
 	fmt.Fprintln(outWriter(), "  gmc wt rm <name> -D      Remove worktree and delete branch")
+	fmt.Fprintln(outWriter(), "  gmc wt prune             Remove merged worktrees and branches")
 
 	// Show current location
 	cwd, err := os.Getwd()

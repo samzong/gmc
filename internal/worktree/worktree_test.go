@@ -2,6 +2,7 @@ package worktree
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -267,5 +268,178 @@ func TestCloneOptions(t *testing.T) {
 	}
 	if opts.Upstream != "https://github.com/upstream/repo.git" {
 		t.Errorf("Upstream = %q", opts.Upstream)
+	}
+}
+
+func TestResolveBaseBranch_UpstreamPreferred(t *testing.T) {
+	repoDir := initTestRepo(t)
+
+	runGit(t, repoDir, "update-ref", "refs/remotes/origin/main", "HEAD")
+	runGit(t, repoDir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+	runGit(t, repoDir, "update-ref", "refs/remotes/upstream/main", "HEAD")
+	runGit(t, repoDir, "symbolic-ref", "refs/remotes/upstream/HEAD", "refs/remotes/upstream/main")
+
+	client := NewClient(Options{})
+	base, err := client.resolveBaseBranch(repoDir, "")
+	if err != nil {
+		t.Fatalf("resolveBaseBranch() error = %v", err)
+	}
+	if base != "upstream/main" {
+		t.Errorf("resolveBaseBranch() = %q, want %q", base, "upstream/main")
+	}
+}
+
+func TestResolveBaseBranch_OriginFallback(t *testing.T) {
+	repoDir := initTestRepo(t)
+
+	runGit(t, repoDir, "update-ref", "refs/remotes/origin/main", "HEAD")
+	runGit(t, repoDir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+
+	client := NewClient(Options{})
+	base, err := client.resolveBaseBranch(repoDir, "")
+	if err != nil {
+		t.Fatalf("resolveBaseBranch() error = %v", err)
+	}
+	if base != "origin/main" {
+		t.Errorf("resolveBaseBranch() = %q, want %q", base, "origin/main")
+	}
+}
+
+func TestResolveBaseBranch_LocalFallback(t *testing.T) {
+	repoDir := initTestRepo(t)
+
+	client := NewClient(Options{})
+	base, err := client.resolveBaseBranch(repoDir, "")
+	if err != nil {
+		t.Fatalf("resolveBaseBranch() error = %v", err)
+	}
+	if base != "main" {
+		t.Errorf("resolveBaseBranch() = %q, want %q", base, "main")
+	}
+}
+
+func TestIsBranchMerged(t *testing.T) {
+	repoDir := initTestRepo(t)
+
+	runGit(t, repoDir, "checkout", "-b", "feature")
+	writeFile(t, filepath.Join(repoDir, "feature.txt"), "feature")
+	runGit(t, repoDir, "add", ".")
+	runGit(t, repoDir, "commit", "-m", "feature")
+	runGit(t, repoDir, "checkout", "main")
+	runGit(t, repoDir, "merge", "--no-ff", "-m", "merge feature", "feature")
+
+	client := NewClient(Options{})
+	merged, err := client.isBranchMerged(repoDir, "feature", "main")
+	if err != nil {
+		t.Fatalf("isBranchMerged() error = %v", err)
+	}
+	if !merged {
+		t.Error("Expected feature to be merged into main")
+	}
+
+	runGit(t, repoDir, "checkout", "-b", "wip")
+	writeFile(t, filepath.Join(repoDir, "wip.txt"), "wip")
+	runGit(t, repoDir, "add", ".")
+	runGit(t, repoDir, "commit", "-m", "wip")
+	runGit(t, repoDir, "checkout", "main")
+
+	merged, err = client.isBranchMerged(repoDir, "wip", "main")
+	if err != nil {
+		t.Fatalf("isBranchMerged() error = %v", err)
+	}
+	if merged {
+		t.Error("Expected wip to be unmerged into main")
+	}
+}
+
+func TestPrune_RemovesMergedWorktreeAndBranch(t *testing.T) {
+	repoDir := initTestRepo(t)
+
+	worktreeDir := filepath.Join(repoDir, "feature-wt")
+	runGit(t, repoDir, "worktree", "add", "-b", "feature", worktreeDir, "main")
+	writeFile(t, filepath.Join(worktreeDir, "feature.txt"), "feature")
+	runGit(t, worktreeDir, "add", ".")
+	runGit(t, worktreeDir, "commit", "-m", "feature")
+	runGit(t, repoDir, "merge", "--no-ff", "-m", "merge feature", "feature")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if chdirErr := os.Chdir(cwd); chdirErr != nil {
+			t.Fatalf("failed to restore cwd: %v", chdirErr)
+		}
+	}()
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("failed to chdir: %v", err)
+	}
+
+	client := NewClient(Options{})
+	if err := client.Prune(PruneOptions{}); err != nil {
+		t.Fatalf("Prune() error = %v", err)
+	}
+
+	if _, err := os.Stat(worktreeDir); !os.IsNotExist(err) {
+		t.Errorf("Expected worktree to be removed, stat error = %v", err)
+	}
+
+	if _, err := client.runner.Run("-C", repoDir, "rev-parse", "--verify", "refs/heads/feature"); err == nil {
+		t.Error("Expected feature branch to be deleted")
+	}
+}
+
+func TestLocalBranchName(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"origin/main", "main"},
+		{"upstream/dev", "dev"},
+		{"feature/login", "feature/login"},
+		{"refs/remotes/origin/main", "main"},
+		{"refs/remotes/upstream/release", "release"},
+		{"refs/heads/feature/login", "feature/login"},
+		{"main", "main"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := localBranchName(tt.input); got != tt.expected {
+				t.Errorf("localBranchName(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func initTestRepo(t *testing.T) string {
+	t.Helper()
+	repoDir := t.TempDir()
+
+	runGit(t, repoDir, "init", "-b", "main")
+	runGit(t, repoDir, "config", "user.name", "Test User")
+	runGit(t, repoDir, "config", "user.email", "test@example.com")
+	writeFile(t, filepath.Join(repoDir, "README.md"), "init")
+	runGit(t, repoDir, "add", ".")
+	runGit(t, repoDir, "commit", "-m", "init")
+
+	return repoDir
+}
+
+func runGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, string(output))
+	}
+	return string(output)
+}
+
+func writeFile(t *testing.T, path string, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("writeFile(%s) failed: %v", path, err)
 	}
 }
