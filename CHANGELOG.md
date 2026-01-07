@@ -1,6 +1,41 @@
 # Changelog
 
 
+## [v0.5.0] - 2025-12-27
+### Code Refactoring
+- **cmd:** pass git/llm clients as args, add tests & update man pages
+
+
+## [v0.4.3] - 2025-12-26
+### Code Refactoring
+- **config:** use RunE and split command logic
+- **core:** extract saveConfig and logVerboseOutput helpers
+
+
+## [v0.4.2] - 2025-12-26
+### Code Refactoring
+- **cmd:** drop context, tidy imports & prompts
+- **config:** redirect messages to stderr, secure API key entry
+
+### Features
+- **init:** add interactive init command to configure API key and LLM model
+- **init:** add interactive init command for configuring API key and model
+
+
+## [v0.4.1] - 2025-12-22
+### Features
+- **config:** merge repo-level config with higher priority
+
+
+## [v0.4.0] - 2025-12-21
+### Code Refactoring
+- **git:** remove test environment commit safety checks and related test files
+- **git:** unify git command execution via gitcmd.Runner integration
+
+### Features
+- **worktree:** add 'dup' and 'promote' commands for parallel worktrees
+
+
 ## [v0.3.2] - 2025-12-15
 
 ## [v0.3.1] - 2025-12-12
@@ -9,8 +44,20 @@
 
 
 ## [v0.3.0] - 2025-12-12
+### Bug Fixes
+- **worktree:** refine bare worktree filtering and fetch error handling
+
+### Code Refactoring
+- **cmd:** improve error handling to propagate sentinel errors and print to stderr
+
+### Features
+- **worktree:** add new 'wt' command for managing git worktrees
+
 
 ## [v0.2.0] - 2025-11-06
+### Features
+- **tag:** add interactive semantic version tagging command with LLM integration
+
 
 ## [v0.1.4] - 2025-11-04
 ### Features
@@ -54,6 +101,7 @@
 - **errors:** standardize error messages to lowercase for consistency
 
 ### Features
+- **analyzer:** implement commit history analysis with AI-powered suggestions and quality metrics
 - **test:** add test coverage commands and safety checks
 
 
@@ -108,7 +156,12 @@
 - **gma:** add option to automatically stage all changes ([#123](https://github.com/samzong/gmc/issues/123))
 
 
-[Unreleased]: https://github.com/samzong/gmc/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/samzong/gmc/compare/v0.5.0...HEAD
+[v0.5.0]: https://github.com/samzong/gmc/compare/v0.4.3...v0.5.0
+[v0.4.3]: https://github.com/samzong/gmc/compare/v0.4.2...v0.4.3
+[v0.4.2]: https://github.com/samzong/gmc/compare/v0.4.1...v0.4.2
+[v0.4.1]: https://github.com/samzong/gmc/compare/v0.4.0...v0.4.1
+[v0.4.0]: https://github.com/samzong/gmc/compare/v0.3.2...v0.4.0
 [v0.3.2]: https://github.com/samzong/gmc/compare/v0.3.1...v0.3.2
 [v0.3.1]: https://github.com/samzong/gmc/compare/v0.3.0...v0.3.1
 [v0.3.0]: https://github.com/samzong/gmc/compare/v0.2.0...v0.3.0
