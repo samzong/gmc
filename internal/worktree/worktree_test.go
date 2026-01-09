@@ -220,6 +220,28 @@ func TestFindBareRoot_Found(t *testing.T) {
 	}
 }
 
+func TestFindBareRoot_FromBareDir(t *testing.T) {
+	// Create a temp directory with .bare
+	tmpDir, err := os.MkdirTemp("", "gmc_test_")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	bareDir := filepath.Join(tmpDir, ".bare")
+	if err := os.Mkdir(bareDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := FindBareRoot(bareDir)
+	if err != nil {
+		t.Fatalf("FindBareRoot() error = %v", err)
+	}
+	if root != tmpDir {
+		t.Errorf("FindBareRoot() = %q, want %q", root, tmpDir)
+	}
+}
+
 func TestGetWorktreeStatus(t *testing.T) {
 	client := NewClient(Options{})
 
