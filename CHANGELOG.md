@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [v0.6.2] - 2026-01-09
+### Code Refactoring
+- **worktree:** run git via -C to target repository
+
+
 ## [v0.6.1] - 2026-01-07
 ### Bug Fixes
 - support worktree commands in bare workspace root
@@ -168,7 +173,8 @@
 - **gma:** add option to automatically stage all changes ([#123](https://github.com/samzong/gmc/issues/123))
 
 
-[Unreleased]: https://github.com/samzong/gmc/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/samzong/gmc/compare/v0.6.2...HEAD
+[v0.6.2]: https://github.com/samzong/gmc/compare/v0.6.1...v0.6.2
 [v0.6.1]: https://github.com/samzong/gmc/compare/v0.6.0...v0.6.1
 [v0.6.0]: https://github.com/samzong/gmc/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/samzong/gmc/compare/v0.4.3...v0.5.0
