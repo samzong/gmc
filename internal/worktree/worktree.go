@@ -141,6 +141,9 @@ func FindBareRoot(startDir string) (string, error) {
 
 	dir := startDir
 	for {
+		if filepath.Base(dir) == ".bare" {
+			return filepath.Dir(dir), nil
+		}
 		bareDir := filepath.Join(dir, ".bare")
 		if info, err := os.Stat(bareDir); err == nil && info.IsDir() {
 			return dir, nil
@@ -285,6 +288,7 @@ func (c *Client) Add(name string, opts AddOptions) error {
 	if err != nil {
 		return fmt.Errorf("failed to find worktree root: %w", err)
 	}
+	repoDir := repoDirForGit(root)
 
 	// Target path for the new worktree
 	targetPath := filepath.Join(root, name)
@@ -306,7 +310,7 @@ func (c *Client) Add(name string, opts AddOptions) error {
 		if c.verbose {
 			fmt.Fprintln(os.Stderr, "Fetching latest changes...")
 		}
-		_ = c.runner.RunWithWriters(false, nil, os.Stderr, "fetch", "--all") // Ignore fetch errors
+		_ = c.runner.RunWithWriters(false, nil, os.Stderr, "-C", repoDir, "fetch", "--all") // Ignore fetch errors
 	}
 
 	// Check if branch already exists
@@ -314,10 +318,10 @@ func (c *Client) Add(name string, opts AddOptions) error {
 	branchExistsFlag, _ := c.branchExists(name)
 	if branchExistsFlag {
 		// Branch exists: create worktree from existing branch
-		args = []string{"worktree", "add", targetPath, name}
+		args = []string{"-C", repoDir, "worktree", "add", targetPath, name}
 	} else {
 		// Branch does not exist: create new branch
-		args = []string{"worktree", "add", "-b", name, targetPath, baseBranch}
+		args = []string{"-C", repoDir, "worktree", "add", "-b", name, targetPath, baseBranch}
 	}
 
 	result, err := c.runner.RunLogged(args...)
@@ -353,6 +357,7 @@ func (c *Client) Remove(name string, opts RemoveOptions) error {
 	if err != nil {
 		return fmt.Errorf("failed to find worktree root: %w", err)
 	}
+	repoDir := repoDirForGit(root)
 
 	// Target path
 	targetPath := filepath.Join(root, name)
@@ -398,7 +403,7 @@ func (c *Client) Remove(name string, opts RemoveOptions) error {
 	}
 
 	// Remove worktree
-	args := []string{"worktree", "remove"}
+	args := []string{"-C", repoDir, "worktree", "remove"}
 	if opts.Force {
 		args = append(args, "--force")
 	}
@@ -413,7 +418,7 @@ func (c *Client) Remove(name string, opts RemoveOptions) error {
 
 	// Optionally delete branch
 	if opts.DeleteBranch && wtInfo.Branch != "" && wtInfo.Branch != "(detached)" {
-		args := []string{"branch", "-D", wtInfo.Branch}
+		args := []string{"-C", repoDir, "branch", "-D", wtInfo.Branch}
 		result, err := c.runner.RunLogged(args...)
 		if err != nil {
 			return gitutil.WrapGitError("failed to delete branch", result, err)
@@ -508,6 +513,7 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to find worktree root: %w", err)
 	}
+	repoDir := repoDirForGit(root)
 
 	timestamp := strconv.FormatInt(getCurrentTimestamp(), 10)
 	dupResult := &DupResult{
@@ -526,7 +532,7 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 		}
 
 		// Create worktree with new branch
-		args := []string{"worktree", "add", "-b", branchName, targetPath, opts.BaseBranch}
+		args := []string{"-C", repoDir, "worktree", "add", "-b", branchName, targetPath, opts.BaseBranch}
 		runResult, err := c.runner.RunLogged(args...)
 		if err != nil {
 			return nil, gitutil.WrapGitError(fmt.Sprintf("failed to create worktree %s", dirName), runResult, err)

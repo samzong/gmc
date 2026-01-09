@@ -37,6 +37,7 @@ func (c *Client) Prune(opts PruneOptions) error {
 		return err
 	}
 
+	repoDir := repoDirForGit(root)
 	var prunedAny bool
 	for _, wt := range worktrees {
 		if wt.IsBare || filepath.Base(wt.Path) == ".bare" || wt.Path == root {
@@ -81,7 +82,7 @@ func (c *Client) Prune(opts PruneOptions) error {
 			continue
 		}
 
-		args := []string{"worktree", "remove"}
+		args := []string{"-C", repoDir, "worktree", "remove"}
 		if opts.Force {
 			args = append(args, "--force")
 		}
@@ -93,7 +94,7 @@ func (c *Client) Prune(opts PruneOptions) error {
 		}
 		fmt.Fprintf(os.Stderr, "Removed worktree '%s'\n", name)
 
-		result, err = c.runner.RunLogged("branch", "-D", wt.Branch)
+		result, err = c.runner.RunLogged("-C", repoDir, "branch", "-D", wt.Branch)
 		if err != nil {
 			return gitutil.WrapGitError("failed to delete branch", result, err)
 		}
