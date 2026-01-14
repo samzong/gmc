@@ -333,7 +333,7 @@ func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Worktree
 	maxBranch += 2
 
 	// Print header
-	fmt.Fprintf(outWriter(), "%-*s %-*s %s\n", maxName, "NAME", maxBranch, "BRANCH", "STATUS")
+	fmt.Fprintf(outWriter(), "%-*s %-*s %-8s %s\n", maxName, "NAME", maxBranch, "BRANCH", "COMMIT", "STATUS")
 
 	// Print rows
 	for _, wt := range worktrees {
@@ -343,14 +343,22 @@ func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Worktree
 		} else {
 			name = filepath.Base(wt.Path)
 		}
+
+		// Get short commit hash (7 characters)
+		shortCommit := wt.Commit
+		if len(shortCommit) > 7 {
+			shortCommit = shortCommit[:7]
+		}
+
+		// Get enhanced status
 		status := wtClient.GetWorktreeStatus(wt.Path)
 		if wt.IsBare {
 			status = "bare"
 		}
-		fmt.Fprintf(outWriter(), "%-*s %-*s %s\n", maxName, name, maxBranch, wt.Branch, status)
+
+		fmt.Fprintf(outWriter(), "%-*s %-*s %-8s %s\n", maxName, name, maxBranch, wt.Branch, shortCommit, status)
 	}
 }
-
 
 func runWorktreeDup(wtClient *worktree.Client, args []string) error {
 	opts := worktree.DupOptions{

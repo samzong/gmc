@@ -434,17 +434,56 @@ func (c *Client) Remove(name string, opts RemoveOptions) error {
 	return nil
 }
 
-// GetWorktreeStatus returns the git status of a worktree (clean/modified)
+// GetWorktreeStatus returns the git status of a worktree with detailed file counts
 func (c *Client) GetWorktreeStatus(path string) string {
 	result, err := c.runner.Run("-C", path, "status", "--porcelain")
 	if err != nil {
 		return "unknown"
 	}
 
-	if result.StdoutString(true) == "" {
+	output := result.StdoutString(true)
+	if output == "" {
 		return "clean"
 	}
-	return "modified"
+
+	// Parse porcelain output to count changes
+	lines := strings.Split(output, "\n")
+	var modified, untracked int
+
+	for _, line := range lines {
+		if len(line) < 2 {
+			continue
+		}
+		// Porcelain format: XY filename
+		// X = index status, Y = working tree status
+		if line[:2] == "??" {
+			untracked++
+		} else {
+			modified++
+		}
+	}
+
+	// Build status message
+	var parts []string
+	if modified > 0 {
+		if modified == 1 {
+			parts = append(parts, "1 file changed")
+		} else {
+			parts = append(parts, fmt.Sprintf("%d files changed", modified))
+		}
+	}
+	if untracked > 0 {
+		if untracked == 1 {
+			parts = append(parts, "1 untracked")
+		} else {
+			parts = append(parts, fmt.Sprintf("%d untracked", untracked))
+		}
+	}
+
+	if len(parts) == 0 {
+		return "modified"
+	}
+	return strings.Join(parts, ", ")
 }
 
 // validateBranchName validates a git branch name
