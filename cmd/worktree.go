@@ -303,11 +303,23 @@ func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Worktree
 		return
 	}
 
+	// Get root for calculating relative paths
+	root, err := wtClient.GetWorktreeRoot()
+	if err != nil {
+		// Fallback to base name if we can't get root
+		root = ""
+	}
+
 	// Calculate column widths
 	maxName := len("Name")
 	maxBranch := len("Branch")
 	for _, wt := range worktrees {
-		name := filepath.Base(wt.Path)
+		var name string
+		if root != "" {
+			name = strings.TrimPrefix(wt.Path, root+string(filepath.Separator))
+		} else {
+			name = filepath.Base(wt.Path)
+		}
 		if len(name) > maxName {
 			maxName = len(name)
 		}
@@ -325,7 +337,12 @@ func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Worktree
 
 	// Print rows
 	for _, wt := range worktrees {
-		name := filepath.Base(wt.Path)
+		var name string
+		if root != "" {
+			name = strings.TrimPrefix(wt.Path, root+string(filepath.Separator))
+		} else {
+			name = filepath.Base(wt.Path)
+		}
 		status := wtClient.GetWorktreeStatus(wt.Path)
 		if wt.IsBare {
 			status = "bare"
@@ -333,6 +350,7 @@ func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Worktree
 		fmt.Fprintf(outWriter(), "%-*s %-*s %s\n", maxName, name, maxBranch, wt.Branch, status)
 	}
 }
+
 
 func runWorktreeDup(wtClient *worktree.Client, args []string) error {
 	opts := worktree.DupOptions{

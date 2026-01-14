@@ -371,7 +371,11 @@ func (c *Client) Remove(name string, opts RemoveOptions) error {
 	var found bool
 	var wtInfo WorktreeInfo
 	for _, wt := range worktrees {
-		if wt.Path == targetPath || filepath.Base(wt.Path) == name {
+		// Calculate relative path for comparison
+		relPath := strings.TrimPrefix(wt.Path, root+string(filepath.Separator))
+
+		// Only support exact path matching (absolute or relative)
+		if wt.Path == targetPath || relPath == name {
 			found = true
 			wtInfo = wt
 			targetPath = wt.Path
@@ -380,7 +384,7 @@ func (c *Client) Remove(name string, opts RemoveOptions) error {
 	}
 
 	if !found {
-		return fmt.Errorf("worktree not found: %s", name)
+		return fmt.Errorf("worktree not found: %s\nUse 'gmc wt ls' to see available worktrees", name)
 	}
 
 	if wtInfo.IsBare {
