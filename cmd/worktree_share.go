@@ -228,7 +228,9 @@ func promptAddResource(c *worktree.Client, reader *bufio.Reader) {
 		syncInput, _ := reader.ReadString('\n')
 		syncInput = strings.TrimSpace(strings.ToLower(syncInput))
 		if syncInput == "" || syncInput == "y" || syncInput == "yes" {
-			c.SyncAllSharedResources()
+			if err := c.SyncAllSharedResources(); err != nil {
+				fmt.Printf("Warning: failed to sync: %v\n", err)
+			}
 		}
 	}
 }
@@ -256,7 +258,7 @@ func promptRemoveResource(c *worktree.Client, reader *bufio.Reader, cfg *worktre
 
 func promptContinue(reader *bufio.Reader) {
 	fmt.Print("\nPress Enter to continue...")
-	reader.ReadString('\n')
+	_, _ = reader.ReadString('\n')
 }
 
 func askToSyncAll(c *worktree.Client) error {

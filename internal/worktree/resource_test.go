@@ -50,8 +50,8 @@ shared:
 
 	// We need to change CWD to tempDir so GetWorktreeRoot finds it
 	oldCwd, _ := os.Getwd()
-	os.Chdir(tempDir)
-	defer os.Chdir(oldCwd)
+	_ = os.Chdir(tempDir)
+	defer func() { _ = os.Chdir(oldCwd) }()
 
 	// Run sync
 	err = client.SyncSharedResources(wtName)

@@ -18,6 +18,7 @@ var (
 	wtDryRun       bool
 	wtUpstream     string
 	wtProjectName  string
+	prRemote       string
 )
 
 var wtCmd = &cobra.Command{
@@ -31,7 +32,7 @@ bare repository (.bare) + worktree pattern.
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
-		return runWorktreeDefault(wtClient)
+		return runWorktreeDefault(wtClient, cmd)
 	},
 }
 
@@ -144,6 +145,28 @@ Examples:
 	},
 }
 
+var wtPrReviewCmd = &cobra.Command{
+	Use:   "pr-review <PR_NUMBER>",
+	Short: "Create a worktree from a GitHub Pull Request",
+	Long: `Create a worktree from a GitHub Pull Request for code review.
+
+Automatically detects remote (upstream > origin > single remote).
+
+Examples:
+  gmc wt pr-review 1065                 # Auto-detect remote
+  gmc wt pr-review 1065 --remote fork   # Use specific remote`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		prNumber, err := strconv.Atoi(args[0])
+		if err != nil {
+			return fmt.Errorf("invalid PR number: %s", args[0])
+		}
+
+		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		return wtClient.AddPR(prNumber, prRemote)
+	},
+}
+
 func init() {
 	// Add subcommands
 	wtCmd.AddCommand(wtAddCmd)
@@ -153,6 +176,7 @@ func init() {
 	wtCmd.AddCommand(wtDupCmd)
 	wtCmd.AddCommand(wtPromoteCmd)
 	wtCmd.AddCommand(wtPruneCmd)
+	wtCmd.AddCommand(wtPrReviewCmd)
 
 	// Flags for add command
 	wtAddCmd.Flags().StringVarP(&wtBaseBranch, "base", "b", "", "Base branch to create from")
@@ -174,12 +198,16 @@ func init() {
 	wtPruneCmd.Flags().BoolVarP(&wtPruneForce, "force", "f", false, "Force removal even if worktree is dirty")
 	wtPruneCmd.Flags().BoolVar(&wtPruneDryRun, "dry-run", false, "Preview what would be removed without making changes")
 
+	// Flags for pr-review command
+	wtPrReviewCmd.Flags().StringVarP(&prRemote, "remote", "r", "",
+		"Remote to fetch PR from (auto-detect if not specified)")
+
 	// Add to root command
 	rootCmd.AddCommand(wtCmd)
 }
 
-func runWorktreeDefault(wtClient *worktree.Client) error {
-	// Check if this is a bare worktree setup
+func runWorktreeDefault(wtClient *worktree.Client, cmd *cobra.Command) error {
+	// Auto-detect if we're in bare worktree mode
 	isBareWorktree := wtClient.IsBareWorktree()
 
 	// If not using bare worktree pattern, show status + help
@@ -202,13 +230,19 @@ func runWorktreeDefault(wtClient *worktree.Client) error {
 
 	// Print common commands
 	fmt.Fprintln(outWriter())
-	fmt.Fprintln(outWriter(), "Common Commands:")
-	fmt.Fprintln(outWriter(), "  gmc wt add <branch>      Create new worktree with branch")
-	fmt.Fprintln(outWriter(), "  gmc wt add <branch> -b   Create based on specific branch")
-	fmt.Fprintln(outWriter(), "  gmc wt sync              Sync base branch (fast-forward only)")
-	fmt.Fprintln(outWriter(), "  gmc wt rm <name>         Remove worktree (keeps branch)")
-	fmt.Fprintln(outWriter(), "  gmc wt rm <name> -D      Remove worktree and delete branch")
-	fmt.Fprintln(outWriter(), "  gmc wt prune             Remove merged worktrees and branches")
+	fmt.Fprintln(outWriter(), "Available Commands:")
+
+	// Dynamically generate from subcommands
+	for _, subcmd := range cmd.Commands() {
+		if subcmd.Hidden {
+			continue
+		}
+		// Format: "  command_name   Description"
+		fmt.Fprintf(outWriter(), "  %-18s %s\n", subcmd.Name(), subcmd.Short)
+	}
+
+	fmt.Fprintln(outWriter())
+	fmt.Fprintf(outWriter(), "Run 'gmc wt <command> --help' for more information on a command.\n")
 
 	// Show current location
 	cwd, err := os.Getwd()

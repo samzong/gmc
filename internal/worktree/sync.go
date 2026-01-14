@@ -136,7 +136,10 @@ func (c *Client) Sync(opts SyncOptions) error {
 	return nil
 }
 
-func (c *Client) syncDryRun(repoDir string, remote string, baseName string, remoteRef string, localFull string, remoteFull string, baseWorktree string, status string) error {
+func (c *Client) syncDryRun(
+	repoDir string, remote string, baseName string, remoteRef string,
+	localFull string, remoteFull string, baseWorktree string, status string,
+) error {
 	canFF, err := c.canFastForward(repoDir, localFull, remoteFull)
 	if err != nil {
 		return err

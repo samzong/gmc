@@ -1,6 +1,7 @@
 package worktree
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -57,7 +58,7 @@ func (c *Client) SyncSharedResources(worktreeName string) error {
 func (c *Client) syncOneResource(root, targetRoot string, res SharedResource) error {
 	// Validate config fields
 	if res.Path == "" {
-		return fmt.Errorf("shared resource missing 'path' field")
+		return errors.New("shared resource missing 'path' field")
 	}
 	if res.Strategy == "" {
 		return fmt.Errorf("shared resource '%s' missing 'strategy' field", res.Path)
