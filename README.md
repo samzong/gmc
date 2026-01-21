@@ -21,6 +21,31 @@
 6. **Auto semantic version tagging**: suggest and create annotated tags (`gmc tag`)
 7. 🔥 **Worktree workflows**: manage `.bare` + worktree structure (`gmc wt`)
 
+## Installation
+
+### Homebrew (macOS/Linux)
+
+```bash
+brew install samzong/tap/gmc
+```
+
+### Go install
+
+```bash
+go install github.com/samzong/gmc@latest
+```
+
+### Binary Download
+
+You can download the latest binary directly from the [Releases](https://github.com/samzong/gmc/releases) page.
+
+Or via `curl`:
+
+```bash
+# macOS arm64 example
+curl -Lo gmc https://github.com/samzong/gmc/releases/latest/download/gmc_Darwin_arm64.tar.gz && chmod +x gmc
+```
+
 ## Usage
 
 ### Quick start (required config)
