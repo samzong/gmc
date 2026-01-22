@@ -112,12 +112,17 @@ func (f *CommitFlow) getStagedChanges() (string, []string, error) {
 		return "", nil, ErrNoChanges
 	}
 
+	stats, err := f.git.GetStagedDiffStats()
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to get git diff stats: %w", err)
+	}
+
 	changedFiles, err := f.git.ParseStagedFiles()
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to parse staged files: %w", err)
 	}
 
-	return diff, changedFiles, nil
+	return diff + "\n" + formatter.DiffStatsSeparator + "\n" + stats, changedFiles, nil
 }
 
 func (f *CommitFlow) handleSelectiveCommit(fileArgs []string) error {

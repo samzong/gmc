@@ -246,6 +246,12 @@ func TestWithTempGitRepo(t *testing.T) {
 		assert.Contains(t, diff, "Hello World", "Staged diff should contain file content")
 	})
 
+	t.Run("GetStagedDiffStats", func(t *testing.T) {
+		stats, err := client.GetStagedDiffStats()
+		assert.NoError(t, err)
+		assert.Contains(t, stats, "test.txt", "Stats should contain test file")
+	})
+
 	t.Run("Commit", func(t *testing.T) {
 		// Double check we're in temp directory before committing
 		cwd, _ := os.Getwd()
