@@ -29,17 +29,29 @@ func init() {
 }
 
 func BuildPrompt(role string, changedFiles []string, diff string, userPrompt string) string {
-	// Limit the content size of the diff to avoid exceeding the token limit.
+	cfg := config.MustGetConfig()
+	if role != "" {
+		cfgCopy := *cfg
+		cfgCopy.Role = role
+		cfg = &cfgCopy
+	}
+	return BuildPromptWithConfig(cfg, changedFiles, diff, userPrompt)
+}
+
+func BuildPromptWithConfig(cfg *config.Config, changedFiles []string, diff string, userPrompt string) string {
 	if len(diff) > diffPromptLimit {
 		diff = truncateToValidUTF8(diff, diffPromptLimit) + "...(content is too long, truncated)"
 	}
 
 	changedFilesStr := strings.Join(changedFiles, "\n")
 
-	cfg := config.MustGetConfig()
-	templateName := cfg.PromptTemplate
-	if templateName == "" {
-		templateName = "default"
+	role := ""
+	templateName := "default"
+	if cfg != nil {
+		role = cfg.Role
+		if cfg.PromptTemplate != "" {
+			templateName = cfg.PromptTemplate
+		}
 	}
 
 	data := TemplateData{
@@ -57,10 +69,9 @@ func BuildPrompt(role string, changedFiles []string, diff string, userPrompt str
 	prompt, err := RenderTemplate(templateContent, data)
 	if err != nil {
 		fmt.Printf("Warning: %v, using simple format\n", err)
-		prompt = buildSimplePrompt(role, changedFilesStr, diff)
+		prompt = buildSimplePromptWithConfig(cfg, role, changedFilesStr, diff)
 	}
 
-	// Append user prompt if provided
 	if userPrompt != "" {
 		prompt += "\n\nAdditional Context:\n" + userPrompt
 	}
@@ -69,7 +80,10 @@ func BuildPrompt(role string, changedFiles []string, diff string, userPrompt str
 }
 
 func FormatCommitMessage(message string) string {
-	cfg := config.MustGetConfig()
+	return FormatCommitMessageWithConfig(config.MustGetConfig(), message)
+}
+
+func FormatCommitMessageWithConfig(cfg *config.Config, message string) string {
 	message = strings.TrimSpace(message)
 
 	lines := strings.Split(message, "\n")
@@ -78,31 +92,24 @@ func FormatCommitMessage(message string) string {
 
 		firstLine = issuePattern.ReplaceAllString(firstLine, "")
 
-		// Check if message already follows conventional format (with or without emoji)
-		// LLM should return messages in conventional format, so we just need to match and normalize
 		matches := conventionalPattern.FindStringSubmatch(firstLine)
 		if len(matches) >= 4 {
-			// Normalize the commit type to lowercase
 			commitType := strings.ToLower(matches[1])
 			scope := matches[2]
 			description := matches[3]
-			// Reconstruct the message with normalized type
 			firstLine = commitType + scope + ": " + description
 		} else {
-			// If not in conventional format, try to normalize type prefix if present
-			// Otherwise, return as-is without adding any prefix
 			firstLine = normalizeTypePrefix(firstLine)
 		}
 
-		// Add emoji if enabled and not already present
-		if cfg.EnableEmoji {
+		if cfg != nil && cfg.EnableEmoji {
 			firstLine = emoji.AddEmojiToMessage(firstLine)
 		}
 
 		return firstLine
 	}
 
-	if cfg.EnableEmoji {
+	if cfg != nil && cfg.EnableEmoji {
 		return emoji.AddEmojiToMessage(message)
 	}
 	return message
@@ -145,11 +152,11 @@ func truncateToValidUTF8(input string, maxBytes int) string {
 	return input[:end]
 }
 
-func buildSimplePrompt(role, changedFilesStr, diff string) string {
-	cfg := config.MustGetConfig()
+func buildSimplePromptWithConfig(cfg *config.Config, role, changedFilesStr, diff string) string {
+	enableEmoji := cfg != nil && cfg.EnableEmoji
 
 	typeInstruction := `Use the "type(scope): description" syntax`
-	if cfg.EnableEmoji {
+	if enableEmoji {
 		typeInstruction = `Use the "emoji type(scope): description" syntax`
 	}
 
@@ -159,7 +166,7 @@ func buildSimplePrompt(role, changedFilesStr, diff string) string {
 	fmt.Fprintf(&builder, "Diff:\n%s\n\n", diff)
 	fmt.Fprintf(&builder, "%s and pick the most relevant type from: %s.\n",
 		typeInstruction, strings.Join(emoji.GetAllCommitTypes(), ", "))
-	if cfg.EnableEmoji {
+	if enableEmoji {
 		fmt.Fprintf(&builder, "Start with an emoji that matches the type (%s).\n", emoji.GetEmojiDescription())
 	}
 	builder.WriteString("Keep it under 150 characters and skip issue references; gmc adds them automatically.")

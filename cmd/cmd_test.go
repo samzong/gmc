@@ -11,23 +11,21 @@ import (
 	"github.com/samzong/gmc/internal/config"
 	"github.com/samzong/gmc/internal/git"
 	"github.com/samzong/gmc/internal/llm"
+	"github.com/samzong/gmc/internal/workflow"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestVersion(t *testing.T) {
-	// Test default version values
 	assert.Equal(t, "dev", Version)
 	assert.Equal(t, "unknown", BuildTime)
 
-	// Test that version command exists
 	assert.NotNil(t, versionCmd)
 	assert.Equal(t, "version", versionCmd.Use)
 	assert.Equal(t, "Show gmc version information", versionCmd.Short)
 }
 
 func TestRootCommand(t *testing.T) {
-	// Test root command configuration
 	assert.NotNil(t, rootCmd)
 	assert.Equal(t, "gmc", rootCmd.Use)
 	assert.Equal(t, "gmc - Git Message Assistant", rootCmd.Short)
@@ -37,17 +35,11 @@ func TestRootCommand(t *testing.T) {
 }
 
 func TestInitConfig(t *testing.T) {
-	// Test initConfig function behavior
-	// Reset viper state
 	viper.Reset()
 
-	// Test with empty config file path
 	cfgFile = ""
 	initConfig()
 
-	// configErr should be set if there are any configuration issues
-	// In a clean environment, it might be nil or contain an error
-	// This tests that the function runs without panicking
 	assert.NotPanics(t, func() {
 		initConfig()
 	})
@@ -59,8 +51,8 @@ func TestHandleErrors(t *testing.T) {
 	})
 
 	t.Run("propagates sentinel error", func(t *testing.T) {
-		err := handleErrors(errNoChangesDetected)
-		assert.ErrorIs(t, err, errNoChangesDetected)
+		err := handleErrors(workflow.ErrNoChanges)
+		assert.ErrorIs(t, err, workflow.ErrNoChanges)
 	})
 
 	t.Run("propagates generic error", func(t *testing.T) {
@@ -70,62 +62,7 @@ func TestHandleErrors(t *testing.T) {
 	})
 }
 
-func TestGetEditor(t *testing.T) {
-	// Save original environment variables
-	originalEditor := os.Getenv("EDITOR")
-	originalVisual := os.Getenv("VISUAL")
-
-	// Clean up after test
-	defer func() {
-		os.Setenv("EDITOR", originalEditor)
-		os.Setenv("VISUAL", originalVisual)
-	}()
-
-	tests := []struct {
-		name     string
-		editor   string
-		visual   string
-		expected string
-	}{
-		{
-			name:     "EDITOR env var set",
-			editor:   "nano",
-			visual:   "",
-			expected: "nano",
-		},
-		{
-			name:     "VISUAL env var set (no EDITOR)",
-			editor:   "",
-			visual:   "code",
-			expected: "code",
-		},
-		{
-			name:     "EDITOR takes precedence over VISUAL",
-			editor:   "vim",
-			visual:   "code",
-			expected: "vim",
-		},
-		{
-			name:     "Default to vi when no env vars",
-			editor:   "",
-			visual:   "",
-			expected: "vi",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			os.Setenv("EDITOR", tt.editor)
-			os.Setenv("VISUAL", tt.visual)
-
-			result := getEditor()
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func TestGlobalVariables(t *testing.T) {
-	// Test that global variables are properly initialized
 	assert.IsType(t, "", cfgFile)
 	assert.IsType(t, false, noVerify)
 	assert.IsType(t, false, dryRun)
@@ -136,283 +73,46 @@ func TestGlobalVariables(t *testing.T) {
 	assert.IsType(t, "", branchDesc)
 }
 
-func TestHandleBranchCreation_NoBranch(t *testing.T) {
-	// Test with empty branch description
-	branchDesc = ""
-
-	gitClient := git.NewClient(git.Options{})
-	err := handleBranchCreation(gitClient)
-	assert.NoError(t, err)
-}
-
-func TestHandleBranchCreation_InvalidBranch(t *testing.T) {
-	// Test with invalid branch description that would generate empty name
-	// This tests the validation logic without actually creating branches
-
-	// Save original value
-	originalBranchDesc := branchDesc
-	defer func() { branchDesc = originalBranchDesc }()
-
-	// Test with a description that might cause issues
-	branchDesc = "   " // whitespace only
-
-	// The actual branch creation will likely fail in test environment
-	// but we're testing the validation logic
-	gitClient := git.NewClient(git.Options{})
-	_ = handleBranchCreation(gitClient)
-
-	// We expect either no error (if validation passes) or an error about branch creation
-	// The important thing is that the function doesn't panic
-	assert.NotPanics(t, func() {
-		_ = handleBranchCreation(gitClient)
-	})
-
-	// Reset for other tests
-	branchDesc = ""
-}
-
-func TestHandleStaging_NoAddAll(t *testing.T) {
-	// Test with addAll flag disabled
-	addAll = false
-
-	gitClient := git.NewClient(git.Options{})
-	err := handleStaging(gitClient)
-	assert.NoError(t, err)
-}
-
-func TestHandleStaging_WithAddAll(t *testing.T) {
-	// Test with addAll flag enabled
-	// Save original value
-	originalAddAll := addAll
-	defer func() { addAll = originalAddAll }()
-
-	addAll = true
-
-	// This will likely fail because we're not in a proper git repo or staging area
-	// But it tests that the function executes the logic
-	gitClient := git.NewClient(git.Options{})
-	err := handleStaging(gitClient)
-
-	// We expect an error in test environment, but function should not panic
-	if err != nil {
-		assert.Contains(t, err.Error(), "git add failed")
-	}
-
-	// Reset for other tests
-	addAll = false
-}
-
-func TestPerformCommit_DryRun(t *testing.T) {
-	// Test dry run mode
-	originalDryRun := dryRun
-	defer func() { dryRun = originalDryRun }()
-
-	dryRun = true
-
-	gitClient := git.NewClient(git.Options{})
-	err := performCommit(gitClient, "test commit message")
-	assert.NoError(t, err)
-
-	// Reset
-	dryRun = false
-}
-
-func TestPerformCommit_WithNoVerify(t *testing.T) {
-	// Test commit with no-verify flag
-	originalNoVerify := noVerify
-	originalDryRun := dryRun
-	defer func() {
-		noVerify = originalNoVerify
-		dryRun = originalDryRun
-	}()
-
-	dryRun = true // Enable dry run to avoid actual commit
-	noVerify = true
-
-	gitClient := git.NewClient(git.Options{})
-	err := performCommit(gitClient, "test commit message")
-	assert.NoError(t, err)
-
-	// Reset
-	noVerify = false
-	dryRun = false
-}
-
-func TestPerformCommit_WithNoSignoff(t *testing.T) {
-	// Test commit with no-signoff flag
-	originalNoSignoff := noSignoff
-	originalDryRun := dryRun
-	defer func() {
-		noSignoff = originalNoSignoff
-		dryRun = originalDryRun
-	}()
-
-	dryRun = true // Enable dry run to avoid actual commit
-	noSignoff = true
-
-	gitClient := git.NewClient(git.Options{})
-	err := performCommit(gitClient, "test commit message")
-	assert.NoError(t, err)
-
-	// Reset
-	noSignoff = false
-	dryRun = false
-}
-
-func TestPerformSelectiveCommit_WithNoSignoff(t *testing.T) {
-	// Test selective commit with no-signoff flag
-	originalNoSignoff := noSignoff
-	originalDryRun := dryRun
-	defer func() {
-		noSignoff = originalNoSignoff
-		dryRun = originalDryRun
-	}()
-
-	dryRun = true // Enable dry run to avoid actual commit
-	noSignoff = true
-
-	gitClient := git.NewClient(git.Options{})
-	err := performSelectiveCommit(gitClient, "test commit message", []string{"test.go"})
-	assert.NoError(t, err)
-
-	// Reset
-	noSignoff = false
-	dryRun = false
-}
-
-func TestBuildCommitArgs(t *testing.T) {
-	tests := []struct {
-		name      string
-		noVerify  bool
-		noSignoff bool
-		expected  []string
-	}{
-		{
-			name:      "Default (with signoff)",
-			noVerify:  false,
-			noSignoff: false,
-			expected:  []string{"-s"},
-		},
-		{
-			name:      "No signoff",
-			noVerify:  false,
-			noSignoff: true,
-			expected:  []string{},
-		},
-		{
-			name:      "No verify with signoff",
-			noVerify:  true,
-			noSignoff: false,
-			expected:  []string{"--no-verify", "-s"},
-		},
-		{
-			name:      "No verify and no signoff",
-			noVerify:  true,
-			noSignoff: true,
-			expected:  []string{"--no-verify"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Save original values
-			originalNoVerify := noVerify
-			originalNoSignoff := noSignoff
-			defer func() {
-				noVerify = originalNoVerify
-				noSignoff = originalNoSignoff
-			}()
-
-			// Set test values
-			noVerify = tt.noVerify
-			noSignoff = tt.noSignoff
-
-			// Test
-			args := buildCommitArgs()
-			assert.Equal(t, tt.expected, args, "Expected commit args to match")
-		})
-	}
-}
-
-func TestGetUserConfirmation_AutoYes(t *testing.T) {
-	// Test auto-yes flag
-	originalAutoYes := autoYes
-	defer func() { autoYes = originalAutoYes }()
-
-	autoYes = true
-
-	action, editedMessage, err := getUserConfirmation("test message")
-
-	assert.NoError(t, err)
-	assert.Equal(t, "commit", action)
-	assert.Empty(t, editedMessage)
-
-	// Reset
-	autoYes = false
-}
-
-func TestGenerateCommitMessage_IssueNumber(t *testing.T) {
-	// Setup viper config for testing
+func TestCommitFlow_DryRun(t *testing.T) {
 	viper.Reset()
 	viper.Set("api_key", "test-api-key")
 	viper.Set("model", "gpt-3.5-turbo")
 	viper.Set("api_base", "http://127.0.0.1:1")
 	viper.Set("role", "Developer")
 
-	// Save original issueNum
-	originalIssueNum := issueNum
-	defer func() { issueNum = originalIssueNum }()
-
-	issueNum = "123"
-
-	// This will fail due to fake API key, but tests the issue number logic
-	changedFiles := []string{"test.go"}
-	diff := "test diff content"
-
-	// Get config for the test
 	cfg, err := config.GetConfig()
 	assert.NoError(t, err)
 
-	// The function will fail at LLM call, but issue number formatting logic will be exercised
+	gitClient := git.NewClient(git.Options{})
 	llmClient := llm.NewClient(llm.Options{Timeout: 250 * time.Millisecond})
-	_, err = generateCommitMessage(llmClient, cfg, changedFiles, diff, "")
 
-	// We expect an error due to fake API key
-	if err != nil {
-		assert.Contains(t, err.Error(), "failed to generate commit message")
+	opts := workflow.CommitOptions{
+		DryRun:    true,
+		AutoYes:   true,
+		ErrWriter: os.Stderr,
+		OutWriter: os.Stdout,
 	}
 
-	// Reset
-	issueNum = ""
-}
+	flow := workflow.NewCommitFlow(gitClient, llmClient, cfg, opts)
+	err = flow.Run([]string{})
 
-func TestExecute(t *testing.T) {
-	// Test that Execute function exists and can be called
-	// We can't test the full execution without mocking a lot of dependencies
-	assert.NotNil(t, Execute)
-
-	viper.Reset()
-	viper.Set("api_key", "test-api-key")
-	viper.Set("model", "gpt-3.5-turbo")
-	viper.Set("role", "Developer")
-
-	// Test that it doesn't panic when called (though it will likely error)
-	assert.NotPanics(t, func() {
-		_ = Execute()
-	})
+	if err != nil {
+		assert.True(t,
+			errors.Is(err, workflow.ErrNoChanges) ||
+				strings.Contains(err.Error(), "failed to generate commit message") ||
+				strings.Contains(err.Error(), "failed to get git diff"),
+			"Expected workflow-related error: %v", err)
+	}
 }
 
 func TestCommandFlags(t *testing.T) {
-	// Test that all expected flags are registered
 	flags := rootCmd.Flags()
 
-	// Check persistent flags
 	persistentFlags := rootCmd.PersistentFlags()
 	configFlag := persistentFlags.Lookup("config")
 	assert.NotNil(t, configFlag)
 	assert.Equal(t, "string", configFlag.Value.Type())
 
-	// Check regular flags
 	noVerifyFlag := flags.Lookup("no-verify")
 	assert.NotNil(t, noVerifyFlag)
 	assert.Equal(t, "bool", noVerifyFlag.Value.Type())
@@ -447,16 +147,13 @@ func TestCommandFlags(t *testing.T) {
 }
 
 func TestConfigCommandStructure(t *testing.T) {
-	// Test that config command is properly structured
 	assert.NotNil(t, configCmd)
 	assert.Equal(t, "config", configCmd.Use)
 	assert.Equal(t, "Manage gmc configuration", configCmd.Short)
 	assert.Contains(t, configCmd.Long, "Manage gmc configuration")
 }
 
-// Test helper functions and edge cases
 func TestStringTrimming(t *testing.T) {
-	// Test string processing logic used in various parts
 	testCases := []struct {
 		input    string
 		expected string
@@ -486,44 +183,18 @@ func TestStringTrimming(t *testing.T) {
 }
 
 func TestErrorHandlingPatterns(t *testing.T) {
-	// Test common error handling patterns used in cmd package
-
-	// Test error wrapping
 	originalErr := errors.New("original error")
 	wrappedErr := fmt.Errorf("wrapped: %w", originalErr)
 
 	assert.Contains(t, wrappedErr.Error(), "wrapped")
 	assert.Contains(t, wrappedErr.Error(), "original error")
 
-	// Test error message formatting
 	formattedErr := fmt.Errorf("failed to %s: %w", "do something", originalErr)
 	assert.Contains(t, formattedErr.Error(), "failed to do something")
 	assert.Contains(t, formattedErr.Error(), "original error")
 }
 
-// Test getStagedChanges function
-func TestGetStagedChanges(t *testing.T) {
-	// This will test the getStagedChanges function
-	// It will likely fail in test environment but exercises the code paths
-	gitClient := git.NewClient(git.Options{})
-	_, _, err := getStagedChanges(gitClient)
-
-	// We expect an error in test environment (not a git repo or no staging area)
-	// But the function should execute without panic
-	if err != nil {
-		// Common error messages we might see
-		errorMsg := err.Error()
-		assert.True(t,
-			strings.Contains(errorMsg, "failed to get git diff") ||
-				strings.Contains(errorMsg, "no changes detected") ||
-				strings.Contains(errorMsg, "failed to parse staged files"),
-			"Error should be related to git operations: %s", errorMsg)
-	}
-}
-
-// Test generateAndCommit function
 func TestGenerateAndCommit(t *testing.T) {
-	// Save original values
 	originalBranchDesc := branchDesc
 	originalAddAll := addAll
 	originalVerbose := verbose
@@ -538,16 +209,13 @@ func TestGenerateAndCommit(t *testing.T) {
 	viper.Set("model", "gpt-3.5-turbo")
 	viper.Set("role", "Developer")
 
-	// Test with minimal setup
 	branchDesc = ""
 	addAll = false
 	verbose = false
 
-	err := generateAndCommit([]string{})
+	err := generateAndCommit(strings.NewReader(""), []string{})
 
-	// We expect an error in test environment, but function should not panic
 	if err != nil {
-		// Could be git diff error or LLM error depending on test environment
 		errorMsg := err.Error()
 		assert.True(t,
 			strings.Contains(errorMsg, "failed to get git diff") ||
@@ -557,113 +225,7 @@ func TestGenerateAndCommit(t *testing.T) {
 	}
 }
 
-// Test handleCommitFlow with mock scenarios
-func TestHandleCommitFlow(t *testing.T) {
-	// Setup viper config for testing
-	viper.Reset()
-	viper.Set("api_key", "test-api-key")
-	viper.Set("model", "gpt-3.5-turbo")
-	viper.Set("api_base", "http://127.0.0.1:1")
-	viper.Set("role", "Developer")
-
-	// Save original autoYes value
-	originalAutoYes := autoYes
-	defer func() { autoYes = originalAutoYes }()
-
-	autoYes = true // This will make the function proceed without user input
-
-	// Test with mock data
-	diff := "test diff content"
-	changedFiles := []string{"test.go", "main.go"}
-
-	// This will exercise the handleCommitFlow function
-	gitClient := git.NewClient(git.Options{})
-	llmClient := llm.NewClient(llm.Options{Timeout: 250 * time.Millisecond})
-	err := handleCommitFlow(gitClient, llmClient, diff, changedFiles)
-
-	// We expect an error due to fake API key or git operations
-	if err != nil {
-		errorMsg := err.Error()
-		assert.True(t,
-			strings.Contains(errorMsg, "failed to generate commit message") ||
-				strings.Contains(errorMsg, "failed to commit changes"),
-			"Error should be related to commit flow: %s", errorMsg)
-	}
-
-	// Reset
-	autoYes = false
-}
-
-// Test performCommit with actual commit (dry run)
-func TestPerformCommit_ActualCommit(t *testing.T) {
-	// Save original values
-	originalDryRun := dryRun
-	originalNoVerify := noVerify
-	defer func() {
-		dryRun = originalDryRun
-		noVerify = originalNoVerify
-	}()
-
-	// IMPORTANT: Always use dry run mode in tests to avoid real commits
-	dryRun = true // Always use dry run in tests
-	noVerify = false
-
-	gitClient := git.NewClient(git.Options{})
-	err := performCommit(gitClient, "test commit message")
-
-	// In dry run mode, we should not get an error
-	assert.NoError(t, err, "performCommit should succeed in dry run mode")
-}
-
-// Test generateCommitMessage function more thoroughly
-func TestGenerateCommitMessage_Complete(t *testing.T) {
-	// Setup viper config for testing
-	viper.Reset()
-	viper.Set("api_key", "test-api-key")
-	viper.Set("model", "gpt-3.5-turbo")
-	viper.Set("api_base", "http://127.0.0.1:1")
-	viper.Set("role", "Senior Go Developer")
-
-	// Save original issueNum
-	originalIssueNum := issueNum
-	defer func() { issueNum = originalIssueNum }()
-
-	cfg, err := config.GetConfig()
-	assert.NoError(t, err)
-	changedFiles := []string{"main.go", "cmd/root.go", "internal/config/config.go"}
-	diff := `diff --git a/main.go b/main.go
-index 1234567..abcdefg 100644
---- a/main.go
-+++ b/main.go
-@@ -10,6 +10,7 @@ func main() {
- 	if err := cmd.Execute(); err != nil {
- 		os.Exit(1)
- 	}
-+	fmt.Println("Done")
- }`
-
-	// Test without issue number
-	issueNum = ""
-	llmClient := llm.NewClient(llm.Options{Timeout: 250 * time.Millisecond})
-	_, err = generateCommitMessage(llmClient, cfg, changedFiles, diff, "")
-	if err != nil {
-		assert.Contains(t, err.Error(), "failed to generate commit message")
-	}
-
-	// Test with issue number
-	issueNum = "456"
-	_, err = generateCommitMessage(llmClient, cfg, changedFiles, diff, "")
-	if err != nil {
-		assert.Contains(t, err.Error(), "failed to generate commit message")
-	}
-
-	// Reset
-	issueNum = ""
-}
-
-// Test some config command structure (basic coverage)
 func TestConfigCommands(t *testing.T) {
-	// Test that config commands exist and are structured correctly
 	assert.NotNil(t, configSetCmd)
 	assert.Equal(t, "set", configSetCmd.Use)
 	assert.Equal(t, "Set configuration item", configSetCmd.Short)
@@ -676,29 +238,22 @@ func TestConfigCommands(t *testing.T) {
 	assert.Equal(t, "model [Model Name]", configSetModelCmd.Use)
 }
 
-// Test root command execution with config error
 func TestRootCommandWithConfigError(t *testing.T) {
-	// Save original configErr
 	originalConfigErr := configErr
 	defer func() { configErr = originalConfigErr }()
 
-	// Set a config error
 	configErr = errors.New("test config error")
 
-	// Test that rootCmd.RunE handles config error
 	err := rootCmd.RunE(rootCmd, []string{})
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "configuration error")
 	assert.Contains(t, err.Error(), "test config error")
 
-	// Reset
 	configErr = nil
 }
 
-// Test root command execution without config error (will fail later but tests the path)
 func TestRootCommandSuccess(t *testing.T) {
-	// Save original configErr
 	originalConfigErr := configErr
 	defer func() { configErr = originalConfigErr }()
 
@@ -707,18 +262,42 @@ func TestRootCommandSuccess(t *testing.T) {
 	viper.Set("model", "gpt-3.5-turbo")
 	viper.Set("role", "Developer")
 
-	// Clear config error
 	configErr = nil
 
-	// Test that rootCmd.RunE progresses past config error check
 	err := rootCmd.RunE(rootCmd, []string{})
 
-	// Will likely fail on git operations or LLM calls, but passed config error check
 	if err != nil {
-		// Should not be a configuration error
 		assert.NotContains(t, err.Error(), "configuration error")
 	}
 
-	// Reset
 	configErr = originalConfigErr
+}
+
+func TestExecute(t *testing.T) {
+	assert.NotNil(t, Execute)
+
+	viper.Reset()
+	viper.Set("api_key", "test-api-key")
+	viper.Set("model", "gpt-3.5-turbo")
+	viper.Set("role", "Developer")
+
+	assert.NotPanics(t, func() {
+		_ = Execute()
+	})
+}
+
+func TestExtractFilesFromDiff(t *testing.T) {
+	diff := `diff --git a/main.go b/main.go
+--- a/main.go
++++ b/main.go
+@@ -1,3 +1,4 @@
+ package main
++import "fmt"
+diff --git a/cmd/root.go b/cmd/root.go
+--- a/cmd/root.go
++++ b/cmd/root.go`
+
+	files := workflow.ExtractFilesFromDiff(diff)
+	assert.Contains(t, files, "main.go")
+	assert.Contains(t, files, "cmd/root.go")
 }

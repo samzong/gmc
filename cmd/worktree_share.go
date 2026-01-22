@@ -23,7 +23,7 @@ var wtShareCmd = &cobra.Command{
 If run without arguments, it opens an interactive mode to manage resources.
 
 Config file is stored at .gmc-shared.yml in the worktree root.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
 		return runWorktreeShareInteractive(wtClient)
 	},
@@ -70,7 +70,7 @@ var wtShareRemoveCmd = &cobra.Command{
 	Aliases: []string{"rm"},
 	Short:   "Remove a shared resource from config",
 	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
 		if err := wtClient.RemoveSharedResource(args[0]); err != nil {
 			return err
@@ -84,7 +84,7 @@ var wtShareListCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
 	Short:   "List configured shared resources",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
 		cfg, _, err := wtClient.LoadSharedConfig()
 		if err != nil {
@@ -107,7 +107,7 @@ var wtShareListCmd = &cobra.Command{
 var wtShareSyncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Manually sync shared resources to all worktrees",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
 		return wtClient.SyncAllSharedResources()
 	},

@@ -53,8 +53,8 @@ func (r RepoType) String() string {
 	}
 }
 
-// WorktreeInfo represents information about a worktree
-type WorktreeInfo struct {
+// Info represents information about a worktree
+type Info struct {
 	Path       string // Absolute path to the worktree
 	Branch     string // Branch name
 	Commit     string // Current commit hash
@@ -200,7 +200,7 @@ func (c *Client) IsBareWorktree() bool {
 }
 
 // List returns all worktrees for the current repository
-func (c *Client) List() ([]WorktreeInfo, error) {
+func (c *Client) List() ([]Info, error) {
 	// Find the bare root to support running from any directory
 	root, err := FindBareRoot("")
 	if err != nil {
@@ -223,9 +223,9 @@ func (c *Client) List() ([]WorktreeInfo, error) {
 }
 
 // parseWorktreeList parses the porcelain output of git worktree list
-func parseWorktreeList(output string) ([]WorktreeInfo, error) {
-	var worktrees []WorktreeInfo
-	var current *WorktreeInfo
+func parseWorktreeList(output string) ([]Info, error) {
+	var worktrees []Info
+	var current *Info
 
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
@@ -242,7 +242,7 @@ func parseWorktreeList(output string) ([]WorktreeInfo, error) {
 			if current != nil {
 				worktrees = append(worktrees, *current)
 			}
-			current = &WorktreeInfo{
+			current = &Info{
 				Path: strings.TrimPrefix(line, "worktree "),
 			}
 		} else if current != nil {
@@ -369,7 +369,7 @@ func (c *Client) Remove(name string, opts RemoveOptions) error {
 	}
 
 	var found bool
-	var wtInfo WorktreeInfo
+	var wtInfo Info
 	for _, wt := range worktrees {
 		// Calculate relative path for comparison
 		relPath := strings.TrimPrefix(wt.Path, root+string(filepath.Separator))
@@ -578,7 +578,7 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 		args := []string{"-C", repoDir, "worktree", "add", "-b", branchName, targetPath, opts.BaseBranch}
 		runResult, err := c.runner.RunLogged(args...)
 		if err != nil {
-			return nil, gitutil.WrapGitError(fmt.Sprintf("failed to create worktree %s", dirName), runResult, err)
+			return nil, gitutil.WrapGitError("failed to create worktree "+dirName, runResult, err)
 		}
 
 		// Sync shared resources
