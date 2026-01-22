@@ -1,60 +1,50 @@
 package cmd
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/mattn/go-isatty"
-	"github.com/samzong/gmc/internal/branch"
 	"github.com/samzong/gmc/internal/config"
 	"github.com/samzong/gmc/internal/formatter"
 	"github.com/samzong/gmc/internal/git"
 	"github.com/samzong/gmc/internal/llm"
-	"github.com/samzong/gmc/internal/stringsutil"
 	"github.com/samzong/gmc/internal/ui"
+	"github.com/samzong/gmc/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
 var (
-	cfgFile              string
-	noVerify             bool
-	noSignoff            bool
-	dryRun               bool
-	addAll               bool
-	issueNum             string
-	autoYes              bool
-	configErr            error
-	verbose              bool
-	branchDesc           string
-	userPrompt           string
-	timeoutSeconds       int
-	debug                bool
-	errNoChangesDetected = errors.New("no changes detected in the staging area files")
-	rootCmd              = &cobra.Command{
+	cfgFile        string
+	noVerify       bool
+	noSignoff      bool
+	dryRun         bool
+	addAll         bool
+	issueNum       string
+	autoYes        bool
+	configErr      error
+	verbose        bool
+	branchDesc     string
+	userPrompt     string
+	timeoutSeconds int
+	debug          bool
+	rootCmd        = &cobra.Command{
 		Use:   "gmc",
 		Short: "gmc - Git Message Assistant",
 		Long: `gmc is a CLI tool that accelerates Git commit efficiency by generating ` +
 			`high-quality commit messages using LLM.`,
-		Version: fmt.Sprintf("%s (built at %s)", Version, BuildTime),
-		Args:    cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, args []string) error {
-			if configErr != nil {
-				return fmt.Errorf("configuration error: %w", configErr)
-			}
-			return handleErrors(generateAndCommit(args))
-		},
+		Version:       fmt.Sprintf("%s (built at %s)", Version, BuildTime),
+		Args:          cobra.ArbitraryArgs,
+		RunE:          runRoot,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
 )
 
-// RootCmd returns the root command for doc generation
 func RootCmd() *cobra.Command {
 	return rootCmd
 }
@@ -70,7 +60,6 @@ func init() {
 		&cfgFile, "config", "", "Config file (default: $XDG_CONFIG_HOME/gmc/config.yaml)")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Enable debug output")
 
-	// Use -V for version (freeing -v for verbose, industry convention)
 	rootCmd.Flags().BoolP("version", "V", false, "version for gmc")
 	rootCmd.Flags().BoolVar(&noVerify, "no-verify", false, "Skip pre-commit hooks")
 	rootCmd.Flags().BoolVar(&noSignoff, "no-signoff", false, "Skip signing the commit (DCO signoff)")
@@ -93,12 +82,19 @@ func initConfig() {
 	configErr = config.InitConfig(cfgFile)
 }
 
+func runRoot(cmd *cobra.Command, args []string) error {
+	if configErr != nil {
+		return fmt.Errorf("configuration error: %w", configErr)
+	}
+	return handleErrors(generateAndCommit(cmd.InOrStdin(), args))
+}
+
 func handleErrors(err error) error {
 	if err == nil {
 		return nil
 	}
 
-	if errors.Is(err, errNoChangesDetected) {
+	if errors.Is(err, workflow.ErrNoChanges) {
 		fmt.Fprintln(errWriter(), "No changes detected in the staging area files.")
 		if !addAll {
 			fmt.Fprintln(errWriter(), "Hint: You can use -a or --all to automatically add all changes to the staging area.")
@@ -110,97 +106,58 @@ func handleErrors(err error) error {
 	return err
 }
 
-func generateAndCommit(fileArgs []string) error {
+func generateAndCommit(in io.Reader, fileArgs []string) error {
 	gitClient := git.NewClient(git.Options{Verbose: verbose})
 	llmClient := llm.NewClient(llm.Options{Timeout: time.Duration(timeoutSeconds) * time.Second})
 
-	// Check for stdin input via "-" argument
 	if len(fileArgs) == 1 && fileArgs[0] == "-" {
-		return handleStdinDiff(llmClient)
+		return handleStdinDiff(in, llmClient)
 	}
 
-	// Handle branch creation
-	if err := handleBranchCreation(gitClient); err != nil {
-		return err
-	}
-
-	// Check if selective file mode
-	if len(fileArgs) > 0 {
-		return handleSelectiveCommit(gitClient, llmClient, fileArgs)
-	}
-
-	// Handle staging
-	if err := handleStaging(gitClient); err != nil {
-		return err
-	}
-
-	// Get staged changes
-	diff, changedFiles, err := getStagedChanges(gitClient)
+	cfg, proceed, err := ensureConfiguredAndGetConfig(nil, in, errWriter(), runInitWizard)
 	if err != nil {
 		return err
 	}
-
-	// Generate and process commit message
-	return handleCommitFlow(gitClient, llmClient, diff, changedFiles)
-}
-
-func handleBranchCreation(gitClient *git.Client) error {
-	if branchDesc == "" {
+	if !proceed {
 		return nil
 	}
 
-	branchName := branch.GenerateName(branchDesc)
-	if branchName == "" {
-		return errors.New("invalid branch description: cannot generate branch name")
+	opts := workflow.CommitOptions{
+		AddAll:     addAll,
+		NoVerify:   noVerify,
+		NoSignoff:  noSignoff,
+		DryRun:     dryRun,
+		IssueNum:   issueNum,
+		AutoYes:    autoYes,
+		Verbose:    verbose,
+		BranchDesc: branchDesc,
+		UserPrompt: userPrompt,
+		ErrWriter:  errWriter(),
+		OutWriter:  outWriter(),
 	}
 
-	fmt.Fprintf(errWriter(), "Creating and switching to branch: %s\n", branchName)
-	if err := gitClient.CreateAndSwitchBranch(branchName); err != nil {
-		return fmt.Errorf("failed to create branch: %w", err)
-	}
-	fmt.Fprintln(errWriter(), "Successfully created and switched to new branch!")
-	return nil
+	flow := workflow.NewCommitFlow(gitClient, llmClient, cfg, opts)
+	flow.SetPrompter(&workflow.InteractivePrompter{
+		ErrWriter: errWriter(),
+		Stdin:     in,
+		Cfg:       cfg,
+	})
+
+	return flow.Run(fileArgs)
 }
 
-func handleStaging(gitClient *git.Client) error {
-	if !addAll {
-		return nil
+func handleStdinDiff(in io.Reader, llmClient *llm.Client) error {
+	if f, ok := in.(*os.File); ok {
+		if isatty.IsTerminal(f.Fd()) {
+			return errors.New("no input from stdin: use 'git diff | gmc -' or 'gmc - < diff.txt'")
+		}
 	}
 
-	if err := gitClient.AddAll(); err != nil {
-		return fmt.Errorf("git add failed: %w", err)
-	}
-	fmt.Fprintln(errWriter(), "All changes have been added to the staging area.")
-	return nil
-}
-
-func getStagedChanges(gitClient *git.Client) (string, []string, error) {
-	diff, err := gitClient.GetStagedDiff()
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to get git diff: %w", err)
-	}
-
-	if diff == "" {
-		return "", nil, errNoChangesDetected
-	}
-
-	changedFiles, err := gitClient.ParseStagedFiles()
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to parse staged files: %w", err)
-	}
-
-	return diff, changedFiles, nil
-}
-
-// handleStdinDiff reads diff from stdin and generates commit message
-// Usage: git diff | gmc -
-func handleStdinDiff(llmClient *llm.Client) error {
-	if isatty.IsTerminal(os.Stdin.Fd()) {
+	if in == nil {
 		return errors.New("no input from stdin: use 'git diff | gmc -' or 'gmc - < diff.txt'")
 	}
 
-	// Read diff from stdin
-	data, err := io.ReadAll(os.Stdin)
+	data, err := io.ReadAll(in)
 	if err != nil {
 		return fmt.Errorf("failed to read stdin: %w", err)
 	}
@@ -214,10 +171,9 @@ func handleStdinDiff(llmClient *llm.Client) error {
 		fmt.Fprintf(errWriter(), "[debug] Read %d bytes from stdin\n", len(diff))
 	}
 
-	// Extract file names from diff
-	changedFiles := extractFilesFromDiff(diff)
+	changedFiles := workflow.ExtractFilesFromDiff(diff)
 
-	cfg, proceed, err := ensureConfiguredAndGetConfig(nil, os.Stdin, errWriter(), runInitWizard)
+	cfg, proceed, err := ensureConfiguredAndGetConfig(nil, in, errWriter(), runInitWizard)
 	if err != nil {
 		return err
 	}
@@ -225,16 +181,36 @@ func handleStdinDiff(llmClient *llm.Client) error {
 		return nil
 	}
 
-	// Generate commit message
-	message, err := generateCommitMessage(llmClient, cfg, changedFiles, diff, userPrompt)
+	message, err := generateStdinMessage(llmClient, cfg, changedFiles, diff)
 	if err != nil {
 		return err
 	}
 
-	// In stdin mode, always output the message and exit (no commit)
 	fmt.Fprintln(errWriter(), "\n[stdin mode: message only, no commit]")
 	fmt.Fprintln(outWriter(), message)
 	return nil
+}
+
+func generateStdinMessage(
+	llmClient *llm.Client, cfg *config.Config, changedFiles []string, diff string,
+) (string, error) {
+	prompt := formatter.BuildPromptWithConfig(cfg, changedFiles, diff, userPrompt)
+
+	sp := ui.NewSpinner("Generating commit message...")
+	sp.Start()
+	message, err := llmClient.GenerateCommitMessage(prompt, cfg.Model)
+	sp.Stop()
+
+	if err != nil {
+		return "", fmt.Errorf("failed to generate commit message: %w", err)
+	}
+
+	formattedMessage := formatter.FormatCommitMessageWithConfig(cfg, message)
+	if issueNum != "" {
+		formattedMessage = fmt.Sprintf("%s (#%s)", formattedMessage, issueNum)
+	}
+
+	return formattedMessage, nil
 }
 
 func ensureConfiguredAndGetConfig(
@@ -252,339 +228,4 @@ func ensureConfiguredAndGetConfig(
 		return nil, false, cfgErr
 	}
 	return updatedCfg, true, nil
-}
-
-// extractFilesFromDiff parses file names from unified diff format
-func extractFilesFromDiff(diff string) []string {
-	var files []string
-
-	for _, line := range strings.Split(diff, "\n") {
-		if strings.HasPrefix(line, "+++ b/") {
-			file := strings.TrimPrefix(line, "+++ b/")
-			files = append(files, file)
-		} else if strings.HasPrefix(line, "--- a/") {
-			file := strings.TrimPrefix(line, "--- a/")
-			files = append(files, file)
-		}
-	}
-
-	return stringsutil.UniqueStrings(files)
-}
-
-func handleCommitFlow(gitClient *git.Client, llmClient *llm.Client, diff string, changedFiles []string) error {
-	cfg, proceed, err := ensureConfiguredAndGetConfig(nil, os.Stdin, errWriter(), runInitWizard)
-	if err != nil {
-		return err
-	}
-	if !proceed {
-		return nil
-	}
-
-	return runCommitFlow(llmClient, cfg, changedFiles, diff, func(message string) error {
-		return performCommit(gitClient, message)
-	})
-}
-
-func generateCommitMessage(
-	llmClient *llm.Client,
-	cfg *config.Config,
-	changedFiles []string,
-	diff string,
-	userPrompt string,
-) (string, error) {
-	prompt := formatter.BuildPrompt(cfg.Role, changedFiles, diff, userPrompt)
-
-	// Show spinner during LLM call
-	sp := ui.NewSpinner("Generating commit message...")
-	sp.Start()
-	message, err := llmClient.GenerateCommitMessage(prompt, cfg.Model)
-	sp.Stop()
-
-	if err != nil {
-		return "", fmt.Errorf("failed to generate commit message: %w", err)
-	}
-
-	formattedMessage := formatter.FormatCommitMessage(message)
-	if issueNum != "" {
-		formattedMessage = fmt.Sprintf("%s (#%s)", formattedMessage, issueNum)
-	}
-
-	fmt.Fprintln(errWriter(), "\nGenerated Commit Message:")
-	fmt.Fprintln(outWriter(), formattedMessage)
-	return formattedMessage, nil
-}
-
-func getUserConfirmation(message string) (string, string, error) {
-	if autoYes {
-		fmt.Fprintln(errWriter(), "Auto-confirming commit message (-y flag is set)")
-		return "commit", "", nil
-	}
-
-	if !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd()) {
-		return "", "", errors.New("stdin is not a terminal, use --yes to skip interactive confirmation")
-	}
-
-	fmt.Fprint(errWriter(),
-		"\nDo you want to proceed with this commit message? [y/n/r/e] (y/n/r=regenerate/e=edit): ")
-	reader := bufio.NewReader(os.Stdin)
-	response, err := reader.ReadString('\n')
-	if err != nil {
-		return "", "", fmt.Errorf("failed to read user input: %w", err)
-	}
-
-	response = strings.ToLower(strings.TrimSpace(response))
-	switch response {
-	case "n":
-		return "cancel", "", nil
-	case "r":
-		return "regenerate", "", nil
-	case "e":
-		editedMessage, err := openEditor(message)
-		return "commit", editedMessage, err
-	case "y", "":
-		if response == "" {
-			fmt.Fprintln(errWriter(), "Using default option (yes)")
-		}
-		return "commit", "", nil
-	default:
-		fmt.Fprintln(errWriter(), "Invalid input. Commit cancelled")
-		return "cancel", "", nil
-	}
-}
-
-func openEditor(message string) (string, error) {
-	fmt.Fprintln(errWriter(), "Opening editor to modify commit message...")
-
-	tmpFile, err := os.CreateTemp("", "gmc-commit-")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temporary file: %w", err)
-	}
-
-	tmpFileName := tmpFile.Name()
-	defer os.Remove(tmpFileName)
-
-	if _, err := tmpFile.WriteString(message); err != nil {
-		tmpFile.Close()
-		return "", fmt.Errorf("failed to write to temporary file: %w", err)
-	}
-	tmpFile.Close()
-
-	editor := getEditor()
-	cmd := exec.Command(editor, tmpFileName)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("failed to open editor: %w", err)
-	}
-
-	editedBytes, err := os.ReadFile(tmpFileName)
-	if err != nil {
-		return "", fmt.Errorf("failed to read edited message: %w", err)
-	}
-
-	editedMessage := strings.TrimSpace(string(editedBytes))
-	if editedMessage != "" {
-		formattedMessage := formatter.FormatCommitMessage(editedMessage)
-		if issueNum != "" {
-			formattedMessage = fmt.Sprintf("%s (#%s)", formattedMessage, issueNum)
-		}
-		fmt.Fprintln(errWriter(), "Using edited message:")
-		fmt.Fprintln(errWriter(), formattedMessage)
-		return formattedMessage, nil
-	}
-
-	fmt.Fprintln(errWriter(), "Empty message provided, using original message")
-	return "", nil
-}
-
-func getEditor() string {
-	if editor := os.Getenv("EDITOR"); editor != "" {
-		return editor
-	}
-	if editor := os.Getenv("VISUAL"); editor != "" {
-		return editor
-	}
-	return "vi"
-}
-
-func handleSelectiveCommit(gitClient *git.Client, llmClient *llm.Client, fileArgs []string) error {
-	// Resolve and validate file paths
-	files, err := gitClient.ResolveFiles(fileArgs)
-	if err != nil {
-		return fmt.Errorf("failed to resolve files: %w", err)
-	}
-
-	if len(files) == 0 {
-		return errors.New("no valid files found")
-	}
-
-	// Check mode based on -a flag
-	if addAll {
-		return stageAndCommitFiles(gitClient, llmClient, files)
-	}
-	return commitStagedFiles(gitClient, llmClient, files)
-}
-
-func stageAndCommitFiles(gitClient *git.Client, llmClient *llm.Client, files []string) error {
-	// Check which files have changes
-	staged, modified, untracked, err := gitClient.CheckFileStatus(files)
-	if err != nil {
-		return fmt.Errorf("failed to check file status: %w", err)
-	}
-
-	// Determine files to stage
-	toStage := make([]string, 0, len(modified)+len(untracked))
-	toStage = append(toStage, modified...)
-	toStage = append(toStage, untracked...)
-	if len(toStage) == 0 && len(staged) == 0 {
-		return fmt.Errorf("no changes detected in specified files: %v", files)
-	}
-
-	// Stage files if needed
-	if len(toStage) > 0 {
-		if err := gitClient.StageFiles(toStage); err != nil {
-			return fmt.Errorf("failed to stage files: %w", err)
-		}
-		fmt.Fprintf(errWriter(), "Staged files: %v\n", toStage)
-	}
-
-	// Get all files to commit (staged + newly staged)
-	allFiles := make([]string, 0, len(staged)+len(toStage))
-	allFiles = append(allFiles, staged...)
-	allFiles = append(allFiles, toStage...)
-
-	// Get diff and generate commit message
-	diff, err := gitClient.GetFilesDiff(allFiles)
-	if err != nil {
-		return fmt.Errorf("failed to get diff: %w", err)
-	}
-
-	if diff == "" {
-		return errNoChangesDetected
-	}
-
-	// Generate and process commit message
-	return handleSelectiveCommitFlow(gitClient, llmClient, diff, allFiles)
-}
-
-func commitStagedFiles(gitClient *git.Client, llmClient *llm.Client, files []string) error {
-	// Check which specified files are staged
-	staged, _, _, err := gitClient.CheckFileStatus(files)
-	if err != nil {
-		return fmt.Errorf("failed to check file status: %w", err)
-	}
-
-	if len(staged) == 0 {
-		fileNames := strings.Join(files, " ")
-		return fmt.Errorf("none specified files staged: %v\nHint: Use 'gmc -a %s' to stage them first", files, fileNames)
-	}
-
-	// Get diff for staged files
-	diff, err := gitClient.GetFilesDiff(staged)
-	if err != nil {
-		return fmt.Errorf("failed to get diff: %w", err)
-	}
-
-	if diff == "" {
-		return errNoChangesDetected
-	}
-
-	// Generate and process commit message
-	return handleSelectiveCommitFlow(gitClient, llmClient, diff, staged)
-}
-
-func handleSelectiveCommitFlow(gitClient *git.Client, llmClient *llm.Client, diff string, files []string) error {
-	cfg, proceed, err := ensureConfiguredAndGetConfig(nil, os.Stdin, errWriter(), runInitWizard)
-	if err != nil {
-		return err
-	}
-	if !proceed {
-		return nil
-	}
-
-	return runCommitFlow(llmClient, cfg, files, diff, func(message string) error {
-		return performSelectiveCommit(gitClient, message, files)
-	})
-}
-
-// buildCommitArgs constructs the git commit arguments based on flags
-func buildCommitArgs() []string {
-	commitArgs := []string{}
-	if noVerify {
-		commitArgs = append(commitArgs, "--no-verify")
-	}
-	if !noSignoff {
-		commitArgs = append(commitArgs, "-s")
-	}
-	return commitArgs
-}
-
-func performCommit(gitClient *git.Client, message string) error {
-	if dryRun {
-		fmt.Fprintln(errWriter(), "Dry run mode, no actual commit")
-		return nil
-	}
-
-	commitArgs := buildCommitArgs()
-
-	if err := gitClient.Commit(message, commitArgs...); err != nil {
-		return fmt.Errorf("failed to commit changes: %w", err)
-	}
-
-	fmt.Fprintln(errWriter(), "Successfully committed changes!")
-	return nil
-}
-
-func performSelectiveCommit(gitClient *git.Client, message string, files []string) error {
-	if dryRun {
-		fmt.Fprintln(errWriter(), "Dry run mode, no actual commit")
-		fmt.Fprintf(errWriter(), "Would commit files: %v\n", files)
-		return nil
-	}
-
-	commitArgs := buildCommitArgs()
-
-	if err := gitClient.CommitFiles(message, files, commitArgs...); err != nil {
-		return fmt.Errorf("failed to commit files: %w", err)
-	}
-
-	fmt.Fprintf(errWriter(), "Successfully committed files: %v!\n", files)
-	return nil
-}
-
-func runCommitFlow(
-	llmClient *llm.Client,
-	cfg *config.Config,
-	files []string,
-	diff string,
-	commitExec func(string) error,
-) error {
-	for {
-		message, err := generateCommitMessage(llmClient, cfg, files, diff, userPrompt)
-		if err != nil {
-			return err
-		}
-
-		action, editedMessage, err := getUserConfirmation(message)
-		if err != nil {
-			return err
-		}
-
-		switch action {
-		case "cancel":
-			fmt.Fprintln(errWriter(), "Commit cancelled by user")
-			return nil
-		case "regenerate":
-			fmt.Fprintln(errWriter(), "Regenerating commit message...")
-			continue
-		case "commit":
-			finalMessage := message
-			if editedMessage != "" {
-				finalMessage = editedMessage
-			}
-			return commitExec(finalMessage)
-		}
-	}
 }

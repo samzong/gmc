@@ -257,7 +257,7 @@ func (c *Client) SyncAllSharedResources() error {
 	}
 
 	// Filter out bare worktrees
-	var targets []WorktreeInfo
+	var targets []Info
 	for _, wt := range worktrees {
 		if !wt.IsBare && filepath.Base(wt.Path) != ".bare" {
 			targets = append(targets, wt)

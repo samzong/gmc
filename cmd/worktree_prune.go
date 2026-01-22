@@ -18,7 +18,7 @@ var wtPruneCmd = &cobra.Command{
 
 This command uses pure git ancestry checks to decide which worktrees are safe to remove.
 By default it removes both the worktree directory and the local branch.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
 		return runWorktreePrune(wtClient)
 	},

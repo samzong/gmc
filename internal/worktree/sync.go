@@ -221,7 +221,7 @@ func (c *Client) remoteExists(repoDir string, name string) bool {
 	return err == nil && strings.TrimSpace(result.StdoutString(true)) != ""
 }
 
-func findWorktreeForBranch(worktrees []WorktreeInfo, branch string) string {
+func findWorktreeForBranch(worktrees []Info, branch string) string {
 	for _, wt := range worktrees {
 		if wt.IsBare || filepath.Base(wt.Path) == ".bare" {
 			continue

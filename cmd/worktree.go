@@ -30,7 +30,7 @@ var wtCmd = &cobra.Command{
 This command simplifies multi-branch parallel development using the
 bare repository (.bare) + worktree pattern.
 `,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
 		return runWorktreeDefault(wtClient, cmd)
 	},
@@ -49,7 +49,7 @@ Examples:
   gmc wt add feature-login --sync    # Sync base branch before add
   gmc wt add hotfix-bug123 -b release`,
 	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
 		return runWorktreeAdd(wtClient, args[0])
 	},
@@ -60,7 +60,7 @@ var wtListCmd = &cobra.Command{
 	Aliases: []string{"ls"},
 	Short:   "List all worktrees (alias: ls)",
 	Long:    `List all worktrees in the current repository.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
 		return runWorktreeList(wtClient)
 	},
@@ -81,7 +81,7 @@ Examples:
   gmc wt rm feature-login -f       # Force remove (ignore dirty state)
   gmc wt rm feature-login --dry-run  # Preview what would be removed`,
 	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
 		return runWorktreeRemove(wtClient, args[0])
 	},
@@ -102,7 +102,7 @@ Examples:
   gmc wt clone https://github.com/user/repo.git --name my-project
   gmc wt clone https://github.com/me/fork.git --upstream https://github.com/org/repo.git`,
 	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
 		return runWorktreeClone(wtClient, args[0])
 	},
@@ -122,7 +122,7 @@ Examples:
   gmc wt dup -b dev    # Create 2 worktrees based on dev
   gmc wt dup 3 -b dev  # Create 3 worktrees based on dev`,
 	Args: cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
 		return runWorktreeDup(wtClient, args)
 	},
@@ -139,7 +139,7 @@ Examples:
   gmc wt promote .dup-2 feature/add-auth
   gmc wt promote .dup-1 fix/login-bug`,
 	Args: cobra.ExactArgs(2),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
 		return runWorktreePromote(wtClient, args[0], args[1])
 	},
@@ -156,7 +156,7 @@ Examples:
   gmc wt pr-review 1065                 # Auto-detect remote
   gmc wt pr-review 1065 --remote fork   # Use specific remote`,
 	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		prNumber, err := strconv.Atoi(args[0])
 		if err != nil {
 			return fmt.Errorf("invalid PR number: %s", args[0])
@@ -260,8 +260,8 @@ func runWorktreeDefault(wtClient *worktree.Client, cmd *cobra.Command) error {
 }
 
 // filterBareWorktrees removes bare worktrees from the list (e.g., .bare directory)
-func filterBareWorktrees(worktrees []worktree.WorktreeInfo) []worktree.WorktreeInfo {
-	var filtered []worktree.WorktreeInfo
+func filterBareWorktrees(worktrees []worktree.Info) []worktree.Info {
+	var filtered []worktree.Info
 	for _, wt := range worktrees {
 		// Skip bare worktrees and the .bare directory itself
 		if wt.IsBare || filepath.Base(wt.Path) == ".bare" {
@@ -332,7 +332,7 @@ func runWorktreeClone(wtClient *worktree.Client, url string) error {
 	return wtClient.Clone(url, opts)
 }
 
-func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.WorktreeInfo) {
+func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Info) {
 	if len(worktrees) == 0 {
 		return
 	}

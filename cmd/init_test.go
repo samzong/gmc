@@ -4,12 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/samzong/gmc/internal/config"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -98,7 +96,7 @@ func TestEnsureLLMConfigured_WithAPIKey(t *testing.T) {
 	var output bytes.Buffer
 
 	var initCalled bool
-	proceed, err := ensureLLMConfigured(cfg, input, &output, func(in io.Reader, out io.Writer, cfg *config.Config) error {
+	proceed, err := ensureLLMConfigured(cfg, input, &output, func(_ io.Reader, _ io.Writer, _ *config.Config) error {
 		initCalled = true
 		return nil
 	})
@@ -149,24 +147,4 @@ func TestEnsureLLMConfigured_InitError(t *testing.T) {
 	})
 	assert.ErrorIs(t, err, expectedErr)
 	assert.False(t, proceed)
-}
-
-func TestHandleSelectiveCommitFlow_MissingKeyDeclineInit(t *testing.T) {
-	originalStdin := os.Stdin
-	r, w, err := os.Pipe()
-	assert.NoError(t, err)
-	_, err = w.WriteString("n\n")
-	assert.NoError(t, err)
-	assert.NoError(t, w.Close())
-	os.Stdin = r
-	defer func() {
-		os.Stdin = originalStdin
-		_ = r.Close()
-	}()
-
-	viper.Reset()
-	viper.Set("api_key", "")
-
-	err = handleSelectiveCommitFlow(nil, nil, "diff", []string{"file.go"})
-	assert.NoError(t, err)
 }
