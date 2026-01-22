@@ -35,6 +35,9 @@ var commitTypeRegex = regexp.MustCompile(`^([a-zA-Z]+)(?:\([^)]+\))?:`)
 var (
 	commitTypesOnce   sync.Once
 	cachedCommitTypes []string
+	emojiIndexOnce    sync.Once
+	emojiToType       map[string]string
+	emojiPrefixes     []string
 )
 
 // GetEmojiForType returns the emoji for a given commit type.
@@ -77,6 +80,45 @@ func GetCommitTypesRegexPattern() string {
 	types := GetAllCommitTypes()
 	// Types are already valid identifiers, so we can use them directly
 	return strings.Join(types, "|")
+}
+
+// InferTypeFromEmojiPrefix infers commit type from a leading emoji prefix.
+// Returns the inferred type and the remaining message without the emoji prefix.
+func InferTypeFromEmojiPrefix(message string) (string, string) {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return "", ""
+	}
+
+	emojiIndexOnce.Do(func() {
+		emojiToType = make(map[string]string, len(emojiMap))
+		types := GetAllCommitTypes()
+		for _, t := range types {
+			emoji := emojiMap[t]
+			if emoji == "" {
+				continue
+			}
+			if _, exists := emojiToType[emoji]; !exists {
+				emojiToType[emoji] = t
+			}
+		}
+
+		emojiPrefixes = make([]string, 0, len(emojiToType))
+		for e := range emojiToType {
+			emojiPrefixes = append(emojiPrefixes, e)
+		}
+		sort.Slice(emojiPrefixes, func(i, j int) bool {
+			return len(emojiPrefixes[i]) > len(emojiPrefixes[j])
+		})
+	})
+
+	for _, e := range emojiPrefixes {
+		if strings.HasPrefix(message, e) {
+			rest := strings.TrimSpace(strings.TrimPrefix(message, e))
+			return emojiToType[e], rest
+		}
+	}
+	return "", ""
 }
 
 // AddEmojiToMessage adds an emoji prefix to a commit message based on its type.

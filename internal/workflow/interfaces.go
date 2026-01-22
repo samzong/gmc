@@ -8,6 +8,7 @@ type GitClient interface {
 	AddAll() error
 	StageFiles(files []string) error
 	GetStagedDiff() (string, error)
+	GetStagedDiffStats() (string, error)
 	GetFilesDiff(files []string) (string, error)
 	ParseStagedFiles() ([]string, error)
 	ResolveFiles(paths []string) ([]string, error)

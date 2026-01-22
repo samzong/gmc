@@ -48,11 +48,11 @@ func TestBuildPrompt(t *testing.T) {
 			name:         "Long diff truncation",
 			role:         "Developer",
 			changedFiles: []string{"file.go"},
-			diff:         strings.Repeat("a", 5000), // More than 4000 chars
+			diff:         "diff --git a/file.go b/file.go\n" + strings.Repeat("a", 5000), // More than 4000 chars
 			expectContain: []string{
 				"Developer",
 				"file.go",
-				"...(content is too long, truncated)",
+				"diff --git",
 			},
 		},
 		{
@@ -84,7 +84,7 @@ func TestBuildPrompt(t *testing.T) {
 
 			// Check length constraint for diff
 			if len(tt.diff) > 4000 {
-				assert.Contains(t, result, "...(content is too long, truncated)")
+				assert.Contains(t, result, "diff --git")
 			}
 		})
 	}
@@ -124,6 +124,11 @@ func TestFormatCommitMessage(t *testing.T) {
 			name:     "Remove multiple issue numbers",
 			input:    "feat: add feature #123 (#456)",
 			expected: "✨ feat: add feature",
+		},
+		{
+			name:     "Emoji scope without type gets normalized",
+			input:    "✨(formatter): add diff truncator",
+			expected: "✨ feat(formatter): add diff truncator",
 		},
 		{
 			name:     "Non-conventional message without prefix returns as-is",

@@ -88,10 +88,25 @@ func (c *Client) GetStagedDiff() (string, error) {
 		return "", err
 	}
 
-	result, err := c.runner.RunLogged("diff", "--cached")
+	result, err := c.runner.RunLogged("diff", "--cached", "-U1")
 	if err != nil {
 		c.logVerboseOutput("Git stderr:", result.Stderr)
 		return "", fmt.Errorf("failed to run git diff --cached: %w", err)
+	}
+
+	return string(result.Stdout), nil
+}
+
+// GetStagedDiffStats returns staged diff stats for budgeted truncation.
+func (c *Client) GetStagedDiffStats() (string, error) {
+	if err := c.CheckGitRepository(); err != nil {
+		return "", err
+	}
+
+	result, err := c.runner.RunLogged("diff", "--cached", "--numstat", "--summary")
+	if err != nil {
+		c.logVerboseOutput("Git stderr:", result.Stderr)
+		return "", fmt.Errorf("failed to run git diff --cached --numstat --summary: %w", err)
 	}
 
 	return string(result.Stdout), nil

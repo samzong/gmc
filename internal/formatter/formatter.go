@@ -12,11 +12,15 @@ import (
 
 const diffPromptLimit = 4000
 
+// DiffStatsSeparator separates diff content from optional stats block.
+const DiffStatsSeparator = "-- gmc diff stats --"
+
 var (
 	// Pre-compiled regex patterns for performance
 	issuePattern        *regexp.Regexp
 	conventionalPattern *regexp.Regexp
 	prefixPattern       *regexp.Regexp
+	typePrefixPattern   *regexp.Regexp
 )
 
 func init() {
@@ -26,6 +30,7 @@ func init() {
 	typePattern := emoji.GetCommitTypesRegexPattern()
 	conventionalPattern = regexp.MustCompile(`(?i)^(?:[^\s]*\s)?(` + typePattern + `)(\([^\)]+\))?: (.+)`)
 	prefixPattern = regexp.MustCompile(`(?i)^(` + typePattern + `):\s*(.+)`)
+	typePrefixPattern = regexp.MustCompile(`(?i)^(` + typePattern + `)(\([^\)]+\))?:`)
 }
 
 func BuildPrompt(role string, changedFiles []string, diff string, userPrompt string) string {
@@ -39,8 +44,18 @@ func BuildPrompt(role string, changedFiles []string, diff string, userPrompt str
 }
 
 func BuildPromptWithConfig(cfg *config.Config, changedFiles []string, diff string, userPrompt string) string {
+	stats := ""
+	if parts := strings.SplitN(diff, DiffStatsSeparator, 2); len(parts) == 2 {
+		diff = strings.TrimRight(parts[0], "\n")
+		stats = strings.TrimSpace(parts[1])
+	}
+
 	if len(diff) > diffPromptLimit {
-		diff = truncateToValidUTF8(diff, diffPromptLimit) + "...(content is too long, truncated)"
+		if stats == "" {
+			diff = truncateToValidUTF8(diff, diffPromptLimit) + "...(content is too long, truncated)"
+		} else {
+			diff = truncateDiffWithStats(diff, stats, diffPromptLimit)
+		}
 	}
 
 	changedFilesStr := strings.Join(changedFiles, "\n")
@@ -91,6 +106,7 @@ func FormatCommitMessageWithConfig(cfg *config.Config, message string) string {
 		firstLine := lines[0]
 
 		firstLine = issuePattern.ReplaceAllString(firstLine, "")
+		firstLine = normalizeEmojiMissingType(firstLine)
 
 		matches := conventionalPattern.FindStringSubmatch(firstLine)
 		if len(matches) >= 4 {
@@ -113,6 +129,23 @@ func FormatCommitMessageWithConfig(cfg *config.Config, message string) string {
 		return emoji.AddEmojiToMessage(message)
 	}
 	return message
+}
+
+func normalizeEmojiMissingType(message string) string {
+	commitType, rest := emoji.InferTypeFromEmojiPrefix(message)
+	if commitType == "" || rest == "" {
+		return message
+	}
+
+	if typePrefixPattern.MatchString(rest) {
+		return message
+	}
+
+	if strings.HasPrefix(rest, "(") || strings.HasPrefix(rest, ":") {
+		return commitType + rest
+	}
+
+	return commitType + ": " + rest
 }
 
 // normalizeTypePrefix normalizes the type prefix if present, otherwise returns the message as-is.
