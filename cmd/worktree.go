@@ -177,6 +177,8 @@ func init() {
 	wtCmd.AddCommand(wtPromoteCmd)
 	wtCmd.AddCommand(wtPruneCmd)
 	wtCmd.AddCommand(wtPrReviewCmd)
+	wtCmd.AddCommand(wtInitCmd)
+	wtCmd.AddCommand(wtSwitchCmd)
 
 	// Flags for add command
 	wtAddCmd.Flags().StringVarP(&wtBaseBranch, "base", "b", "", "Base branch to create from")
