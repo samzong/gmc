@@ -1,6 +1,15 @@
 # Changelog
 
 
+## [v0.7.1] - 2026-01-23
+### Code Refactoring
+- move commit workflow to internal/workflow and improve testability
+- **worktree:** pass repoDir to git commands and streamline PR remote detection
+
+### Features
+- **formatter:** add diff truncator and enhance formatting with DiffStatsSeparator constant and emoji prefix type inference
+
+
 ## [v0.7.0] - 2026-01-14
 ### Bug Fixes
 - **worktree:** improve path handling and error message in worktree commands
@@ -182,7 +191,8 @@
 - **gma:** add option to automatically stage all changes ([#123](https://github.com/samzong/gmc/issues/123))
 
 
-[Unreleased]: https://github.com/samzong/gmc/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/samzong/gmc/compare/v0.7.1...HEAD
+[v0.7.1]: https://github.com/samzong/gmc/compare/v0.7.0...v0.7.1
 [v0.7.0]: https://github.com/samzong/gmc/compare/v0.6.2...v0.7.0
 [v0.6.2]: https://github.com/samzong/gmc/compare/v0.6.1...v0.6.2
 [v0.6.1]: https://github.com/samzong/gmc/compare/v0.6.0...v0.6.1
