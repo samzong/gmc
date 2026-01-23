@@ -13,8 +13,20 @@ import (
 
 // SyncOptions controls worktree sync behavior.
 type SyncOptions struct {
-	BaseBranch string // Base branch to sync
-	DryRun     bool   // Preview actions without making changes
+	BaseBranch string
+	DryRun     bool
+}
+
+// syncContext holds resolved sync parameters.
+type syncContext struct {
+	repoDir      string
+	remote       string
+	baseName     string
+	remoteRef    string
+	localFull    string
+	remoteFull   string
+	baseWorktree string
+	status       string
 }
 
 // ResolveSyncBaseBranch resolves the base branch used for syncing.
@@ -49,13 +61,6 @@ func (c *Client) Sync(opts SyncOptions) error {
 	remoteFull := "refs/remotes/" + remoteRef
 	localFull := "refs/heads/" + baseName
 
-	origDir := c.runner.Dir
-	if repoDir != "" {
-		c.runner.Dir = repoDir
-		defer func() {
-			c.runner.Dir = origDir
-		}()
-	}
 	worktrees, err := c.List()
 	if err != nil {
 		return err
@@ -66,8 +71,19 @@ func (c *Client) Sync(opts SyncOptions) error {
 		status = c.GetWorktreeStatus(baseWorktree)
 	}
 
+	ctx := syncContext{
+		repoDir:      repoDir,
+		remote:       remote,
+		baseName:     baseName,
+		remoteRef:    remoteRef,
+		localFull:    localFull,
+		remoteFull:   remoteFull,
+		baseWorktree: baseWorktree,
+		status:       status,
+	}
+
 	if opts.DryRun {
-		return c.syncDryRun(repoDir, remote, baseName, remoteRef, localFull, remoteFull, baseWorktree, status)
+		return c.syncDryRun(ctx)
 	}
 
 	result, err := c.runner.RunLogged("-C", repoDir, "fetch", remote)
@@ -86,100 +102,82 @@ func (c *Client) Sync(opts SyncOptions) error {
 	localHash := c.refHash(repoDir, localFull)
 	remoteHash := c.refHash(repoDir, remoteFull)
 	needsUpdate := localHash == "" || (remoteHash != "" && localHash != remoteHash)
-	updated := false
+
+	if msg := checkWorktreeReady(baseWorktree, status, baseName); msg != "" {
+		fmt.Fprintln(os.Stderr, msg)
+		return nil
+	}
 
 	if needsUpdate {
-		result, err = c.runner.RunLogged("-C", repoDir, "update-ref", localFull, remoteFull)
-		if err != nil {
-			return gitutil.WrapGitError("failed to update base branch", result, err)
-		}
-		updated = true
-	}
-
-	if remote == "upstream" && updated && c.remoteExists(repoDir, "origin") {
-		result, err = c.runner.RunLogged("-C", repoDir, "push", "origin", baseName)
-		if err != nil {
-			msg := strings.TrimSpace(result.StderrString(true))
-			if msg == "" {
-				msg = err.Error()
-			}
-			fmt.Fprintf(os.Stderr, "Warning: failed to push origin %s: %s\n", baseName, msg)
-		}
-	}
-
-	if updated {
-		fmt.Printf("Synced %s to %s (%s..%s)\n", baseName, remoteRef, shortHash(localHash), shortHash(remoteHash))
-	} else {
-		fmt.Printf("%s already up to date with %s (%s)\n", baseName, remoteRef, shortHash(localHash))
-	}
-
-	if baseWorktree == "" {
-		fmt.Fprintf(os.Stderr, "%s worktree not found, refs updated only\n", baseName)
-		return nil
-	}
-	if status == "modified" {
-		fmt.Fprintf(os.Stderr, "%s worktree has uncommitted changes, skipped\n", baseName)
-		return nil
-	}
-	if status != "clean" {
-		fmt.Fprintf(os.Stderr, "%s worktree status unknown, skipped\n", baseName)
-		return nil
-	}
-
-	if updated {
-		result, err = c.runner.RunLogged("-C", baseWorktree, "merge", "--ff-only", baseName)
+		result, err = c.runner.RunLogged("-C", baseWorktree, "reset", "--hard", remoteRef)
 		if err != nil {
 			return gitutil.WrapGitError("failed to update worktree", result, err)
 		}
+		fmt.Printf("Synced %s to %s (%s..%s)\n", baseName, remoteRef, shortHash(localHash), shortHash(remoteHash))
+
+		if remote == "upstream" && c.remoteExists(repoDir, "origin") {
+			result, err = c.runner.RunLogged("-C", repoDir, "push", "origin", baseName)
+			if err != nil {
+				msg := strings.TrimSpace(result.StderrString(true))
+				if msg == "" {
+					msg = err.Error()
+				}
+				fmt.Fprintf(os.Stderr, "Warning: failed to push origin %s: %s\n", baseName, msg)
+			}
+		}
+	} else {
+		fmt.Printf("%s already up to date with %s (%s)\n", baseName, remoteRef, shortHash(localHash))
 	}
 
 	return nil
 }
 
-func (c *Client) syncDryRun(
-	repoDir string, remote string, baseName string, remoteRef string,
-	localFull string, remoteFull string, baseWorktree string, status string,
-) error {
-	canFF, err := c.canFastForward(repoDir, localFull, remoteFull)
+func (c *Client) syncDryRun(ctx syncContext) error {
+	canFF, err := c.canFastForward(ctx.repoDir, ctx.localFull, ctx.remoteFull)
 	if err != nil {
 		return err
 	}
 	if !canFF {
-		return fmt.Errorf("base branch '%s' cannot be fast-forwarded to %s", baseName, remoteRef)
+		return fmt.Errorf("base branch '%s' cannot be fast-forwarded to %s", ctx.baseName, ctx.remoteRef)
 	}
 
-	localHash := c.refHash(repoDir, localFull)
-	remoteHash := c.refHash(repoDir, remoteFull)
+	localHash := c.refHash(ctx.repoDir, ctx.localFull)
+	remoteHash := c.refHash(ctx.repoDir, ctx.remoteFull)
 	needsUpdate := localHash == "" || (remoteHash != "" && localHash != remoteHash)
 
-	fmt.Fprintf(os.Stderr, "Would fetch %s\n", remote)
+	fmt.Fprintf(os.Stderr, "Would fetch %s\n", ctx.remote)
 	if needsUpdate {
-		fmt.Fprintf(os.Stderr, "Would fast-forward %s to %s\n", baseName, remoteRef)
+		fmt.Fprintf(os.Stderr, "Would fast-forward %s to %s\n", ctx.baseName, ctx.remoteRef)
 	} else {
-		fmt.Fprintf(os.Stderr, "%s is already up to date with %s\n", baseName, remoteRef)
+		fmt.Fprintf(os.Stderr, "%s is already up to date with %s\n", ctx.baseName, ctx.remoteRef)
 	}
 
-	if remote == "upstream" && needsUpdate && c.remoteExists(repoDir, "origin") {
-		fmt.Fprintf(os.Stderr, "Would push origin %s\n", baseName)
+	if ctx.remote == "upstream" && needsUpdate && c.remoteExists(ctx.repoDir, "origin") {
+		fmt.Fprintf(os.Stderr, "Would push origin %s\n", ctx.baseName)
 	}
 
-	if baseWorktree == "" {
-		fmt.Fprintf(os.Stderr, "%s worktree not found, refs updated only\n", baseName)
-		return nil
-	}
-	if status == "modified" {
-		fmt.Fprintf(os.Stderr, "%s worktree has uncommitted changes, skipped\n", baseName)
-		return nil
-	}
-	if status != "clean" {
-		fmt.Fprintf(os.Stderr, "%s worktree status unknown, skipped\n", baseName)
+	if msg := checkWorktreeReady(ctx.baseWorktree, ctx.status, ctx.baseName); msg != "" {
+		fmt.Fprintln(os.Stderr, msg)
 		return nil
 	}
 	if needsUpdate {
-		fmt.Fprintf(os.Stderr, "Would update worktree: %s\n", baseWorktree)
+		fmt.Fprintf(os.Stderr, "Would update worktree: %s\n", ctx.baseWorktree)
 	}
 
 	return nil
+}
+
+func checkWorktreeReady(path, status, branch string) string {
+	if path == "" {
+		return fmt.Sprintf("%s worktree not found, skipped worktree update", branch)
+	}
+	if status == "modified" {
+		return fmt.Sprintf("%s worktree has uncommitted changes, skipped", branch)
+	}
+	if status != "clean" {
+		return fmt.Sprintf("%s worktree status unknown, skipped", branch)
+	}
+	return ""
 }
 
 func (c *Client) resolveSyncBaseBranch(repoDir string, override string) (string, error) {
