@@ -26,9 +26,10 @@ build: ## Build the binary
 	@echo "Build Command Done"
 
 .PHONY: install
-install: build ## Install the binary to GOPATH/bin
+install: build ## Install the binary to GOPATH/bin (or ~/go/bin if GOPATH unset)
 	@echo "Installing $(BINARY_NAME) $(VERSION)..."
-	@cp $(BUILD_DIR)/$(BINARY_NAME) $(GOPATH)/bin/
+	@mkdir -p $(or $(GOPATH),$(HOME)/go)/bin
+	@cp $(BUILD_DIR)/$(BINARY_NAME) $(or $(GOPATH),$(HOME)/go)/bin/
 	@echo "Install Command Done"
 
 .PHONY: clean
