@@ -188,7 +188,7 @@ func TestFormatCommitMessage(t *testing.T) {
 		{
 			name:     "Perf commit type",
 			input:    "perf: optimize queries",
-			expected: "⚡ perf: optimize queries",
+			expected: "⚡️ perf: optimize queries",
 		},
 		{
 			name:     "Test commit type",
@@ -218,12 +218,12 @@ func TestFormatCommitMessage(t *testing.T) {
 		{
 			name:     "Case insensitive - uppercase CI",
 			input:    "CI: refresh workflows",
-			expected: "🤖 ci: refresh workflows",
+			expected: "💚 ci: refresh workflows",
 		},
 		{
 			name:     "Case insensitive - uppercase BUILD",
 			input:    "BUILD: update dependencies",
-			expected: "🏗️ build: update dependencies",
+			expected: "👷 build: update dependencies",
 		},
 		{
 			name:     "Case insensitive - mixed case FeAt",
@@ -233,27 +233,27 @@ func TestFormatCommitMessage(t *testing.T) {
 		{
 			name:     "Case insensitive - uppercase DEPS",
 			input:    "DEPS: update packages",
-			expected: "🔗 deps: update packages",
+			expected: "⬆️ deps: update packages",
 		},
 		{
 			name:     "Case insensitive - uppercase with scope",
 			input:    "CI(workflows): refresh config",
-			expected: "🤖 ci(workflows): refresh config",
+			expected: "💚 ci(workflows): refresh config",
 		},
 		{
 			name:     "Case insensitive - uppercase CI with emoji already present",
-			input:    "🤖 CI: refresh workflows",
-			expected: "🤖 ci: refresh workflows",
+			input:    "💚 CI: refresh workflows",
+			expected: "💚 ci: refresh workflows",
 		},
 		{
 			name:     "Hotfix message with type prefix",
 			input:    "hotfix: critical bug fix",
-			expected: "🔥 hotfix: critical bug fix",
+			expected: "🚑️ hotfix: critical bug fix",
 		},
 		{
 			name:     "Security message with type prefix",
 			input:    "security: fix vulnerability",
-			expected: "🔒 security: fix vulnerability",
+			expected: "🔒️ security: fix vulnerability",
 		},
 		{
 			name:     "Release message with type prefix",
@@ -263,7 +263,7 @@ func TestFormatCommitMessage(t *testing.T) {
 		{
 			name:     "CI workflow with dependencies",
 			input:    "ci: configure workflow dependencies",
-			expected: "🤖 ci: configure workflow dependencies",
+			expected: "💚 ci: configure workflow dependencies",
 		},
 		{
 			name:     "Non-conventional message without prefix returns as-is",

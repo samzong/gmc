@@ -40,7 +40,7 @@ func TestGetEmojiForType(t *testing.T) {
 		{
 			name:     "perf type",
 			input:    "perf",
-			expected: "⚡",
+			expected: "⚡️",
 		},
 		{
 			name:     "test type",
@@ -71,6 +71,21 @@ func TestGetEmojiForType(t *testing.T) {
 			name:     "empty string",
 			input:    "",
 			expected: "",
+		},
+		{
+			name:     "security type",
+			input:    "security",
+			expected: "🔒️",
+		},
+		{
+			name:     "hotfix type",
+			input:    "hotfix",
+			expected: "🚑️",
+		},
+		{
+			name:     "wip type",
+			input:    "wip",
+			expected: "🚧",
 		},
 	}
 
@@ -116,7 +131,7 @@ func TestAddEmojiToMessage(t *testing.T) {
 		{
 			name:     "perf type",
 			input:    "perf: optimize database queries",
-			expected: "⚡ perf: optimize database queries",
+			expected: "⚡️ perf: optimize database queries",
 		},
 		{
 			name:     "test type",
@@ -298,4 +313,78 @@ func TestIsEmoji(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestGetAllGitmojis(t *testing.T) {
+	gitmojis := GetAllGitmojis()
+	assert.True(t, len(gitmojis) > 50, "should have at least 50 gitmojis")
+
+	sparkles := false
+	for _, g := range gitmojis {
+		if g.Name == "sparkles" {
+			sparkles = true
+			assert.Equal(t, "✨", g.Emoji)
+			assert.Equal(t, "minor", g.Semver)
+		}
+	}
+	assert.True(t, sparkles, "should have sparkles gitmoji")
+}
+
+func TestInferTypeFromEmojiPrefix(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		expectedType string
+		expectedRest string
+	}{
+		{
+			name:         "sparkles emoji",
+			input:        "✨ add new feature",
+			expectedType: "feat",
+			expectedRest: "add new feature",
+		},
+		{
+			name:         "bug emoji",
+			input:        "🐛 fix login issue",
+			expectedType: "fix",
+			expectedRest: "fix login issue",
+		},
+		{
+			name:         "no emoji",
+			input:        "feat: add feature",
+			expectedType: "",
+			expectedRest: "",
+		},
+		{
+			name:         "empty string",
+			input:        "",
+			expectedType: "",
+			expectedRest: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			commitType, rest := InferTypeFromEmojiPrefix(tt.input)
+			assert.Equal(t, tt.expectedType, commitType)
+			assert.Equal(t, tt.expectedRest, rest)
+		})
+	}
+}
+
+func TestGetGitmojiByName(t *testing.T) {
+	g := GetGitmojiByName("sparkles")
+	assert.NotNil(t, g)
+	assert.Equal(t, "✨", g.Emoji)
+	assert.Equal(t, "Introduce new features", g.Description)
+
+	g = GetGitmojiByName("nonexistent")
+	assert.Nil(t, g)
+}
+
+func TestGetGitmojiPromptList(t *testing.T) {
+	list := GetGitmojiPromptList()
+	assert.Contains(t, list, "✨")
+	assert.Contains(t, list, "🐛")
+	assert.Contains(t, list, "Improve")
 }
