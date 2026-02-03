@@ -204,6 +204,16 @@ func init() {
 	wtPrReviewCmd.Flags().StringVarP(&prRemote, "remote", "r", "",
 		"Remote to fetch PR from (auto-detect if not specified)")
 
+	// Shell completions for arguments
+	wtRemoveCmd.ValidArgsFunction = completeWorktreeNames
+	wtPromoteCmd.ValidArgsFunction = completeWorktreeNames
+
+	// Shell completions for flags
+	_ = wtAddCmd.RegisterFlagCompletionFunc("base", completeBranchNames)
+	_ = wtDupCmd.RegisterFlagCompletionFunc("base", completeBranchNames)
+	_ = wtPruneCmd.RegisterFlagCompletionFunc("base", completeBranchNames)
+	_ = wtPrReviewCmd.RegisterFlagCompletionFunc("remote", completeRemoteNames)
+
 	// Add to root command
 	rootCmd.AddCommand(wtCmd)
 }
@@ -431,4 +441,51 @@ func runWorktreeDup(wtClient *worktree.Client, args []string) error {
 
 func runWorktreePromote(wtClient *worktree.Client, worktreeName, branchName string) error {
 	return wtClient.Promote(worktreeName, branchName)
+}
+
+// Completion functions
+
+func completeWorktreeNames(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+	wtClient := worktree.NewClient(worktree.Options{})
+	worktrees, err := wtClient.List()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	filtered := filterBareWorktrees(worktrees)
+	root, _ := wtClient.GetWorktreeRoot()
+
+	names := make([]string, 0, len(filtered))
+	for _, wt := range filtered {
+		name := filepath.Base(wt.Path)
+		if root != "" {
+			if rel, err := filepath.Rel(root, wt.Path); err == nil {
+				name = rel
+			}
+		}
+		names = append(names, name)
+	}
+	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
+func completeBranchNames(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+	wtClient := worktree.NewClient(worktree.Options{})
+	branches, err := wtClient.ListBranches()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	return branches, cobra.ShellCompDirectiveNoFileComp
+}
+
+func completeRemoteNames(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+	wtClient := worktree.NewClient(worktree.Options{})
+	remotes, err := wtClient.ListRemotes()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	return remotes, cobra.ShellCompDirectiveNoFileComp
+}
+
+func completeStrategies(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+	return []string{"copy", "link"}, cobra.ShellCompDirectiveNoFileComp
 }

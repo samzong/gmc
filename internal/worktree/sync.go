@@ -169,13 +169,13 @@ func (c *Client) syncDryRun(ctx syncContext) error {
 
 func checkWorktreeReady(path, status, branch string) string {
 	if path == "" {
-		return fmt.Sprintf("%s worktree not found, skipped worktree update", branch)
+		return branch + " worktree not found, skipped worktree update"
 	}
 	if status == "modified" {
-		return fmt.Sprintf("%s worktree has uncommitted changes, skipped", branch)
+		return branch + " worktree has uncommitted changes, skipped"
 	}
 	if status != "clean" {
-		return fmt.Sprintf("%s worktree status unknown, skipped", branch)
+		return branch + " worktree status unknown, skipped"
 	}
 	return ""
 }

@@ -40,7 +40,7 @@ var (
 		Version:       fmt.Sprintf("%s (built at %s)", Version, BuildTime),
 		Args:          cobra.ArbitraryArgs,
 		RunE:          runRoot,
-		SilenceErrors: true,
+		SilenceErrors: false,
 		SilenceUsage:  true,
 	}
 )
@@ -84,26 +84,38 @@ func initConfig() {
 
 func runRoot(cmd *cobra.Command, args []string) error {
 	if configErr != nil {
-		return fmt.Errorf("configuration error: %w", configErr)
+		return handleErrors(fmt.Errorf("configuration error: %w", configErr), addAll)
 	}
-	return handleErrors(generateAndCommit(cmd.InOrStdin(), args))
+	return handleErrors(generateAndCommit(cmd.InOrStdin(), args), addAll)
 }
 
-func handleErrors(err error) error {
+func handleErrors(err error, addAllFlag bool) error {
 	if err == nil {
 		return nil
 	}
 
 	if errors.Is(err, workflow.ErrNoChanges) {
-		fmt.Fprintln(errWriter(), "No changes detected in the staging area files.")
-		if !addAll {
-			fmt.Fprintln(errWriter(), "Hint: You can use -a or --all to automatically add all changes to the staging area.")
+		msg := "No changes detected in the staging area files."
+		if !addAllFlag {
+			msg += "\nHint: You can use -a or --all to automatically add all changes to the staging area."
 		}
-		return err
+		return userFacingError{msg: msg, err: err}
 	}
 
-	fmt.Fprintf(errWriter(), "gmc: %v\n", err)
-	return err
+	return userFacingError{msg: fmt.Sprintf("gmc: %v", err), err: err}
+}
+
+type userFacingError struct {
+	msg string
+	err error
+}
+
+func (e userFacingError) Error() string {
+	return e.msg
+}
+
+func (e userFacingError) Unwrap() error {
+	return e.err
 }
 
 func generateAndCommit(in io.Reader, fileArgs []string) error {

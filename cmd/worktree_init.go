@@ -24,7 +24,8 @@ Add the following to your shell's rc file:
   gmc wt init fish | source
 
 After this, 'gmc wt switch' will be able to change your working directory.`,
-	Args: cobra.ExactArgs(1),
+	ValidArgs: []string{"bash", "zsh", "fish"},
+	Args:      cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 	RunE: func(_ *cobra.Command, args []string) error {
 		return runWorktreeInit(args[0])
 	},

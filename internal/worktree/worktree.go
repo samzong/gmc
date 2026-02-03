@@ -644,3 +644,55 @@ func (c *Client) Promote(worktreeName, newBranchName string) error {
 func getCurrentTimestamp() int64 {
 	return time.Now().Unix()
 }
+
+// ListBranches returns all local branch names
+func (c *Client) ListBranches() ([]string, error) {
+	root, _ := c.GetWorktreeRoot()
+	repoDir := repoDirForGit(root)
+
+	var args []string
+	if repoDir != "" {
+		args = []string{"-C", repoDir, "branch", "--format=%(refname:short)"}
+	} else {
+		args = []string{"branch", "--format=%(refname:short)"}
+	}
+
+	result, err := c.runner.Run(args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list branches: %w", err)
+	}
+
+	output := result.StdoutString(true)
+	if output == "" {
+		return nil, nil
+	}
+
+	branches := strings.Split(output, "\n")
+	return branches, nil
+}
+
+// ListRemotes returns all remote names
+func (c *Client) ListRemotes() ([]string, error) {
+	root, _ := c.GetWorktreeRoot()
+	repoDir := repoDirForGit(root)
+
+	var args []string
+	if repoDir != "" {
+		args = []string{"-C", repoDir, "remote"}
+	} else {
+		args = []string{"remote"}
+	}
+
+	result, err := c.runner.Run(args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list remotes: %w", err)
+	}
+
+	output := result.StdoutString(true)
+	if output == "" {
+		return nil, nil
+	}
+
+	remotes := strings.Split(output, "\n")
+	return remotes, nil
+}
