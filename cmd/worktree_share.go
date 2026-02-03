@@ -121,6 +121,7 @@ func init() {
 	wtShareCmd.AddCommand(wtShareSyncCmd)
 
 	wtShareAddCmd.Flags().StringVarP(&shareStrategy, "strategy", "s", "copy", "Sync strategy: copy or link")
+	_ = wtShareAddCmd.RegisterFlagCompletionFunc("strategy", completeStrategies)
 }
 
 func runWorktreeShareInteractive(c *worktree.Client) error {

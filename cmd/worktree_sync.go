@@ -29,6 +29,8 @@ func init() {
 	wtAddCmd.Flags().BoolVar(&wtAddSync, "sync", false, "Sync base branch before creating worktree")
 	wtSyncCmd.Flags().StringVarP(&wtSyncBase, "base", "b", "", "Base branch to sync")
 	wtSyncCmd.Flags().BoolVar(&wtSyncDryRun, "dry-run", false, "Preview what would be updated without making changes")
+
+	_ = wtSyncCmd.RegisterFlagCompletionFunc("base", completeBranchNames)
 }
 
 func runWorktreeSync(wtClient *worktree.Client) error {

@@ -30,7 +30,7 @@ func TestRootCommand(t *testing.T) {
 	assert.Equal(t, "gmc", rootCmd.Use)
 	assert.Equal(t, "gmc - Git Message Assistant", rootCmd.Short)
 	assert.Contains(t, rootCmd.Long, "gmc is a CLI tool")
-	assert.True(t, rootCmd.SilenceErrors)
+	assert.False(t, rootCmd.SilenceErrors)
 	assert.True(t, rootCmd.SilenceUsage)
 }
 
@@ -47,18 +47,24 @@ func TestInitConfig(t *testing.T) {
 
 func TestHandleErrors(t *testing.T) {
 	t.Run("returns nil for nil error", func(t *testing.T) {
-		assert.NoError(t, handleErrors(nil))
+		assert.NoError(t, handleErrors(nil, false))
 	})
 
 	t.Run("propagates sentinel error", func(t *testing.T) {
-		err := handleErrors(workflow.ErrNoChanges)
-		assert.ErrorIs(t, err, workflow.ErrNoChanges)
+		errWithHint := handleErrors(workflow.ErrNoChanges, false)
+		errWithoutHint := handleErrors(workflow.ErrNoChanges, true)
+
+		assert.NotEqual(t, errWithHint.Error(), errWithoutHint.Error())
+
+		assert.ErrorIs(t, errWithHint, workflow.ErrNoChanges)
+		assert.ErrorIs(t, errWithoutHint, workflow.ErrNoChanges)
 	})
 
 	t.Run("propagates generic error", func(t *testing.T) {
 		expectedErr := errors.New("boom")
-		err := handleErrors(expectedErr)
+		err := handleErrors(expectedErr, false)
 		assert.ErrorIs(t, err, expectedErr)
+		assert.Contains(t, err.Error(), expectedErr.Error())
 	})
 }
 
