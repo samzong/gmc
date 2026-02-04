@@ -1,6 +1,16 @@
 # Changelog
 
 
+## [v0.7.2] - 2026-02-03
+### Code Refactoring
+- **sync:** refactor Sync to use syncContext and improve worktree status
+
+### Features
+- emoji: replace simple map with full gitmoji.dev spec for comprehensive emoji support and semantic versioning info
+- **cli:** add shell completion for gmc and wt commands
+- **worktree:** add 'wt init' shell integration and 'wt switch' interactive worktree switch
+
+
 ## [v0.7.1] - 2026-01-23
 ### Code Refactoring
 - move commit workflow to internal/workflow and improve testability
@@ -191,7 +201,8 @@
 - **gma:** add option to automatically stage all changes ([#123](https://github.com/samzong/gmc/issues/123))
 
 
-[Unreleased]: https://github.com/samzong/gmc/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/samzong/gmc/compare/v0.7.2...HEAD
+[v0.7.2]: https://github.com/samzong/gmc/compare/v0.7.1...v0.7.2
 [v0.7.1]: https://github.com/samzong/gmc/compare/v0.7.0...v0.7.1
 [v0.7.0]: https://github.com/samzong/gmc/compare/v0.6.2...v0.7.0
 [v0.6.2]: https://github.com/samzong/gmc/compare/v0.6.1...v0.6.2
