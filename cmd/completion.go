@@ -34,7 +34,7 @@ func init() {
 	rootCmd.AddCommand(completionCmd)
 }
 
-func runCompletion(cmd *cobra.Command, args []string) error {
+func runCompletion(_ *cobra.Command, args []string) error {
 	switch args[0] {
 	case "bash":
 		return rootCmd.GenBashCompletion(os.Stdout)

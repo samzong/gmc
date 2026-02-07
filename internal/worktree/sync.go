@@ -3,7 +3,6 @@ package worktree
 import (
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -39,21 +38,23 @@ func (c *Client) ResolveSyncBaseBranch(override string) (string, error) {
 }
 
 // Sync updates the base branch refs and main worktree using fast-forward only.
-func (c *Client) Sync(opts SyncOptions) error {
+func (c *Client) Sync(opts SyncOptions) (Report, error) {
+	var report Report
+
 	root, err := c.GetWorktreeRoot()
 	if err != nil {
-		return fmt.Errorf("failed to find worktree root: %w", err)
+		return report, fmt.Errorf("failed to find worktree root: %w", err)
 	}
 
 	repoDir := repoDirForGit(root)
 	remote, err := c.selectSyncRemote(repoDir)
 	if err != nil {
-		return err
+		return report, err
 	}
 
 	baseRef, err := c.resolveSyncBaseBranch(repoDir, opts.BaseBranch)
 	if err != nil {
-		return err
+		return report, err
 	}
 	baseName := localBranchName(baseRef)
 
@@ -63,7 +64,7 @@ func (c *Client) Sync(opts SyncOptions) error {
 
 	worktrees, err := c.List()
 	if err != nil {
-		return err
+		return report, err
 	}
 	baseWorktree := findWorktreeForBranch(worktrees, baseName)
 	status := ""
@@ -88,15 +89,15 @@ func (c *Client) Sync(opts SyncOptions) error {
 
 	result, err := c.runner.RunLogged("-C", repoDir, "fetch", remote)
 	if err != nil {
-		return gitutil.WrapGitError("failed to fetch "+remote, result, err)
+		return report, gitutil.WrapGitError("failed to fetch "+remote, result, err)
 	}
 
 	canFF, err := c.canFastForward(repoDir, localFull, remoteFull)
 	if err != nil {
-		return err
+		return report, err
 	}
 	if !canFF {
-		return fmt.Errorf("base branch '%s' cannot be fast-forwarded to %s", baseName, remoteRef)
+		return report, fmt.Errorf("base branch '%s' cannot be fast-forwarded to %s", baseName, remoteRef)
 	}
 
 	localHash := c.refHash(repoDir, localFull)
@@ -104,16 +105,16 @@ func (c *Client) Sync(opts SyncOptions) error {
 	needsUpdate := localHash == "" || (remoteHash != "" && localHash != remoteHash)
 
 	if msg := checkWorktreeReady(baseWorktree, status, baseName); msg != "" {
-		fmt.Fprintln(os.Stderr, msg)
-		return nil
+		report.Warn(msg)
+		return report, nil
 	}
 
 	if needsUpdate {
 		result, err = c.runner.RunLogged("-C", baseWorktree, "reset", "--hard", remoteRef)
 		if err != nil {
-			return gitutil.WrapGitError("failed to update worktree", result, err)
+			return report, gitutil.WrapGitError("failed to update worktree", result, err)
 		}
-		fmt.Printf("Synced %s to %s (%s..%s)\n", baseName, remoteRef, shortHash(localHash), shortHash(remoteHash))
+		report.Info(fmt.Sprintf("Synced %s to %s (%s..%s)", baseName, remoteRef, shortHash(localHash), shortHash(remoteHash)))
 
 		if remote == "upstream" && c.remoteExists(repoDir, "origin") {
 			result, err = c.runner.RunLogged("-C", repoDir, "push", "origin", baseName)
@@ -122,49 +123,55 @@ func (c *Client) Sync(opts SyncOptions) error {
 				if msg == "" {
 					msg = err.Error()
 				}
-				fmt.Fprintf(os.Stderr, "Warning: failed to push origin %s: %s\n", baseName, msg)
+				report.Warn(fmt.Sprintf("Warning: failed to push origin %s: %s", baseName, msg))
 			}
 		}
 	} else {
-		fmt.Printf("%s already up to date with %s (%s)\n", baseName, remoteRef, shortHash(localHash))
+		report.Info(fmt.Sprintf("%s already up to date with %s (%s)", baseName, remoteRef, shortHash(localHash)))
 	}
 
-	return nil
+	return report, nil
 }
 
-func (c *Client) syncDryRun(ctx syncContext) error {
+func (c *Client) syncDryRun(ctx syncContext) (Report, error) {
+	var report Report
+
 	canFF, err := c.canFastForward(ctx.repoDir, ctx.localFull, ctx.remoteFull)
 	if err != nil {
-		return err
+		return report, err
 	}
 	if !canFF {
-		return fmt.Errorf("base branch '%s' cannot be fast-forwarded to %s", ctx.baseName, ctx.remoteRef)
+		return report, fmt.Errorf("base branch '%s' cannot be fast-forwarded to %s", ctx.baseName, ctx.remoteRef)
 	}
 
 	localHash := c.refHash(ctx.repoDir, ctx.localFull)
 	remoteHash := c.refHash(ctx.repoDir, ctx.remoteFull)
 	needsUpdate := localHash == "" || (remoteHash != "" && localHash != remoteHash)
 
-	fmt.Fprintf(os.Stderr, "Would fetch %s\n", ctx.remote)
+	report.Warn("Would fetch " + ctx.remote)
 	if needsUpdate {
-		fmt.Fprintf(os.Stderr, "Would fast-forward %s to %s\n", ctx.baseName, ctx.remoteRef)
+		report.Warn(fmt.Sprintf("Would fast-forward %s to %s", ctx.baseName, ctx.remoteRef))
 	} else {
-		fmt.Fprintf(os.Stderr, "%s is already up to date with %s\n", ctx.baseName, ctx.remoteRef)
+		report.Warn(fmt.Sprintf("%s is already up to date with %s", ctx.baseName, ctx.remoteRef))
 	}
 
 	if ctx.remote == "upstream" && needsUpdate && c.remoteExists(ctx.repoDir, "origin") {
-		fmt.Fprintf(os.Stderr, "Would push origin %s\n", ctx.baseName)
+		report.Warn("Would push origin " + ctx.baseName)
 	}
 
 	if msg := checkWorktreeReady(ctx.baseWorktree, ctx.status, ctx.baseName); msg != "" {
-		fmt.Fprintln(os.Stderr, msg)
-		return nil
+		report.Warn(msg)
+		return report, nil
 	}
 	if needsUpdate {
-		fmt.Fprintf(os.Stderr, "Would update worktree: %s\n", ctx.baseWorktree)
+		report.Warn("Would update worktree: " + ctx.baseWorktree)
 	}
 
-	return nil
+	return report, nil
+}
+
+func (c *Client) resolveSyncBaseBranch(repoDir string, override string) (string, error) {
+	return c.resolveBaseBranchWithPolicy(repoDir, override, false)
 }
 
 func checkWorktreeReady(path, status, branch string) string {
@@ -180,30 +187,6 @@ func checkWorktreeReady(path, status, branch string) string {
 	return ""
 }
 
-func (c *Client) resolveSyncBaseBranch(repoDir string, override string) (string, error) {
-	if override != "" {
-		return override, nil
-	}
-	if repoDir == "" {
-		return "", errors.New("cannot determine base branch: repository root is empty")
-	}
-
-	if ref := c.gitSymbolicRef(repoDir, "refs/remotes/origin/HEAD"); ref != "" {
-		return ref, nil
-	}
-	if ref := c.gitSymbolicRef(repoDir, "refs/remotes/upstream/HEAD"); ref != "" {
-		return ref, nil
-	}
-
-	for _, branch := range []string{"main", "master"} {
-		if c.gitRefExists(repoDir, "refs/heads/"+branch) {
-			return branch, nil
-		}
-	}
-
-	return "", errors.New("could not determine base branch; specify with --base")
-}
-
 func (c *Client) selectSyncRemote(repoDir string) (string, error) {
 	if c.remoteExists(repoDir, "upstream") {
 		return "upstream", nil
@@ -212,11 +195,6 @@ func (c *Client) selectSyncRemote(repoDir string) (string, error) {
 		return "origin", nil
 	}
 	return "", errors.New("no upstream or origin remote found")
-}
-
-func (c *Client) remoteExists(repoDir string, name string) bool {
-	result, err := c.runner.Run("-C", repoDir, "remote", "get-url", name)
-	return err == nil && strings.TrimSpace(result.StdoutString(true)) != ""
 }
 
 func findWorktreeForBranch(worktrees []Info, branch string) string {

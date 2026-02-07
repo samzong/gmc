@@ -56,119 +56,34 @@ func runTagCommand() error {
 	gitClient := git.NewClient(git.Options{Verbose: verbose})
 	llmClient := llm.NewClient(llm.Options{Timeout: time.Duration(timeoutSeconds) * time.Second})
 
-	if err := gitClient.CheckGitRepository(); err != nil {
-		return fmt.Errorf("tagging failed: %w", err)
-	}
-
-	lastTag, err := gitClient.GetLatestTag()
+	lastTag, commits, err := collectTagContext(gitClient)
 	if err != nil {
-		return fmt.Errorf("failed to determine latest tag: %w", err)
+		return err
 	}
-
-	commits, err := gitClient.GetCommitsSinceTag(lastTag)
-	if err != nil {
-		return fmt.Errorf("failed to collect commits: %w", err)
-	}
-
 	if len(commits) == 0 {
-		if lastTag == "" {
-			fmt.Fprintln(outWriter(), "No commits found in the repository; nothing to tag yet.")
-		} else {
-			fmt.Fprintf(outWriter(), "No new commits since %s; no tag created.\n", lastTag)
-		}
+		printNoCommitsSinceLastTag(lastTag)
 		return nil
 	}
 
-	baseTag := lastTag
-	if baseTag == "" {
-		baseTag = "v0.0.0"
-	}
-
-	baseVersion, err := version.ParseSemVer(baseTag)
+	baseVersion, displayTag, err := resolveBaseVersion(lastTag)
 	if err != nil {
-		return fmt.Errorf("failed to parse base version %s: %w", baseTag, err)
+		return err
 	}
 
-	displayTag := baseTag
-	if lastTag == "" {
-		displayTag = "initial commit"
+	printCommitSummary(displayTag, commits)
+
+	finalVersion, finalReason, source, err := pickTagSuggestion(baseVersion, commits, llmClient)
+	if err != nil {
+		return err
 	}
-
-	fmt.Fprintf(outWriter(), "Commits since %s (%d total):\n", displayTag, len(commits))
-	for _, commit := range commits {
-		fmt.Fprintf(outWriter(), "  - %s\n", commit.Message)
-	}
-	fmt.Fprintln(outWriter())
-
-	ruleResult := version.SuggestWithRules(baseVersion, commits)
-	finalVersion := ruleResult.NextVersion
-	finalReason := ruleResult.Reason
-	source := "rule engine"
-
-	cfg, cfgErr := config.GetConfig()
-	if cfgErr != nil {
-		return cfgErr
-	}
-	if cfg.APIKey != "" {
-		commitSummaries := make([]string, 0, len(commits))
-		for _, commit := range commits {
-			summary := strings.TrimSpace(commit.Message)
-			lowerSummary := strings.ToLower(summary)
-			lowerBody := strings.ToLower(commit.Body)
-
-			if strings.Contains(lowerSummary, "breaking change") ||
-				strings.Contains(lowerBody, "breaking change") ||
-				strings.Contains(summary, "!:") {
-				summary += " (breaking change?)"
-			}
-
-			commitSummaries = append(commitSummaries, summary)
-		}
-
-		llmVersionStr, llmReason, err := llmClient.SuggestVersion(baseVersion.String(), commitSummaries, cfg.Model)
-		if err != nil {
-			fmt.Fprintf(errWriter(), "Warning: LLM version suggestion failed: %v\n", err)
-		} else {
-			llmVersion, parseErr := version.ParseSemVer(llmVersionStr)
-
-			switch {
-			case parseErr != nil:
-				fmt.Fprintf(
-					errWriter(),
-					"Warning: Invalid LLM version suggestion %q: %v\n",
-					llmVersionStr,
-					parseErr,
-				)
-			case llmVersion.LessThan(ruleResult.NextVersion):
-				fmt.Fprintf(
-					errWriter(),
-					"Warning: LLM suggested %s which is lower than rule-based %s; keeping rule result.\n",
-					llmVersion.String(),
-					ruleResult.NextVersion.String(),
-				)
-			default:
-				finalVersion = llmVersion
-				if strings.TrimSpace(llmReason) != "" {
-					finalReason = llmReason
-				}
-				source = "LLM"
-			}
-		}
-	}
-
 	fmt.Fprintf(outWriter(), "Suggested version (%s): %s\n", source, finalVersion.String())
 	if strings.TrimSpace(finalReason) != "" {
 		fmt.Fprintf(outWriter(), "Reason: %s\n", finalReason)
 	}
 	fmt.Fprintln(outWriter())
 
-	if lastTag != "" && finalVersion.Equal(baseVersion) {
-		fmt.Fprintln(outWriter(), "No version bump recommended. No tag created.")
-		return nil
-	}
-
-	if lastTag == "" && finalVersion.Equal(baseVersion) {
-		fmt.Fprintf(outWriter(), "Suggested version matches base version %s; skipping tag creation.\n", baseVersion.String())
+	if msg, skip := shouldSkipTagCreation(lastTag, finalVersion, baseVersion); skip {
+		fmt.Fprintln(outWriter(), msg)
 		return nil
 	}
 
@@ -194,6 +109,148 @@ func runTagCommand() error {
 	fmt.Fprintf(outWriter(), "Tag %s created successfully.\n", finalVersion.String())
 	fmt.Fprintf(outWriter(), "Hint: run `git push origin %s` to share the tag.\n", finalVersion.String())
 	return nil
+}
+
+func collectTagContext(gitClient *git.Client) (string, []git.CommitInfo, error) {
+	if err := gitClient.CheckGitRepository(); err != nil {
+		return "", nil, fmt.Errorf("tagging failed: %w", err)
+	}
+
+	lastTag, err := gitClient.GetLatestTag()
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to determine latest tag: %w", err)
+	}
+
+	commits, err := gitClient.GetCommitsSinceTag(lastTag)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to collect commits: %w", err)
+	}
+
+	return lastTag, commits, nil
+}
+
+func printNoCommitsSinceLastTag(lastTag string) {
+	if lastTag == "" {
+		fmt.Fprintln(outWriter(), "No commits found in the repository; nothing to tag yet.")
+		return
+	}
+	fmt.Fprintf(outWriter(), "No new commits since %s; no tag created.\n", lastTag)
+}
+
+func resolveBaseVersion(lastTag string) (version.SemVer, string, error) {
+	baseTag := lastTag
+	if baseTag == "" {
+		baseTag = "v0.0.0"
+	}
+
+	baseVersion, err := version.ParseSemVer(baseTag)
+	if err != nil {
+		return version.SemVer{}, "", fmt.Errorf("failed to parse base version %s: %w", baseTag, err)
+	}
+
+	displayTag := baseTag
+	if lastTag == "" {
+		displayTag = "initial commit"
+	}
+	return baseVersion, displayTag, nil
+}
+
+func printCommitSummary(displayTag string, commits []git.CommitInfo) {
+	fmt.Fprintf(outWriter(), "Commits since %s (%d total):\n", displayTag, len(commits))
+	for _, commit := range commits {
+		fmt.Fprintf(outWriter(), "  - %s\n", commit.Message)
+	}
+	fmt.Fprintln(outWriter())
+}
+
+func pickTagSuggestion(
+	baseVersion version.SemVer, commits []git.CommitInfo, llmClient *llm.Client,
+) (version.SemVer, string, string, error) {
+	ruleResult := version.SuggestWithRules(baseVersion, commits)
+	finalVersion := ruleResult.NextVersion
+	finalReason := ruleResult.Reason
+	source := "rule engine"
+
+	cfg, err := config.GetConfig()
+	if err != nil {
+		return version.SemVer{}, "", "", err
+	}
+	if cfg.APIKey == "" {
+		return finalVersion, finalReason, source, nil
+	}
+
+	llmVersion, llmReason, ok := selectVersionSuggestion(
+		baseVersion, ruleResult.NextVersion, commits, cfg.Model, llmClient,
+	)
+	if !ok {
+		return finalVersion, finalReason, source, nil
+	}
+
+	finalVersion = llmVersion
+	if strings.TrimSpace(llmReason) != "" {
+		finalReason = llmReason
+	}
+	return finalVersion, finalReason, "LLM", nil
+}
+
+func selectVersionSuggestion(
+	baseVersion version.SemVer,
+	ruleVersion version.SemVer,
+	commits []git.CommitInfo,
+	model string,
+	llmClient *llm.Client,
+) (version.SemVer, string, bool) {
+	commitSummaries := buildCommitSummaries(commits)
+	llmVersionStr, llmReason, err := llmClient.SuggestVersion(baseVersion.String(), commitSummaries, model)
+	if err != nil {
+		fmt.Fprintf(errWriter(), "Warning: LLM version suggestion failed: %v\n", err)
+		return version.SemVer{}, "", false
+	}
+
+	llmVersion, parseErr := version.ParseSemVer(llmVersionStr)
+	switch {
+	case parseErr != nil:
+		fmt.Fprintf(errWriter(), "Warning: Invalid LLM version suggestion %q: %v\n", llmVersionStr, parseErr)
+		return version.SemVer{}, "", false
+	case llmVersion.LessThan(ruleVersion):
+		fmt.Fprintf(
+			errWriter(),
+			"Warning: LLM suggested %s which is lower than rule-based %s; keeping rule result.\n",
+			llmVersion.String(),
+			ruleVersion.String(),
+		)
+		return version.SemVer{}, "", false
+	default:
+		return llmVersion, llmReason, true
+	}
+}
+
+func buildCommitSummaries(commits []git.CommitInfo) []string {
+	commitSummaries := make([]string, 0, len(commits))
+	for _, commit := range commits {
+		summary := strings.TrimSpace(commit.Message)
+		lowerSummary := strings.ToLower(summary)
+		lowerBody := strings.ToLower(commit.Body)
+
+		if strings.Contains(lowerSummary, "breaking change") ||
+			strings.Contains(lowerBody, "breaking change") ||
+			strings.Contains(summary, "!:") {
+			summary += " (breaking change?)"
+		}
+
+		commitSummaries = append(commitSummaries, summary)
+	}
+	return commitSummaries
+}
+
+func shouldSkipTagCreation(lastTag string, finalVersion, baseVersion version.SemVer) (string, bool) {
+	if !finalVersion.Equal(baseVersion) {
+		return "", false
+	}
+	if lastTag != "" {
+		return "No version bump recommended. No tag created.", true
+	}
+	return fmt.Sprintf("Suggested version matches base version %s; skipping tag creation.", baseVersion.String()), true
 }
 
 func confirmTagCreation(tag string) (bool, error) {

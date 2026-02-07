@@ -27,68 +27,59 @@ type SharedConfig struct {
 	Resources []SharedResource `yaml:"shared"`
 }
 
-// SyncSharedResources syncs shared resources defined in .gmc-shared.yml
-func (c *Client) SyncSharedResources(worktreeName string) error {
+func (c *Client) SyncSharedResources(worktreeName string) (Report, error) {
+	var report Report
+
 	cfg, _, err := c.LoadSharedConfig()
 	if err != nil {
-		return err
+		return report, err
 	}
 
-	// No config or empty, skip
 	if len(cfg.Resources) == 0 {
-		return nil
+		return report, nil
 	}
 
 	root, err := c.GetWorktreeRoot()
 	if err != nil {
-		return err
+		return report, err
 	}
 
 	targetRoot := filepath.Join(root, worktreeName)
 
 	for _, res := range cfg.Resources {
-		if err := c.syncOneResource(root, targetRoot, res); err != nil {
-			return err
+		resourceReport, err := c.syncOneResource(root, targetRoot, res)
+		report.Merge(resourceReport)
+		if err != nil {
+			return report, err
 		}
 	}
-	return nil
+	return report, nil
 }
 
-// syncOneResource handles the logic for a single resource sync
-func (c *Client) syncOneResource(root, targetRoot string, res SharedResource) error {
-	// Validate config fields
+func (c *Client) syncOneResource(root, targetRoot string, res SharedResource) (Report, error) {
+	var report Report
+
 	if res.Path == "" {
-		return errors.New("shared resource missing 'path' field")
+		return report, errors.New("shared resource missing 'path' field")
 	}
 	if res.Strategy == "" {
-		return fmt.Errorf("shared resource '%s' missing 'strategy' field", res.Path)
+		return report, fmt.Errorf("shared resource '%s' missing 'strategy' field", res.Path)
 	}
 
-	// Parse path to determine source and destination
-	// Path can be:
-	//   - "main/models" -> source in main worktree, target is "models"
-	//   - ".env" -> source in project root, target is ".env"
 	srcPath := filepath.Join(root, res.Path)
-
-	// Determine target path (strip worktree prefix if present)
 	targetPath := res.Path
 	parts := strings.SplitN(res.Path, string(filepath.Separator), 2)
 	if len(parts) == 2 {
-		// Check if first part is a worktree directory
 		potentialWorktree := filepath.Join(root, parts[0])
 		if info, err := os.Stat(potentialWorktree); err == nil && info.IsDir() {
-			// Check if it's actually a worktree (not .bare)
 			if parts[0] != ".bare" {
-				// First part is a worktree name, use second part as target
 				targetPath = parts[1]
-
-				// Skip if target worktree is the source worktree
 				targetWorktreeName := filepath.Base(targetRoot)
 				if targetWorktreeName == parts[0] {
 					if c.verbose {
-						fmt.Printf("Skipping %s: source worktree is target\n", res.Path)
+						report.Warn(fmt.Sprintf("Skipping %s: source worktree is target", res.Path))
 					}
-					return nil
+					return report, nil
 				}
 			}
 		}
@@ -96,61 +87,55 @@ func (c *Client) syncOneResource(root, targetRoot string, res SharedResource) er
 
 	dstPath := filepath.Join(targetRoot, targetPath)
 
-	// Check if source exists
 	info, err := os.Stat(srcPath)
 	if os.IsNotExist(err) {
 		if c.verbose {
-			fmt.Printf("Shared resource source not found: %s\n", srcPath)
+			report.Warn("Shared resource source not found: " + srcPath)
 		}
-		return nil
+		return report, nil
 	}
 
-	// Skip if destination already exists to avoid overwriting user changes
 	if _, err := os.Stat(dstPath); err == nil {
-		return nil
+		return report, nil
 	}
 
-	// Ensure destination parent directory exists
 	if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
-		return fmt.Errorf("failed to create parent directory for %s: %w", dstPath, err)
+		return report, fmt.Errorf("failed to create parent directory for %s: %w", dstPath, err)
 	}
 
-	fmt.Printf("Syncing shared resource: %s -> %s (%s)\n", res.Path, targetPath, res.Strategy)
+	report.Info(fmt.Sprintf("Syncing shared resource: %s -> %s (%s)", res.Path, targetPath, res.Strategy))
 
 	switch res.Strategy {
 	case StrategySymlink:
-		// Use relative symlinks so worktrees can be moved if needed
 		relSrc, err := filepath.Rel(filepath.Dir(dstPath), srcPath)
 		if err != nil {
-			return fmt.Errorf("failed to calculate relative path: %w", err)
+			return report, fmt.Errorf("failed to calculate relative path: %w", err)
 		}
 		if err := os.Symlink(relSrc, dstPath); err != nil {
-			return fmt.Errorf("failed to symlink %s: %w", res.Path, err)
+			return report, fmt.Errorf("failed to symlink %s: %w", res.Path, err)
 		}
 	case StrategyCopy:
 		if info.IsDir() {
 			if err := copyDir(srcPath, dstPath); err != nil {
-				return fmt.Errorf("failed to copy directory %s: %w", res.Path, err)
+				return report, fmt.Errorf("failed to copy directory %s: %w", res.Path, err)
 			}
 		} else {
 			if err := copyFile(srcPath, dstPath); err != nil {
-				return fmt.Errorf("failed to copy file %s: %w", res.Path, err)
+				return report, fmt.Errorf("failed to copy file %s: %w", res.Path, err)
 			}
 		}
 	default:
-		return fmt.Errorf("unknown strategy '%s' for resource '%s' (valid: copy, link)", res.Strategy, res.Path)
+		return report, fmt.Errorf("unknown strategy '%s' for resource '%s' (valid: copy, link)", res.Strategy, res.Path)
 	}
-	return nil
+	return report, nil
 }
 
-// LoadSharedConfig loads the shared configuration from .gmc-shared.yml
 func (c *Client) LoadSharedConfig() (*SharedConfig, string, error) {
 	root, err := c.GetWorktreeRoot()
 	if err != nil {
 		return nil, "", err
 	}
 
-	// Prefer .yml, verify .yaml
 	configPath := filepath.Join(root, ".gmc-shared.yml")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		yamlPath := filepath.Join(root, ".gmc-shared.yaml")
@@ -159,7 +144,6 @@ func (c *Client) LoadSharedConfig() (*SharedConfig, string, error) {
 		}
 	}
 
-	// If file doesn't exist, return empty config but valid path (for saving)
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		return &SharedConfig{Resources: []SharedResource{}}, configPath, nil
 	}
@@ -177,7 +161,6 @@ func (c *Client) LoadSharedConfig() (*SharedConfig, string, error) {
 	return &cfg, configPath, nil
 }
 
-// SaveSharedConfig saves the configuration to file
 func (c *Client) SaveSharedConfig(cfg *SharedConfig, path string) error {
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
@@ -190,14 +173,14 @@ func (c *Client) SaveSharedConfig(cfg *SharedConfig, path string) error {
 	return nil
 }
 
-// AddSharedResource adds or updates a resource in the configuration
-func (c *Client) AddSharedResource(path string, strategy ResourceStrategy) error {
+func (c *Client) AddSharedResource(path string, strategy ResourceStrategy) (Report, error) {
+	var report Report
+
 	cfg, configPath, err := c.LoadSharedConfig()
 	if err != nil {
-		return err
+		return report, err
 	}
 
-	// Check if already exists, update if so
 	found := false
 	for i, res := range cfg.Resources {
 		if res.Path == path {
@@ -215,18 +198,19 @@ func (c *Client) AddSharedResource(path string, strategy ResourceStrategy) error
 	}
 
 	if err := c.SaveSharedConfig(cfg, configPath); err != nil {
-		return err
+		return report, err
 	}
 
-	fmt.Printf("Updated shared resource: %s (%s)\n", path, strategy)
-	return nil
+	report.Info(fmt.Sprintf("Updated shared resource: %s (%s)", path, strategy))
+	return report, nil
 }
 
-// RemoveSharedResource removes a resource from the configuration
-func (c *Client) RemoveSharedResource(path string) error {
+func (c *Client) RemoveSharedResource(path string) (Report, error) {
+	var report Report
+
 	cfg, configPath, err := c.LoadSharedConfig()
 	if err != nil {
-		return err
+		return report, err
 	}
 
 	var newResources []SharedResource
@@ -237,26 +221,26 @@ func (c *Client) RemoveSharedResource(path string) error {
 	}
 
 	if len(newResources) == len(cfg.Resources) {
-		return fmt.Errorf("resource not found in config: %s", path)
+		return report, fmt.Errorf("resource not found in config: %s", path)
 	}
 
 	cfg.Resources = newResources
 	if err := c.SaveSharedConfig(cfg, configPath); err != nil {
-		return err
+		return report, err
 	}
 
-	fmt.Printf("Removed shared resource: %s\n", path)
-	return nil
+	report.Info("Removed shared resource: " + path)
+	return report, nil
 }
 
-// SyncAllSharedResources syncs shared resources to ALL existing worktrees
-func (c *Client) SyncAllSharedResources() error {
+func (c *Client) SyncAllSharedResources() (Report, error) {
+	var report Report
+
 	worktrees, err := c.List()
 	if err != nil {
-		return err
+		return report, err
 	}
 
-	// Filter out bare worktrees
 	var targets []Info
 	for _, wt := range worktrees {
 		if !wt.IsBare && filepath.Base(wt.Path) != ".bare" {
@@ -265,19 +249,21 @@ func (c *Client) SyncAllSharedResources() error {
 	}
 
 	if len(targets) == 0 {
-		fmt.Println("No worktrees to sync.")
-		return nil
+		report.Info("No worktrees to sync.")
+		return report, nil
 	}
 
-	fmt.Printf("Syncing resources to %d worktrees...\n", len(targets))
+	report.Info(fmt.Sprintf("Syncing resources to %d worktrees...", len(targets)))
 	for _, wt := range targets {
 		wtName := filepath.Base(wt.Path)
-		if err := c.SyncSharedResources(wtName); err != nil {
-			fmt.Printf("Warning: failed to sync %s: %v\n", wtName, err)
+		resourceReport, err := c.SyncSharedResources(wtName)
+		report.Merge(resourceReport)
+		if err != nil {
+			report.Warn(fmt.Sprintf("Warning: failed to sync %s: %v", wtName, err))
 		}
 	}
 
-	return nil
+	return report, nil
 }
 
 func copyFile(src, dst string) error {

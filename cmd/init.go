@@ -45,17 +45,43 @@ var (
 )
 
 func runInitWizard(in io.Reader, out io.Writer, current *config.Config) error {
-	cfg := current
-	if cfg == nil {
-		var err error
-		cfg, err = config.GetConfig()
-		if err != nil {
-			return err
-		}
+	cfg, err := initWizardConfig(current)
+	if err != nil {
+		return err
+	}
+	readLine := newTrimmedLineReader(in)
+	fmt.Fprintln(out, "gmc init - configure your LLM settings")
+
+	apiKey, err := promptAPIKey(out, cfg, readLine)
+	if err != nil {
+		return err
+	}
+	model, err := promptModel(out, cfg, readLine)
+	if err != nil {
+		return err
+	}
+	apiBase, err := promptAPIBase(out, cfg, readLine)
+	if err != nil {
+		return err
 	}
 
+	if err := saveConfigValues(apiKey, model, apiBase); err != nil {
+		return fmt.Errorf("failed to save configuration: %w", err)
+	}
+
+	return maybeTestConnection(out, model, readLine)
+}
+
+func initWizardConfig(current *config.Config) (*config.Config, error) {
+	if current != nil {
+		return current, nil
+	}
+	return config.GetConfig()
+}
+
+func newTrimmedLineReader(in io.Reader) func() (string, error) {
 	reader := bufio.NewReader(in)
-	readLine := func() (string, error) {
+	return func() (string, error) {
 		line, err := reader.ReadString('\n')
 		if err != nil && !errors.Is(err, io.EOF) {
 			return "", err
@@ -65,10 +91,9 @@ func runInitWizard(in io.Reader, out io.Writer, current *config.Config) error {
 		}
 		return strings.TrimSpace(line), nil
 	}
+}
 
-	fmt.Fprintln(out, "gmc init - configure your LLM settings")
-
-	apiKey := ""
+func promptAPIKey(out io.Writer, cfg *config.Config, readLine func() (string, error)) (string, error) {
 	for {
 		if cfg.APIKey != "" {
 			fmt.Fprint(out, "OpenAI API Key (leave blank to keep current): ")
@@ -78,53 +103,54 @@ func runInitWizard(in io.Reader, out io.Writer, current *config.Config) error {
 
 		line, err := readLine()
 		if err != nil {
-			return err
+			return "", err
 		}
 		if line == "" {
 			if cfg.APIKey != "" {
-				apiKey = cfg.APIKey
-				break
+				return cfg.APIKey, nil
 			}
 			fmt.Fprintln(out, "API key is required.")
 			continue
 		}
-		apiKey = line
-		break
+		return line, nil
 	}
+}
 
+func promptModel(out io.Writer, cfg *config.Config, readLine func() (string, error)) (string, error) {
 	modelDefault := cfg.Model
 	if modelDefault == "" {
 		modelDefault = config.DefaultModel
 	}
 	fmt.Fprintf(out, "Model (default: %s): ", modelDefault)
+
 	line, err := readLine()
 	if err != nil {
-		return err
+		return "", err
 	}
-	model := line
-	if model == "" {
-		model = modelDefault
+	if line == "" {
+		return modelDefault, nil
 	}
+	return line, nil
+}
 
-	apiBaseDefault := cfg.APIBase
-	apiBaseLabel := apiBaseDefault
+func promptAPIBase(out io.Writer, cfg *config.Config, readLine func() (string, error)) (string, error) {
+	apiBaseLabel := cfg.APIBase
 	if apiBaseLabel == "" {
 		apiBaseLabel = "<empty>"
 	}
 	fmt.Fprintf(out, "API Base URL (default: %s): ", apiBaseLabel)
-	line, err = readLine()
+
+	line, err := readLine()
 	if err != nil {
-		return err
+		return "", err
 	}
-	apiBase := line
-	if apiBase == "" {
-		apiBase = apiBaseDefault
+	if line == "" {
+		return cfg.APIBase, nil
 	}
+	return line, nil
+}
 
-	if err := saveConfigValues(apiKey, model, apiBase); err != nil {
-		return fmt.Errorf("failed to save configuration: %w", err)
-	}
-
+func maybeTestConnection(out io.Writer, model string, readLine func() (string, error)) error {
 	for {
 		fmt.Fprint(out, "Test API connection now? [Y/n]: ")
 		answer, err := readLine()

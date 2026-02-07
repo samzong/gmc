@@ -61,11 +61,13 @@ func (c *Client) PRExists(prNumber int, remote, repoDir string) (bool, string, e
 }
 
 // AddPR creates a worktree from a Pull Request
-func (c *Client) AddPR(prNumber int, remote string) error {
+func (c *Client) AddPR(prNumber int, remote string) (Report, error) {
+	var report Report
+
 	// Setup paths to get repoDir
 	root, err := c.GetWorktreeRoot()
 	if err != nil {
-		return fmt.Errorf("failed to find worktree root: %w", err)
+		return report, fmt.Errorf("failed to find worktree root: %w", err)
 	}
 	repoDir := repoDirForGit(root)
 
@@ -73,19 +75,19 @@ func (c *Client) AddPR(prNumber int, remote string) error {
 	if remote == "" {
 		detectedRemote, err := c.DetectPRRemote(repoDir)
 		if err != nil {
-			return err
+			return report, err
 		}
 		remote = detectedRemote
-		fmt.Printf("Auto-detected remote: %s\n", remote)
+		report.Info("Auto-detected remote: " + remote)
 	}
 
 	// Verify PR exists
 	exists, commitHash, err := c.PRExists(prNumber, remote, repoDir)
 	if err != nil {
-		return err
+		return report, err
 	}
 	if !exists {
-		return fmt.Errorf("PR #%d not found on remote '%s'", prNumber, remote)
+		return report, fmt.Errorf("PR #%d not found on remote '%s'", prNumber, remote)
 	}
 
 	// Prepare worktree paths
@@ -93,34 +95,36 @@ func (c *Client) AddPR(prNumber int, remote string) error {
 	targetPath := filepath.Join(root, branchName)
 
 	if _, err := os.Stat(targetPath); err == nil {
-		return fmt.Errorf("directory already exists: %s", targetPath)
+		return report, fmt.Errorf("directory already exists: %s", targetPath)
 	}
 
 	// Fetch PR from remote
 	refSpec := fmt.Sprintf("pull/%d/head:%s", prNumber, branchName)
-	fmt.Printf("Fetching PR #%d from %s...\n", prNumber, remote)
+	report.Info(fmt.Sprintf("Fetching PR #%d from %s...", prNumber, remote))
 
 	fetchArgs := []string{"-C", repoDir, "fetch", remote, refSpec}
 	result, err := c.runner.RunLogged(fetchArgs...)
 	if err != nil {
-		return gitutil.WrapGitError("failed to fetch PR", result, err)
+		return report, gitutil.WrapGitError("failed to fetch PR", result, err)
 	}
 
 	// Create worktree
 	addArgs := []string{"-C", repoDir, "worktree", "add", targetPath, branchName}
 	result, err = c.runner.RunLogged(addArgs...)
 	if err != nil {
-		return gitutil.WrapGitError("failed to create worktree", result, err)
+		return report, gitutil.WrapGitError("failed to create worktree", result, err)
 	}
 
 	// Sync shared resources
-	if err := c.SyncSharedResources(branchName); err != nil {
-		fmt.Printf("Warning: failed to sync shared resources: %v\n", err)
+	sharedReport, err := c.SyncSharedResources(branchName)
+	report.Merge(sharedReport)
+	if err != nil {
+		report.Warn(fmt.Sprintf("Warning: failed to sync shared resources: %v", err))
 	}
 
-	fmt.Printf("Created PR worktree '%s' at %s\n", branchName, targetPath)
-	fmt.Printf("Commit: %s\n", commitHash[:7])
-	fmt.Printf("Next step: cd %s\n", targetPath)
+	report.Info(fmt.Sprintf("Created PR worktree '%s' at %s", branchName, targetPath))
+	report.Info("Commit: " + commitHash[:7])
+	report.Info("Next step: cd " + targetPath)
 
-	return nil
+	return report, nil
 }

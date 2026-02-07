@@ -21,7 +21,7 @@ Requires shell integration. If not set up, run:
 
 Without shell integration, this command will only print the path.`,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		wtClient := newWorktreeClient()
 		return runWorktreeSwitch(wtClient)
 	},
 }

@@ -19,22 +19,24 @@ type PruneOptions struct {
 }
 
 // Prune removes worktrees whose branches are merged into the base branch.
-func (c *Client) Prune(opts PruneOptions) error {
+func (c *Client) Prune(opts PruneOptions) (Report, error) {
+	var report Report
+
 	root, err := c.GetWorktreeRoot()
 	if err != nil {
-		return fmt.Errorf("failed to find worktree root: %w", err)
+		return report, fmt.Errorf("failed to find worktree root: %w", err)
 	}
 
 	baseBranch, err := c.resolveBaseBranch(root, opts.BaseBranch)
 	if err != nil {
-		return err
+		return report, err
 	}
 
 	baseBranchName := localBranchName(baseBranch)
 
 	worktrees, err := c.List()
 	if err != nil {
-		return err
+		return report, err
 	}
 
 	repoDir := repoDirForGit(root)
@@ -46,21 +48,21 @@ func (c *Client) Prune(opts PruneOptions) error {
 
 		name := filepath.Base(wt.Path)
 		if wt.IsLocked {
-			fmt.Fprintf(os.Stderr, "Skipped %s: worktree is locked\n", name)
+			report.Warn(fmt.Sprintf("Skipped %s: worktree is locked", name))
 			continue
 		}
 		if wt.Branch == "" || wt.Branch == "(detached)" {
-			fmt.Fprintf(os.Stderr, "Skipped %s: detached HEAD\n", name)
+			report.Warn(fmt.Sprintf("Skipped %s: detached HEAD", name))
 			continue
 		}
 		if wt.Branch == baseBranchName {
-			fmt.Fprintf(os.Stderr, "Skipped %s: base branch '%s'\n", name, baseBranchName)
+			report.Warn(fmt.Sprintf("Skipped %s: base branch '%s'", name, baseBranchName))
 			continue
 		}
 
 		merged, err := c.isBranchMerged(root, wt.Branch, baseBranch)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Skipped %s: %v\n", name, err)
+			report.Warn(fmt.Sprintf("Skipped %s: %v", name, err))
 			continue
 		}
 		if !merged {
@@ -69,15 +71,15 @@ func (c *Client) Prune(opts PruneOptions) error {
 
 		status := c.GetWorktreeStatus(wt.Path)
 		if status == "modified" && !opts.Force {
-			fmt.Fprintf(os.Stderr, "Skipped %s: worktree has uncommitted changes (use --force)\n", name)
+			report.Warn(fmt.Sprintf("Skipped %s: worktree has uncommitted changes (use --force)", name))
 			continue
 		}
 
 		if opts.DryRun {
-			fmt.Fprintf(os.Stderr, "Would remove worktree: %s\n", wt.Path)
-			fmt.Fprintf(os.Stderr, "  Branch: %s\n", wt.Branch)
-			fmt.Fprintf(os.Stderr, "  Status: %s\n", status)
-			fmt.Fprintf(os.Stderr, "Would delete branch: %s\n", wt.Branch)
+			report.Warn("Would remove worktree: " + wt.Path)
+			report.Warn("  Branch: " + wt.Branch)
+			report.Warn("  Status: " + status)
+			report.Warn("Would delete branch: " + wt.Branch)
 			prunedAny = true
 			continue
 		}
@@ -90,52 +92,27 @@ func (c *Client) Prune(opts PruneOptions) error {
 
 		result, err := c.runner.RunLogged(args...)
 		if err != nil {
-			return gitutil.WrapGitError("failed to remove worktree", result, err)
+			return report, gitutil.WrapGitError("failed to remove worktree", result, err)
 		}
-		fmt.Fprintf(os.Stderr, "Removed worktree '%s'\n", name)
+		report.Warn(fmt.Sprintf("Removed worktree '%s'", name))
 
 		result, err = c.runner.RunLogged("-C", repoDir, "branch", "-D", wt.Branch)
 		if err != nil {
-			return gitutil.WrapGitError("failed to delete branch", result, err)
+			return report, gitutil.WrapGitError("failed to delete branch", result, err)
 		}
-		fmt.Fprintf(os.Stderr, "Deleted branch '%s'\n", wt.Branch)
+		report.Warn(fmt.Sprintf("Deleted branch '%s'", wt.Branch))
 		prunedAny = true
 	}
 
 	if !prunedAny {
-		fmt.Fprintln(os.Stderr, "No worktrees pruned.")
+		report.Warn("No worktrees pruned.")
 	}
 
-	return nil
+	return report, nil
 }
 
 func (c *Client) resolveBaseBranch(root string, override string) (string, error) {
-	if override != "" {
-		return override, nil
-	}
-	if root == "" {
-		return "", errors.New("cannot determine base branch: repository root is empty")
-	}
-
-	repoDir := repoDirForGit(root)
-
-	if ref := c.gitSymbolicRef(repoDir, "refs/remotes/origin/HEAD"); ref != "" {
-		return ref, nil
-	}
-	if ref := c.gitSymbolicRef(repoDir, "refs/remotes/upstream/HEAD"); ref != "" {
-		return ref, nil
-	}
-	if ref := c.gitSymbolicRef(repoDir, "HEAD"); ref != "" {
-		return ref, nil
-	}
-
-	for _, branch := range []string{"main", "master"} {
-		if c.gitRefExists(repoDir, "refs/heads/"+branch) {
-			return branch, nil
-		}
-	}
-
-	return "", errors.New("could not determine base branch; specify with --base")
+	return c.resolveBaseBranchWithPolicy(repoDirForGit(root), override, true)
 }
 
 func (c *Client) isBranchMerged(root string, branch string, base string) (bool, error) {
@@ -167,19 +144,6 @@ func repoDirForGit(root string) string {
 		return bareDir
 	}
 	return root
-}
-
-func (c *Client) gitSymbolicRef(repoDir string, ref string) string {
-	result, err := c.runner.Run("-C", repoDir, "symbolic-ref", "--short", ref)
-	if err != nil {
-		return ""
-	}
-	return result.StdoutString(true)
-}
-
-func (c *Client) gitRefExists(repoDir string, ref string) bool {
-	_, err := c.runner.Run("-C", repoDir, "rev-parse", "--verify", ref)
-	return err == nil
 }
 
 func localBranchName(ref string) string {

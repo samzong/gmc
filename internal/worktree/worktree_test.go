@@ -481,7 +481,7 @@ func TestSync_UpstreamFastForwardAndPushOrigin(t *testing.T) {
 	}
 
 	client := NewClient(Options{})
-	if err := client.Sync(SyncOptions{}); err != nil {
+	if _, err := client.Sync(SyncOptions{}); err != nil {
 		t.Fatalf("Sync() error = %v", err)
 	}
 
@@ -555,7 +555,7 @@ func TestPrune_RemovesMergedWorktreeAndBranch(t *testing.T) {
 	}
 
 	client := NewClient(Options{})
-	if err := client.Prune(PruneOptions{}); err != nil {
+	if _, err := client.Prune(PruneOptions{}); err != nil {
 		t.Fatalf("Prune() error = %v", err)
 	}
 

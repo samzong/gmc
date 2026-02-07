@@ -24,7 +24,7 @@ If run without arguments, it opens an interactive mode to manage resources.
 
 Config file is stored at .gmc-shared.yml in the worktree root.`,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		wtClient := newWorktreeClient()
 		return runWorktreeShareInteractive(wtClient)
 	},
 }
@@ -39,7 +39,7 @@ Strategies:
   - link: Creates a symlink (good for large model directories)`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		wtClient := newWorktreeClient()
 
 		strategy := worktree.ResourceStrategy(shareStrategy)
 		// If strategy not explicitly set via flag, ask interactively
@@ -58,7 +58,9 @@ Strategies:
 			}
 		}
 
-		if err := wtClient.AddSharedResource(args[0], strategy); err != nil {
+		report, err := wtClient.AddSharedResource(args[0], strategy)
+		printWorktreeReport(report)
+		if err != nil {
 			return err
 		}
 		return askToSyncAll(wtClient)
@@ -71,8 +73,10 @@ var wtShareRemoveCmd = &cobra.Command{
 	Short:   "Remove a shared resource from config",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
-		if err := wtClient.RemoveSharedResource(args[0]); err != nil {
+		wtClient := newWorktreeClient()
+		report, err := wtClient.RemoveSharedResource(args[0])
+		printWorktreeReport(report)
+		if err != nil {
 			return err
 		}
 		fmt.Println("Note: This does not remove the files from existing worktrees, only from the config.")
@@ -85,7 +89,7 @@ var wtShareListCmd = &cobra.Command{
 	Aliases: []string{"ls"},
 	Short:   "List configured shared resources",
 	RunE: func(_ *cobra.Command, _ []string) error {
-		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		wtClient := newWorktreeClient()
 		cfg, _, err := wtClient.LoadSharedConfig()
 		if err != nil {
 			return err
@@ -108,8 +112,10 @@ var wtShareSyncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Manually sync shared resources to all worktrees",
 	RunE: func(_ *cobra.Command, _ []string) error {
-		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
-		return wtClient.SyncAllSharedResources()
+		wtClient := newWorktreeClient()
+		report, err := wtClient.SyncAllSharedResources()
+		printWorktreeReport(report)
+		return err
 	},
 }
 
@@ -161,7 +167,9 @@ func runWorktreeShareInteractive(c *worktree.Client) error {
 		case "r":
 			promptRemoveResource(c, reader, cfg)
 		case "s":
-			if err := c.SyncAllSharedResources(); err != nil {
+			report, err := c.SyncAllSharedResources()
+			printWorktreeReport(report)
+			if err != nil {
 				fmt.Printf("Error syncing: %v\n", err)
 			} else {
 				fmt.Println("Sync complete!")
@@ -220,7 +228,9 @@ func promptAddResource(c *worktree.Client, reader *bufio.Reader) {
 		strategy = worktree.StrategyCopy
 	}
 
-	if err := c.AddSharedResource(path, strategy); err != nil {
+	report, err := c.AddSharedResource(path, strategy)
+	printWorktreeReport(report)
+	if err != nil {
 		fmt.Printf("Error adding resource: %v\n", err)
 	} else {
 		fmt.Println("Resource added!")
@@ -229,7 +239,9 @@ func promptAddResource(c *worktree.Client, reader *bufio.Reader) {
 		syncInput, _ := reader.ReadString('\n')
 		syncInput = strings.TrimSpace(strings.ToLower(syncInput))
 		if syncInput == "" || syncInput == "y" || syncInput == "yes" {
-			if err := c.SyncAllSharedResources(); err != nil {
+			report, err := c.SyncAllSharedResources()
+			printWorktreeReport(report)
+			if err != nil {
 				fmt.Printf("Warning: failed to sync: %v\n", err)
 			}
 		}
@@ -250,7 +262,9 @@ func promptRemoveResource(c *worktree.Client, reader *bufio.Reader, cfg *worktre
 	}
 
 	res := cfg.Resources[num-1]
-	if err := c.RemoveSharedResource(res.Path); err != nil {
+	report, err := c.RemoveSharedResource(res.Path)
+	printWorktreeReport(report)
+	if err != nil {
 		fmt.Printf("Error removing resource: %v\n", err)
 	} else {
 		fmt.Printf("Resource '%s' removed from config.\n", res.Path)
@@ -263,10 +277,7 @@ func promptContinue(reader *bufio.Reader) {
 }
 
 func askToSyncAll(c *worktree.Client) error {
-	// In CLI mode, we might not want to interactively ask unless it's a TTY
-	// But the user request specifically asked for "sync to all existing worktrees"
-	// Let's do it automatically or log a suggestion if not interactive?
-	// For now, let's just do it automatically as implied by the user request "Every time I modify it..."
-	fmt.Println("Syncing changes to all worktrees...")
-	return c.SyncAllSharedResources()
+	report, err := c.SyncAllSharedResources()
+	printWorktreeReport(report)
+	return err
 }

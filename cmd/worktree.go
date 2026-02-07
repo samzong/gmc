@@ -31,7 +31,7 @@ This command simplifies multi-branch parallel development using the
 bare repository (.bare) + worktree pattern.
 `,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		wtClient := newWorktreeClient()
 		return runWorktreeDefault(wtClient, cmd)
 	},
 }
@@ -50,7 +50,7 @@ Examples:
   gmc wt add hotfix-bug123 -b release`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		wtClient := newWorktreeClient()
 		return runWorktreeAdd(wtClient, args[0])
 	},
 }
@@ -61,7 +61,7 @@ var wtListCmd = &cobra.Command{
 	Short:   "List all worktrees (alias: ls)",
 	Long:    `List all worktrees in the current repository.`,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		wtClient := newWorktreeClient()
 		return runWorktreeList(wtClient)
 	},
 }
@@ -82,7 +82,7 @@ Examples:
   gmc wt rm feature-login --dry-run  # Preview what would be removed`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		wtClient := newWorktreeClient()
 		return runWorktreeRemove(wtClient, args[0])
 	},
 }
@@ -103,7 +103,7 @@ Examples:
   gmc wt clone https://github.com/me/fork.git --upstream https://github.com/org/repo.git`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		wtClient := newWorktreeClient()
 		return runWorktreeClone(wtClient, args[0])
 	},
 }
@@ -123,7 +123,7 @@ Examples:
   gmc wt dup 3 -b dev  # Create 3 worktrees based on dev`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		wtClient := newWorktreeClient()
 		return runWorktreeDup(wtClient, args)
 	},
 }
@@ -140,7 +140,7 @@ Examples:
   gmc wt promote .dup-1 fix/login-bug`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		wtClient := newWorktreeClient()
 		return runWorktreePromote(wtClient, args[0], args[1])
 	},
 }
@@ -162,8 +162,10 @@ Examples:
 			return fmt.Errorf("invalid PR number: %s", args[0])
 		}
 
-		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
-		return wtClient.AddPR(prNumber, prRemote)
+		wtClient := newWorktreeClient()
+		report, err := wtClient.AddPR(prNumber, prRemote)
+		printWorktreeReport(report)
+		return err
 	},
 }
 
@@ -298,7 +300,9 @@ func runWorktreeAdd(wtClient *worktree.Client, name string) error {
 			BaseBranch: baseBranch,
 			DryRun:     false,
 		}
-		if err := wtClient.Sync(syncOpts); err != nil {
+		report, err := wtClient.Sync(syncOpts)
+		printWorktreeReport(report)
+		if err != nil {
 			return err
 		}
 	}
@@ -306,7 +310,9 @@ func runWorktreeAdd(wtClient *worktree.Client, name string) error {
 		BaseBranch: baseBranch,
 		Fetch:      false,
 	}
-	return wtClient.Add(name, opts)
+	report, err := wtClient.Add(name, opts)
+	printWorktreeReport(report)
+	return err
 }
 
 func runWorktreeList(wtClient *worktree.Client) error {
@@ -333,7 +339,9 @@ func runWorktreeRemove(wtClient *worktree.Client, name string) error {
 		DeleteBranch: wtDeleteBranch,
 		DryRun:       wtDryRun,
 	}
-	return wtClient.Remove(name, opts)
+	report, err := wtClient.Remove(name, opts)
+	printWorktreeReport(report)
+	return err
 }
 
 func runWorktreeClone(wtClient *worktree.Client, url string) error {
@@ -341,7 +349,9 @@ func runWorktreeClone(wtClient *worktree.Client, url string) error {
 		Name:     wtProjectName,
 		Upstream: wtUpstream,
 	}
-	return wtClient.Clone(url, opts)
+	report, err := wtClient.Clone(url, opts)
+	printWorktreeReport(report)
+	return err
 }
 
 func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Info) {
@@ -424,6 +434,9 @@ func runWorktreeDup(wtClient *worktree.Client, args []string) error {
 	if err != nil {
 		return err
 	}
+	for _, warning := range result.Warnings {
+		fmt.Fprintln(errWriter(), warning)
+	}
 
 	fmt.Fprintf(outWriter(), "Created %d worktrees based on '%s':\n", len(result.Worktrees), opts.BaseBranch)
 	for i, wt := range result.Worktrees {
@@ -440,7 +453,9 @@ func runWorktreeDup(wtClient *worktree.Client, args []string) error {
 }
 
 func runWorktreePromote(wtClient *worktree.Client, worktreeName, branchName string) error {
-	return wtClient.Promote(worktreeName, branchName)
+	report, err := wtClient.Promote(worktreeName, branchName)
+	printWorktreeReport(report)
+	return err
 }
 
 // Completion functions

@@ -54,7 +54,7 @@ shared:
 	defer func() { _ = os.Chdir(oldCwd) }()
 
 	// Run sync
-	err = client.SyncSharedResources(wtName)
+	_, err = client.SyncSharedResources(wtName)
 	require.NoError(t, err)
 
 	// Verify .env (copy)

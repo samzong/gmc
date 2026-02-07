@@ -76,6 +76,20 @@ type RemoveOptions struct {
 	DryRun       bool // Preview what would be done without making changes
 }
 
+type addContext struct {
+	name       string
+	repoDir    string
+	targetPath string
+	baseBranch string
+}
+
+type removeContext struct {
+	name       string
+	repoDir    string
+	targetPath string
+	wtInfo     Info
+}
+
 // DetectRepositoryType detects the type of git repository in the current or specified directory
 func (c *Client) DetectRepositoryType(dir string) (RepoType, error) {
 	if dir == "" {
@@ -273,165 +287,177 @@ func parseWorktreeList(output string) ([]Info, error) {
 }
 
 // Add creates a new worktree with a new branch
-func (c *Client) Add(name string, opts AddOptions) error {
-	if name == "" {
-		return errors.New("worktree name cannot be empty")
-	}
+func (c *Client) Add(name string, opts AddOptions) (Report, error) {
+	var report Report
 
-	// Validate branch name
-	if err := validateBranchName(name); err != nil {
-		return err
-	}
-
-	// Find the worktree root
-	root, err := c.GetWorktreeRoot()
+	ctx, err := c.prepareAdd(name, opts)
 	if err != nil {
-		return fmt.Errorf("failed to find worktree root: %w", err)
-	}
-	repoDir := repoDirForGit(root)
-
-	// Target path for the new worktree
-	targetPath := filepath.Join(root, name)
-
-	// Check if directory already exists
-	if _, err := os.Stat(targetPath); err == nil {
-		return fmt.Errorf("directory already exists: %s", targetPath)
+		return report, err
 	}
 
-	// Determine base branch
-	baseBranch := opts.BaseBranch
-	if baseBranch == "" {
-		// Default to HEAD
-		baseBranch = "HEAD"
-	}
-
-	// Optionally fetch first
-	if opts.Fetch {
-		if c.verbose {
-			fmt.Fprintln(os.Stderr, "Fetching latest changes...")
-		}
-		_ = c.runner.RunWithWriters(false, nil, os.Stderr, "-C", repoDir, "fetch", "--all") // Ignore fetch errors
-	}
-
-	// Check if branch already exists
-	var args []string
-	branchExistsFlag, _ := c.branchExists(name)
-	if branchExistsFlag {
-		// Branch exists: create worktree from existing branch
-		args = []string{"-C", repoDir, "worktree", "add", targetPath, name}
-	} else {
-		// Branch does not exist: create new branch
-		args = []string{"-C", repoDir, "worktree", "add", "-b", name, targetPath, baseBranch}
-	}
-
+	c.maybeFetchForAdd(ctx, opts, &report)
+	args, branchExists := c.addArgs(ctx)
 	result, err := c.runner.RunLogged(args...)
 	if err != nil {
-		return gitutil.WrapGitError("failed to create worktree", result, err)
+		return report, gitutil.WrapGitError("failed to create worktree", result, err)
 	}
 
-	// Sync shared resources
-	if err := c.SyncSharedResources(name); err != nil {
-		fmt.Printf("Warning: failed to sync shared resources: %v\n", err)
+	sharedReport, err := c.SyncSharedResources(name)
+	report.Merge(sharedReport)
+	if err != nil {
+		report.Warn(fmt.Sprintf("Warning: failed to sync shared resources: %v", err))
 	}
 
-	if branchExistsFlag {
-		fmt.Printf("Created worktree '%s' at %s\n", name, targetPath)
-		fmt.Printf("Branch: %s (existing)\n", name)
-	} else {
-		fmt.Printf("Created worktree '%s' at %s\n", name, targetPath)
-		fmt.Printf("Branch: %s (based on %s)\n", name, baseBranch)
-	}
-	fmt.Printf("Next step: cd %s\n", targetPath)
-
-	return nil
+	c.appendAddSummary(&report, ctx, branchExists)
+	return report, nil
 }
 
 // Remove removes a worktree
-func (c *Client) Remove(name string, opts RemoveOptions) error {
-	if name == "" {
-		return errors.New("worktree name cannot be empty")
+func (c *Client) Remove(name string, opts RemoveOptions) (Report, error) {
+	var report Report
+
+	ctx, err := c.prepareRemove(name)
+	if err != nil {
+		return report, err
 	}
 
-	// Find the worktree root
+	if opts.DryRun {
+		status := c.GetWorktreeStatus(ctx.targetPath)
+		report.Warn("Would remove worktree: " + ctx.targetPath)
+		report.Warn("  Branch: " + ctx.wtInfo.Branch)
+		report.Warn("  Status: " + status)
+		if opts.DeleteBranch && ctx.wtInfo.Branch != "" && ctx.wtInfo.Branch != "(detached)" {
+			report.Warn("Would delete branch: " + ctx.wtInfo.Branch)
+		}
+		if status == "modified" && !opts.Force {
+			report.Warn("Note: Worktree has uncommitted changes. Use -f to force removal.")
+		}
+		return report, nil
+	}
+
+	args := []string{"-C", ctx.repoDir, "worktree", "remove"}
+	if opts.Force {
+		args = append(args, "--force")
+	}
+	args = append(args, ctx.targetPath)
+
+	result, err := c.runner.RunLogged(args...)
+	if err != nil {
+		return report, gitutil.WrapGitError("failed to remove worktree", result, err)
+	}
+
+	report.Warn(fmt.Sprintf("Removed worktree '%s'", ctx.name))
+
+	if opts.DeleteBranch && ctx.wtInfo.Branch != "" && ctx.wtInfo.Branch != "(detached)" {
+		args := []string{"-C", ctx.repoDir, "branch", "-D", ctx.wtInfo.Branch}
+		result, err := c.runner.RunLogged(args...)
+		if err != nil {
+			return report, gitutil.WrapGitError("failed to delete branch", result, err)
+		}
+
+		report.Warn(fmt.Sprintf("Deleted branch '%s'", ctx.wtInfo.Branch))
+	}
+
+	return report, nil
+}
+
+func (c *Client) prepareAdd(name string, opts AddOptions) (addContext, error) {
+	if name == "" {
+		return addContext{}, errors.New("worktree name cannot be empty")
+	}
+	if err := validateBranchName(name); err != nil {
+		return addContext{}, err
+	}
+
 	root, err := c.GetWorktreeRoot()
 	if err != nil {
-		return fmt.Errorf("failed to find worktree root: %w", err)
+		return addContext{}, fmt.Errorf("failed to find worktree root: %w", err)
 	}
-	repoDir := repoDirForGit(root)
 
-	// Target path
 	targetPath := filepath.Join(root, name)
+	if _, err := os.Stat(targetPath); err == nil {
+		return addContext{}, fmt.Errorf("directory already exists: %s", targetPath)
+	}
 
-	// Check if worktree exists
+	baseBranch := opts.BaseBranch
+	if baseBranch == "" {
+		baseBranch = "HEAD"
+	}
+
+	return addContext{
+		name:       name,
+		repoDir:    repoDirForGit(root),
+		targetPath: targetPath,
+		baseBranch: baseBranch,
+	}, nil
+}
+
+func (c *Client) maybeFetchForAdd(ctx addContext, opts AddOptions, report *Report) {
+	if !opts.Fetch {
+		return
+	}
+	report.Info("Fetching latest changes...")
+	_ = c.runner.RunStreamingLogged("-C", ctx.repoDir, "fetch", "--all")
+}
+
+func (c *Client) addArgs(ctx addContext) ([]string, bool) {
+	branchExists, _ := c.branchExists(ctx.name)
+	if branchExists {
+		return []string{"-C", ctx.repoDir, "worktree", "add", ctx.targetPath, ctx.name}, true
+	}
+	return []string{"-C", ctx.repoDir, "worktree", "add", "-b", ctx.name, ctx.targetPath, ctx.baseBranch}, false
+}
+
+func (c *Client) appendAddSummary(report *Report, ctx addContext, branchExists bool) {
+	report.Info(fmt.Sprintf("Created worktree '%s' at %s", ctx.name, ctx.targetPath))
+	if branchExists {
+		report.Info(fmt.Sprintf("Branch: %s (existing)", ctx.name))
+	} else {
+		report.Info(fmt.Sprintf("Branch: %s (based on %s)", ctx.name, ctx.baseBranch))
+	}
+	report.Info("Next step: cd " + ctx.targetPath)
+}
+
+func (c *Client) prepareRemove(name string) (removeContext, error) {
+	if name == "" {
+		return removeContext{}, errors.New("worktree name cannot be empty")
+	}
+
+	root, err := c.GetWorktreeRoot()
+	if err != nil {
+		return removeContext{}, fmt.Errorf("failed to find worktree root: %w", err)
+	}
+
+	targetPath := filepath.Join(root, name)
 	worktrees, err := c.List()
 	if err != nil {
-		return err
+		return removeContext{}, err
 	}
 
 	var found bool
 	var wtInfo Info
 	for _, wt := range worktrees {
-		// Calculate relative path for comparison
 		relPath := strings.TrimPrefix(wt.Path, root+string(filepath.Separator))
-
-		// Only support exact path matching (absolute or relative)
 		if wt.Path == targetPath || relPath == name {
-			found = true
 			wtInfo = wt
 			targetPath = wt.Path
+			found = true
 			break
 		}
 	}
-
 	if !found {
-		return fmt.Errorf("worktree not found: %s\nUse 'gmc wt ls' to see available worktrees", name)
+		return removeContext{}, fmt.Errorf("worktree not found: %s\nUse 'gmc wt ls' to see available worktrees", name)
 	}
-
 	if wtInfo.IsBare {
-		return errors.New("cannot remove the main bare worktree")
+		return removeContext{}, errors.New("cannot remove the main bare worktree")
 	}
 
-	// Dry run: preview what would be done
-	if opts.DryRun {
-		status := c.GetWorktreeStatus(targetPath)
-		fmt.Fprintf(os.Stderr, "Would remove worktree: %s\n", targetPath)
-		fmt.Fprintf(os.Stderr, "  Branch: %s\n", wtInfo.Branch)
-		fmt.Fprintf(os.Stderr, "  Status: %s\n", status)
-		if opts.DeleteBranch && wtInfo.Branch != "" && wtInfo.Branch != "(detached)" {
-			fmt.Fprintf(os.Stderr, "Would delete branch: %s\n", wtInfo.Branch)
-		}
-		if status == "modified" && !opts.Force {
-			fmt.Fprintln(os.Stderr, "Note: Worktree has uncommitted changes. Use -f to force removal.")
-		}
-		return nil
-	}
-
-	// Remove worktree
-	args := []string{"-C", repoDir, "worktree", "remove"}
-	if opts.Force {
-		args = append(args, "--force")
-	}
-	args = append(args, targetPath)
-
-	result, err := c.runner.RunLogged(args...)
-	if err != nil {
-		return gitutil.WrapGitError("failed to remove worktree", result, err)
-	}
-
-	fmt.Fprintf(os.Stderr, "Removed worktree '%s'\n", name)
-
-	// Optionally delete branch
-	if opts.DeleteBranch && wtInfo.Branch != "" && wtInfo.Branch != "(detached)" {
-		args := []string{"-C", repoDir, "branch", "-D", wtInfo.Branch}
-		result, err := c.runner.RunLogged(args...)
-		if err != nil {
-			return gitutil.WrapGitError("failed to delete branch", result, err)
-		}
-
-		fmt.Fprintf(os.Stderr, "Deleted branch '%s'\n", wtInfo.Branch)
-	}
-
-	return nil
+	return removeContext{
+		name:       name,
+		repoDir:    repoDirForGit(root),
+		targetPath: targetPath,
+		wtInfo:     wtInfo,
+	}, nil
 }
 
 // GetWorktreeStatus returns the git status of a worktree with detailed file counts
@@ -541,6 +567,7 @@ type DupOptions struct {
 type DupResult struct {
 	Worktrees []string // Created worktree directories
 	Branches  []string // Created branch names
+	Warnings  []string // Non-fatal warnings generated during creation
 }
 
 // Dup creates multiple worktrees with temporary branches for parallel development
@@ -582,8 +609,17 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 		}
 
 		// Sync shared resources
-		if err := c.SyncSharedResources(dirName); err != nil {
-			fmt.Printf("Warning: failed to sync shared resources for %s: %v\n", dirName, err)
+		sharedReport, err := c.SyncSharedResources(dirName)
+		if err != nil {
+			dupResult.Warnings = append(
+				dupResult.Warnings,
+				fmt.Sprintf("Warning: failed to sync shared resources for %s: %v", dirName, err),
+			)
+		}
+		for _, event := range sharedReport.Events {
+			if event.Level == EventWarn {
+				dupResult.Warnings = append(dupResult.Warnings, event.Message)
+			}
 		}
 
 		dupResult.Worktrees = append(dupResult.Worktrees, dirName)
@@ -594,50 +630,52 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 }
 
 // Promote renames the branch of a worktree to a permanent name
-func (c *Client) Promote(worktreeName, newBranchName string) error {
+func (c *Client) Promote(worktreeName, newBranchName string) (Report, error) {
+	var report Report
+
 	if worktreeName == "" {
-		return errors.New("worktree name cannot be empty")
+		return report, errors.New("worktree name cannot be empty")
 	}
 	if newBranchName == "" {
-		return errors.New("branch name cannot be empty")
+		return report, errors.New("branch name cannot be empty")
 	}
 
 	if err := validateBranchName(newBranchName); err != nil {
-		return err
+		return report, err
 	}
 
 	root, err := c.GetWorktreeRoot()
 	if err != nil {
-		return fmt.Errorf("failed to find worktree root: %w", err)
+		return report, fmt.Errorf("failed to find worktree root: %w", err)
 	}
 
 	targetPath := filepath.Join(root, worktreeName)
 
 	// Verify worktree exists
 	if _, err := os.Stat(targetPath); os.IsNotExist(err) {
-		return fmt.Errorf("worktree not found: %s", worktreeName)
+		return report, fmt.Errorf("worktree not found: %s", worktreeName)
 	}
 
 	// Get current branch name
 	result, err := c.runner.Run("-C", targetPath, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
-		return fmt.Errorf("failed to get current branch: %w", err)
+		return report, fmt.Errorf("failed to get current branch: %w", err)
 	}
 
 	oldBranch := result.StdoutString(true)
 	if oldBranch == "HEAD" {
-		return errors.New("worktree is in detached HEAD state, cannot promote")
+		return report, errors.New("worktree is in detached HEAD state, cannot promote")
 	}
 
 	// Rename branch
 	args := []string{"-C", targetPath, "branch", "-m", newBranchName}
 	result, err = c.runner.RunLogged(args...)
 	if err != nil {
-		return gitutil.WrapGitError("failed to rename branch", result, err)
+		return report, gitutil.WrapGitError("failed to rename branch", result, err)
 	}
 
-	fmt.Printf("Promoted '%s' -> '%s'\n", oldBranch, newBranchName)
-	return nil
+	report.Info(fmt.Sprintf("Promoted '%s' -> '%s'", oldBranch, newBranchName))
+	return report, nil
 }
 
 // getCurrentTimestamp returns current unix timestamp

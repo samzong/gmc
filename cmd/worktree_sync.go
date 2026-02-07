@@ -19,7 +19,7 @@ var wtSyncCmd = &cobra.Command{
 This updates the base branch using fast-forward only and optionally
 updates the base worktree when it's clean.`,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		wtClient := worktree.NewClient(worktree.Options{Verbose: verbose})
+		wtClient := newWorktreeClient()
 		return runWorktreeSync(wtClient)
 	},
 }
@@ -38,5 +38,7 @@ func runWorktreeSync(wtClient *worktree.Client) error {
 		BaseBranch: wtSyncBase,
 		DryRun:     wtSyncDryRun,
 	}
-	return wtClient.Sync(opts)
+	report, err := wtClient.Sync(opts)
+	printWorktreeReport(report)
+	return err
 }

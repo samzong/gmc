@@ -18,6 +18,8 @@ type Gitmoji struct {
 
 // gitmojis contains the complete gitmoji.dev specification
 // Source: https://github.com/carloscuesta/gitmoji
+//
+//nolint:lll // data table from upstream spec, line length is unavoidable
 var gitmojis = []Gitmoji{
 	{Emoji: "🎨", Code: ":art:", Description: "Improve structure / format of the code", Name: "art", Semver: ""},
 	{Emoji: "⚡️", Code: ":zap:", Description: "Improve performance", Name: "zap", Semver: "patch"},

@@ -9,142 +9,126 @@ import (
 	"strings"
 )
 
-// CloneOptions options for cloning a repository
 type CloneOptions struct {
 	Name     string // Custom project name
 	Upstream string // Upstream URL for fork workflow
 }
 
-// Clone clones a repository as a bare + worktree structure
-func (c *Client) Clone(repoURL string, opts CloneOptions) error {
+func (c *Client) Clone(repoURL string, opts CloneOptions) (Report, error) {
+	var report Report
+
 	if repoURL == "" {
-		return errors.New("repository URL cannot be empty")
+		return report, errors.New("repository URL cannot be empty")
 	}
 
-	// Determine project name
 	projectName := opts.Name
 	if projectName == "" {
 		var err error
 		projectName, err = extractProjectName(repoURL)
 		if err != nil {
-			return err
+			return report, err
 		}
 	}
 
-	// Check if directory already exists
 	if _, err := os.Stat(projectName); err == nil {
-		return fmt.Errorf("directory already exists: %s", projectName)
+		return report, fmt.Errorf("directory already exists: %s", projectName)
 	}
 
-	fmt.Printf("Cloning %s as bare + worktree structure...\n", repoURL)
-	fmt.Println()
+	report.Info(fmt.Sprintf("Cloning %s as bare + worktree structure...", repoURL))
+	report.Info("")
 
-	// Create project directory
 	if err := os.MkdirAll(projectName, 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
+		return report, fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	bareDir := filepath.Join(projectName, ".bare")
 
-	// Clone as bare repository - pass output to user for progress
 	args := []string{"clone", "--bare", "--progress", repoURL, bareDir}
 	if err := c.runner.RunStreamingLogged(args...); err != nil {
-		// Clean up on failure
 		os.RemoveAll(projectName)
-		return fmt.Errorf("failed to clone repository: %w", err)
+		return report, fmt.Errorf("failed to clone repository: %w", err)
 	}
-	fmt.Println()
+	report.Info("")
 
-	// Determine default branch BEFORE configuring (while still bare=true)
 	defaultBranch, err := c.getDefaultBranch(bareDir)
 	if err != nil {
-		defaultBranch = "main" // Fallback
+		defaultBranch = "main"
 	}
 
-	// Create the main worktree FIRST (while bare=true, so branch is not "in use")
 	absProjectDir, err := filepath.Abs(projectName)
 	if err != nil {
 		os.RemoveAll(projectName)
-		return fmt.Errorf("failed to get absolute path: %w", err)
+		return report, fmt.Errorf("failed to get absolute path: %w", err)
 	}
 	mainWorktree := filepath.Join(absProjectDir, defaultBranch)
 	args = []string{"-C", bareDir, "worktree", "add", mainWorktree, defaultBranch}
 	if err := c.runner.RunStreamingLogged(args...); err != nil {
 		os.RemoveAll(projectName)
-		return fmt.Errorf("failed to create main worktree: %w", err)
+		return report, fmt.Errorf("failed to create main worktree: %w", err)
 	}
 
-	// NOW configure the bare repository (after worktree is created)
-	if err := c.configureBareRepo(bareDir, opts.Upstream); err != nil {
+	configReport, err := c.configureBareRepo(bareDir, opts.Upstream)
+	report.Merge(configReport)
+	if err != nil {
 		os.RemoveAll(projectName)
-		return err
+		return report, err
 	}
 
-	// Print success message
-	fmt.Println()
-	fmt.Printf("Successfully cloned to %s/\n", projectName)
-	fmt.Println()
-	fmt.Println("Directory Structure:")
-	fmt.Printf("  %s/\n", projectName)
-	fmt.Printf("  ├── .bare/          # Bare repository\n")
-	fmt.Printf("  └── %s/           # Main worktree\n", defaultBranch)
-	fmt.Println()
+	report.Info("")
+	report.Info(fmt.Sprintf("Successfully cloned to %s/", projectName))
+	report.Info("")
+	report.Info("Directory Structure:")
+	report.Info(fmt.Sprintf("  %s/", projectName))
+	report.Info("  ├── .bare/          # Bare repository")
+	report.Info(fmt.Sprintf("  └── %s/           # Main worktree", defaultBranch))
+	report.Info("")
 
 	if opts.Upstream != "" {
-		fmt.Println("Remote Configuration:")
-		fmt.Println("  origin   = " + repoURL + " (your fork)")
-		fmt.Println("  upstream = " + opts.Upstream + " (upstream)")
-		fmt.Println()
+		report.Info("Remote Configuration:")
+		report.Info("  origin   = " + repoURL + " (your fork)")
+		report.Info("  upstream = " + opts.Upstream + " (upstream)")
+		report.Info("")
 	}
 
-	fmt.Println("Next steps:")
-	fmt.Printf("  cd %s/%s\n", projectName, defaultBranch)
-	fmt.Println("  gmc wt add feature-name")
+	report.Info("Next steps:")
+	report.Info(fmt.Sprintf("  cd %s/%s", projectName, defaultBranch))
+	report.Info("  gmc wt add feature-name")
 
-	return nil
+	return report, nil
 }
 
-// configureBareRepo configures the bare repository for worktree usage
-func (c *Client) configureBareRepo(bareDir string, upstreamURL string) error {
-	// Note: We keep core.bare = true (default after git clone --bare)
-	// Git worktree works correctly with bare = true
+func (c *Client) configureBareRepo(bareDir string, upstreamURL string) (Report, error) {
+	var report Report
 
-	// Configure fetch refspec for origin (bare clone doesn't set this by default)
 	if err := c.gitConfig(bareDir, "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"); err != nil {
-		return fmt.Errorf("failed to configure remote.origin.fetch: %w", err)
+		return report, fmt.Errorf("failed to configure remote.origin.fetch: %w", err)
 	}
 
-	// Fetch to populate refs/remotes/origin/* based on the new refspec
-	// Ignore error as network might be flaky and the repo is already usable
 	if c.verbose {
-		fmt.Fprintln(os.Stderr, "Fetching remote references...")
+		report.Warn("Fetching remote references...")
 	}
 	_, err := c.runner.Run("-C", bareDir, "fetch", "origin")
 	if err != nil && c.verbose {
-		fmt.Fprintf(os.Stderr, "Warning: 'git fetch origin' failed: %v\n", err)
+		report.Warn(fmt.Sprintf("Warning: 'git fetch origin' failed: %v", err))
 	}
 
-	// Add upstream remote if specified
 	if upstreamURL != "" {
 		args := []string{"-C", bareDir, "remote", "add", "upstream", upstreamURL}
 		if _, err := c.runner.RunLogged(args...); err != nil {
-			return fmt.Errorf("failed to add upstream remote: %w", err)
+			return report, fmt.Errorf("failed to add upstream remote: %w", err)
 		}
 	}
 
-	return nil
+	return report, nil
 }
 
-// gitConfig sets a git config value
 func (c *Client) gitConfig(repoDir string, key string, value string) error {
 	args := []string{"-C", repoDir, "config", key, value}
 	_, err := c.runner.RunLogged(args...)
 	return err
 }
 
-// getDefaultBranch gets the default branch name from a bare repository
 func (c *Client) getDefaultBranch(bareDir string) (string, error) {
-	// Try to get from HEAD
 	args := []string{"-C", bareDir, "symbolic-ref", "--short", "HEAD"}
 	result, err := c.runner.Run(args...)
 	if err == nil {
@@ -154,7 +138,6 @@ func (c *Client) getDefaultBranch(bareDir string) (string, error) {
 		}
 	}
 
-	// Fallback: check common branch names
 	for _, branch := range []string{"main", "master"} {
 		args := []string{"-C", bareDir, "rev-parse", "--verify", "refs/heads/" + branch}
 		if _, err := c.runner.Run(args...); err == nil {
@@ -165,9 +148,7 @@ func (c *Client) getDefaultBranch(bareDir string) (string, error) {
 	return "", errors.New("could not determine default branch")
 }
 
-// extractProjectName extracts the project name from a git URL
 func extractProjectName(repoURL string) (string, error) {
-	// Handle SSH URLs (git@github.com:user/repo.git)
 	if strings.Contains(repoURL, "@") && strings.Contains(repoURL, ":") {
 		parts := strings.Split(repoURL, ":")
 		if len(parts) == 2 {
@@ -176,7 +157,6 @@ func extractProjectName(repoURL string) (string, error) {
 		}
 	}
 
-	// Handle HTTPS URLs
 	parsed, err := url.Parse(repoURL)
 	if err != nil {
 		return "", fmt.Errorf("invalid repository URL: %w", err)
@@ -186,13 +166,9 @@ func extractProjectName(repoURL string) (string, error) {
 	return cleanProjectName(path), nil
 }
 
-// cleanProjectName cleans up a path to get the project name
 func cleanProjectName(path string) string {
-	// Remove .git suffix
 	name := strings.TrimSuffix(path, ".git")
-	// Get the last component
 	name = filepath.Base(name)
-	// Clean up
 	name = strings.TrimPrefix(name, "/")
 	return name
 }
