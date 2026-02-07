@@ -123,29 +123,16 @@ func (c *Client) ParseChangedFiles() ([]string, error) {
 		return nil, fmt.Errorf("failed to run git diff --name-only: %w", err)
 	}
 
-	unstaged := strings.Split(result.StdoutString(true), "\n")
+	unstaged := stringsutil.SplitNonEmpty(result.StdoutString(true), "\n")
 
 	result, err = runner.Run("diff", "--cached", "--name-only")
 	if err != nil {
 		return nil, fmt.Errorf("failed to run git diff --cached --name-only: %w", err)
 	}
 
-	staged := strings.Split(result.StdoutString(true), "\n")
+	staged := stringsutil.SplitNonEmpty(result.StdoutString(true), "\n")
 
-	files := make([]string, 0, len(unstaged)+len(staged))
-	for _, file := range unstaged {
-		if file != "" {
-			files = append(files, file)
-		}
-	}
-
-	for _, file := range staged {
-		if file != "" {
-			files = append(files, file)
-		}
-	}
-
-	return stringsutil.UniqueStrings(files), nil
+	return stringsutil.UniqueStrings(append(unstaged, staged...)), nil
 }
 
 func (c *Client) ParseStagedFiles() ([]string, error) {
@@ -159,16 +146,7 @@ func (c *Client) ParseStagedFiles() ([]string, error) {
 		return nil, fmt.Errorf("failed to run git diff --cached --name-only: %w", err)
 	}
 
-	stagedFiles := strings.Split(runResult.StdoutString(true), "\n")
-
-	var files []string
-	for _, file := range stagedFiles {
-		if file != "" {
-			files = append(files, file)
-		}
-	}
-
-	return files, nil
+	return stringsutil.SplitNonEmpty(runResult.StdoutString(true), "\n"), nil
 }
 
 func (c *Client) AddAll() error {
@@ -214,7 +192,7 @@ func (c *Client) CreateAndSwitchBranch(branchName string) error {
 		return err
 	}
 
-	if err := validateBranchName(branchName); err != nil {
+	if err := gitutil.ValidateBranchName(branchName); err != nil {
 		return err
 	}
 
@@ -225,18 +203,6 @@ func (c *Client) CreateAndSwitchBranch(branchName string) error {
 	}
 
 	return c.createAndSwitchBranch(branchName)
-}
-
-func validateBranchName(branchName string) error {
-	if branchName == "" {
-		return errors.New("branch name cannot be empty")
-	}
-
-	if strings.Contains(branchName, "..") || strings.HasPrefix(branchName, "-") {
-		return fmt.Errorf("invalid branch name: '%s'", branchName)
-	}
-
-	return nil
 }
 
 func (c *Client) branchExists(branchName string) (bool, error) {
@@ -545,15 +511,7 @@ func (c *Client) getGitTrackedFilesInDir(dir string) ([]string, error) {
 		return []string{}, nil
 	}
 
-	files := strings.Split(output, "\n")
-	var tracked []string
-	for _, file := range files {
-		if file != "" {
-			tracked = append(tracked, file)
-		}
-	}
-
-	return tracked, nil
+	return stringsutil.SplitNonEmpty(output, "\n"), nil
 }
 
 // CheckFileStatus checks the git status of specified files

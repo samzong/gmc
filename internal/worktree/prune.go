@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -120,19 +119,7 @@ func (c *Client) isBranchMerged(root string, branch string, base string) (bool, 
 		return false, errors.New("branch or base is empty")
 	}
 
-	repoDir := repoDirForGit(root)
-	args := []string{"-C", repoDir, "merge-base", "--is-ancestor", branch, base}
-	result, err := c.runner.Run(args...)
-	if err == nil {
-		return true, nil
-	}
-
-	// merge-base --is-ancestor exit codes: 0 (ancestor), 1 (not ancestor), 128+ (error)
-	if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-		return false, nil
-	}
-
-	return false, gitutil.WrapGitError("failed to check merge status", result, err)
+	return c.isAncestor(repoDirForGit(root), branch, base)
 }
 
 func repoDirForGit(root string) string {

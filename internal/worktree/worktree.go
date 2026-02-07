@@ -365,7 +365,7 @@ func (c *Client) prepareAdd(name string, opts AddOptions) (addContext, error) {
 	if name == "" {
 		return addContext{}, errors.New("worktree name cannot be empty")
 	}
-	if err := validateBranchName(name); err != nil {
+	if err := gitutil.ValidateBranchName(name); err != nil {
 		return addContext{}, err
 	}
 
@@ -512,27 +512,6 @@ func (c *Client) GetWorktreeStatus(path string) string {
 	return strings.Join(parts, ", ")
 }
 
-// validateBranchName validates a git branch name
-func validateBranchName(name string) error {
-	if name == "" {
-		return errors.New("branch name cannot be empty")
-	}
-
-	if strings.Contains(name, "..") || strings.HasPrefix(name, "-") {
-		return fmt.Errorf("invalid branch name: '%s'", name)
-	}
-
-	// Check for invalid characters
-	invalidChars := []string{" ", "~", "^", ":", "?", "*", "[", "\\"}
-	for _, char := range invalidChars {
-		if strings.Contains(name, char) {
-			return fmt.Errorf("invalid character '%s' in branch name", char)
-		}
-	}
-
-	return nil
-}
-
 // branchExists checks if a branch exists in the repository
 func (c *Client) branchExists(name string) (bool, error) {
 	// Try to find the bare repo root for proper -C path
@@ -640,7 +619,7 @@ func (c *Client) Promote(worktreeName, newBranchName string) (Report, error) {
 		return report, errors.New("branch name cannot be empty")
 	}
 
-	if err := validateBranchName(newBranchName); err != nil {
+	if err := gitutil.ValidateBranchName(newBranchName); err != nil {
 		return report, err
 	}
 
@@ -683,21 +662,21 @@ func getCurrentTimestamp() int64 {
 	return time.Now().Unix()
 }
 
-// ListBranches returns all local branch names
-func (c *Client) ListBranches() ([]string, error) {
+// listGitRefs runs a git command in the repo dir and splits output by newline.
+func (c *Client) listGitRefs(errLabel string, gitArgs ...string) ([]string, error) {
 	root, _ := c.GetWorktreeRoot()
 	repoDir := repoDirForGit(root)
 
 	var args []string
 	if repoDir != "" {
-		args = []string{"-C", repoDir, "branch", "--format=%(refname:short)"}
+		args = append([]string{"-C", repoDir}, gitArgs...)
 	} else {
-		args = []string{"branch", "--format=%(refname:short)"}
+		args = gitArgs
 	}
 
 	result, err := c.runner.Run(args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list branches: %w", err)
+		return nil, fmt.Errorf("failed to %s: %w", errLabel, err)
 	}
 
 	output := result.StdoutString(true)
@@ -705,32 +684,15 @@ func (c *Client) ListBranches() ([]string, error) {
 		return nil, nil
 	}
 
-	branches := strings.Split(output, "\n")
-	return branches, nil
+	return strings.Split(output, "\n"), nil
+}
+
+// ListBranches returns all local branch names
+func (c *Client) ListBranches() ([]string, error) {
+	return c.listGitRefs("list branches", "branch", "--format=%(refname:short)")
 }
 
 // ListRemotes returns all remote names
 func (c *Client) ListRemotes() ([]string, error) {
-	root, _ := c.GetWorktreeRoot()
-	repoDir := repoDirForGit(root)
-
-	var args []string
-	if repoDir != "" {
-		args = []string{"-C", repoDir, "remote"}
-	} else {
-		args = []string{"remote"}
-	}
-
-	result, err := c.runner.Run(args...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list remotes: %w", err)
-	}
-
-	output := result.StdoutString(true)
-	if output == "" {
-		return nil, nil
-	}
-
-	remotes := strings.Split(output, "\n")
-	return remotes, nil
+	return c.listGitRefs("list remotes", "remote")
 }

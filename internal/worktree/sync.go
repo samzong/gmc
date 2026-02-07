@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/samzong/gmc/internal/gitutil"
+	"github.com/samzong/gmc/internal/stringsutil"
 )
 
 // SyncOptions controls worktree sync behavior.
@@ -114,7 +115,9 @@ func (c *Client) Sync(opts SyncOptions) (Report, error) {
 		if err != nil {
 			return report, gitutil.WrapGitError("failed to update worktree", result, err)
 		}
-		report.Info(fmt.Sprintf("Synced %s to %s (%s..%s)", baseName, remoteRef, shortHash(localHash), shortHash(remoteHash)))
+		localShort := stringsutil.ShortHash(localHash, 7, "none")
+		remoteShort := stringsutil.ShortHash(remoteHash, 7, "none")
+		report.Info(fmt.Sprintf("Synced %s to %s (%s..%s)", baseName, remoteRef, localShort, remoteShort))
 
 		if remote == "upstream" && c.remoteExists(repoDir, "origin") {
 			result, err = c.runner.RunLogged("-C", repoDir, "push", "origin", baseName)
@@ -127,7 +130,8 @@ func (c *Client) Sync(opts SyncOptions) (Report, error) {
 			}
 		}
 	} else {
-		report.Info(fmt.Sprintf("%s already up to date with %s (%s)", baseName, remoteRef, shortHash(localHash)))
+		localShort := stringsutil.ShortHash(localHash, 7, "none")
+		report.Info(fmt.Sprintf("%s already up to date with %s (%s)", baseName, remoteRef, localShort))
 	}
 
 	return report, nil
@@ -217,7 +221,12 @@ func (c *Client) canFastForward(repoDir string, localFull string, remoteFull str
 		return true, nil
 	}
 
-	result, err := c.runner.Run("-C", repoDir, "merge-base", "--is-ancestor", localFull, remoteFull)
+	return c.isAncestor(repoDir, localFull, remoteFull)
+}
+
+// isAncestor checks if commitA is an ancestor of commitB using merge-base --is-ancestor.
+func (c *Client) isAncestor(repoDir string, commitA, commitB string) (bool, error) {
+	result, err := c.runner.Run("-C", repoDir, "merge-base", "--is-ancestor", commitA, commitB)
 	if err == nil {
 		return true, nil
 	}
@@ -225,7 +234,7 @@ func (c *Client) canFastForward(repoDir string, localFull string, remoteFull str
 		return false, nil
 	}
 
-	return false, gitutil.WrapGitError("failed to check fast-forward", result, err)
+	return false, gitutil.WrapGitError("failed to check ancestry", result, err)
 }
 
 func (c *Client) refHash(repoDir string, ref string) string {
@@ -234,15 +243,4 @@ func (c *Client) refHash(repoDir string, ref string) string {
 		return ""
 	}
 	return result.StdoutString(true)
-}
-
-func shortHash(hash string) string {
-	hash = strings.TrimSpace(hash)
-	if len(hash) > 7 {
-		return hash[:7]
-	}
-	if hash == "" {
-		return "none"
-	}
-	return hash
 }

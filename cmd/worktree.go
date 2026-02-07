@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/samzong/gmc/internal/stringsutil"
 	"github.com/samzong/gmc/internal/worktree"
 	"github.com/spf13/cobra"
 )
@@ -400,11 +401,7 @@ func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Info) {
 			name = filepath.Base(wt.Path)
 		}
 
-		// Get short commit hash (7 characters)
-		shortCommit := wt.Commit
-		if len(shortCommit) > 7 {
-			shortCommit = shortCommit[:7]
-		}
+		shortCommit := stringsutil.ShortHash(wt.Commit, 7, "")
 
 		// Get enhanced status
 		status := wtClient.GetWorktreeStatus(wt.Path)
@@ -461,7 +458,7 @@ func runWorktreePromote(wtClient *worktree.Client, worktreeName, branchName stri
 // Completion functions
 
 func completeWorktreeNames(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-	wtClient := worktree.NewClient(worktree.Options{})
+	wtClient := newWorktreeClient()
 	worktrees, err := wtClient.List()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -484,7 +481,7 @@ func completeWorktreeNames(_ *cobra.Command, _ []string, _ string) ([]string, co
 }
 
 func completeBranchNames(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-	wtClient := worktree.NewClient(worktree.Options{})
+	wtClient := newWorktreeClient()
 	branches, err := wtClient.ListBranches()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -493,7 +490,7 @@ func completeBranchNames(_ *cobra.Command, _ []string, _ string) ([]string, cobr
 }
 
 func completeRemoteNames(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-	wtClient := worktree.NewClient(worktree.Options{})
+	wtClient := newWorktreeClient()
 	remotes, err := wtClient.ListRemotes()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp

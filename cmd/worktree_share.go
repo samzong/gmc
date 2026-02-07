@@ -44,18 +44,7 @@ Strategies:
 		strategy := worktree.ResourceStrategy(shareStrategy)
 		// If strategy not explicitly set via flag, ask interactively
 		if !cmd.Flags().Changed("strategy") {
-			reader := bufio.NewReader(os.Stdin)
-			fmt.Println("Strategy:")
-			fmt.Println("  1. copy - each worktree gets its own copy")
-			fmt.Println("  2. link - symlink to shared source")
-			fmt.Print("Select [1/2, default: 1]: ")
-			strategyStr, _ := reader.ReadString('\n')
-			strategyStr = strings.TrimSpace(strings.ToLower(strategyStr))
-			if strategyStr == "2" || strategyStr == "link" || strategyStr == "l" {
-				strategy = worktree.StrategySymlink
-			} else {
-				strategy = worktree.StrategyCopy
-			}
+			strategy = promptStrategy(bufio.NewReader(os.Stdin))
 		}
 
 		report, err := wtClient.AddSharedResource(args[0], strategy)
@@ -214,19 +203,7 @@ func promptAddResource(c *worktree.Client, reader *bufio.Reader) {
 		fmt.Printf("Using full path: %s\n", path)
 	}
 
-	fmt.Println("\nStrategy:")
-	fmt.Println("  1. copy - each worktree gets its own copy")
-	fmt.Println("  2. link - symlink to shared source")
-	fmt.Print("\nSelect [1/2, default: 1]: ")
-	strategyStr, _ := reader.ReadString('\n')
-	strategyStr = strings.TrimSpace(strings.ToLower(strategyStr))
-
-	var strategy worktree.ResourceStrategy
-	if strategyStr == "2" || strategyStr == "link" || strategyStr == "l" {
-		strategy = worktree.StrategySymlink
-	} else {
-		strategy = worktree.StrategyCopy
-	}
+	strategy := promptStrategy(reader)
 
 	report, err := c.AddSharedResource(path, strategy)
 	printWorktreeReport(report)
@@ -269,6 +246,19 @@ func promptRemoveResource(c *worktree.Client, reader *bufio.Reader, cfg *worktre
 	} else {
 		fmt.Printf("Resource '%s' removed from config.\n", res.Path)
 	}
+}
+
+func promptStrategy(reader *bufio.Reader) worktree.ResourceStrategy {
+	fmt.Println("\nStrategy:")
+	fmt.Println("  1. copy - each worktree gets its own copy")
+	fmt.Println("  2. link - symlink to shared source")
+	fmt.Print("\nSelect [1/2, default: 1]: ")
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(strings.ToLower(input))
+	if input == "2" || input == "link" || input == "l" {
+		return worktree.StrategySymlink
+	}
+	return worktree.StrategyCopy
 }
 
 func promptContinue(reader *bufio.Reader) {
