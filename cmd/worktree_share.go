@@ -22,7 +22,7 @@ var wtShareCmd = &cobra.Command{
 
 If run without arguments, it opens an interactive mode to manage resources.
 
-Config file is stored at .gmc-shared.yml in the worktree root.`,
+Config file is stored at the repository's shared git common dir (for example .git/gmc-share.yml or .bare/gmc-share.yml).`,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		wtClient := newWorktreeClient()
 		return runWorktreeShareInteractive(wtClient)
@@ -195,12 +195,6 @@ func promptAddResource(c *worktree.Client, reader *bufio.Reader) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return
-	}
-
-	// If user entered a relative path and we're in a worktree, prepend worktree name
-	if currentWorktree != "" && !strings.Contains(path, "/") {
-		path = filepath.Join(currentWorktree, path)
-		fmt.Printf("Using full path: %s\n", path)
 	}
 
 	strategy := promptStrategy(reader)

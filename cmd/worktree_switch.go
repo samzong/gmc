@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -27,10 +26,6 @@ Without shell integration, this command will only print the path.`,
 }
 
 func runWorktreeSwitch(wtClient *worktree.Client) error {
-	if !wtClient.IsBareWorktree() {
-		return errors.New("not in a bare worktree setup")
-	}
-
 	worktrees, err := wtClient.List()
 	if err != nil {
 		return err
@@ -38,7 +33,7 @@ func runWorktreeSwitch(wtClient *worktree.Client) error {
 
 	filtered := filterBareWorktrees(worktrees)
 	if len(filtered) == 0 {
-		return errors.New("no worktrees found")
+		return fmt.Errorf("no worktrees found")
 	}
 
 	root, _ := wtClient.GetWorktreeRoot()
