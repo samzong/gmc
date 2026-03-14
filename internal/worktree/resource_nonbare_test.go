@@ -52,3 +52,73 @@ func TestSyncAllSharedResources_WorksFromNonBareWorktreeRepo(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "SECRET=123", string(data))
 }
+
+func TestLoadSharedConfig_FallsBackToLegacyRepoRootConfig(t *testing.T) {
+	repoDir := initTestRepo(t)
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, legacySharedConfigYML), []byte("shared:\n  - path: .env\n    strategy: copy\n"), 0o644))
+
+	client := NewClient(Options{})
+	oldCwd, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() { _ = os.Chdir(oldCwd) }()
+	require.NoError(t, os.Chdir(repoDir))
+
+	cfg, configPath, err := client.LoadSharedConfig()
+	require.NoError(t, err)
+	require.Len(t, cfg.Resources, 1)
+	expectedPath, pathErr := filepath.EvalSymlinks(filepath.Join(repoDir, legacySharedConfigYML))
+	if pathErr != nil {
+		expectedPath = filepath.Join(repoDir, legacySharedConfigYML)
+	}
+	assert.Equal(t, expectedPath, configPath)
+}
+
+func TestNormalizeSharedResourcePath_RejectsAbsolutePathOutsideWorktree(t *testing.T) {
+	repoDir := initTestRepo(t)
+	client := NewClient(Options{})
+	oldCwd, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() { _ = os.Chdir(oldCwd) }()
+	require.NoError(t, os.Chdir(repoDir))
+
+	_, err = client.NormalizeSharedResourcePath(filepath.Join(t.TempDir(), "outside.env"))
+	require.Error(t, err)
+}
+
+func TestRemoveSharedResource_NormalizesPath(t *testing.T) {
+	repoDir := initTestRepo(t)
+	client := NewClient(Options{})
+	oldCwd, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() { _ = os.Chdir(oldCwd) }()
+	require.NoError(t, os.Chdir(repoDir))
+
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".git", "gmc-share.yml"), []byte("shared:\n  - path: config/.env\n    strategy: copy\n"), 0o644))
+
+	_, err = client.RemoveSharedResource("config/../config/.env")
+	require.NoError(t, err)
+
+	cfg, _, err := client.LoadSharedConfig()
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Resources)
+}
+
+func TestResolveWorktreePath_ErrorsOnAmbiguousBasename(t *testing.T) {
+	repoDir := initTestRepo(t)
+	wt1 := filepath.Join(t.TempDir(), "dup")
+	wt2Parent := filepath.Join(t.TempDir(), "nested")
+	require.NoError(t, os.MkdirAll(wt2Parent, 0o755))
+	wt2 := filepath.Join(wt2Parent, "dup")
+	runGit(t, repoDir, "worktree", "add", "-b", "feature/dup-1", wt1, "main")
+	runGit(t, repoDir, "worktree", "add", "-b", "feature/dup-2", wt2, "main")
+
+	client := NewClient(Options{})
+	oldCwd, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() { _ = os.Chdir(oldCwd) }()
+	require.NoError(t, os.Chdir(repoDir))
+
+	_, err = client.resolveWorktreePath("dup")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ambiguous worktree")
+}

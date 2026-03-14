@@ -138,7 +138,7 @@ func (c *Client) LoadSharedConfig() (*SharedConfig, string, error) {
 	commonDir, err := c.GetGitCommonDir()
 	if err != nil {
 		if root, bareErr := FindBareRoot(""); bareErr == nil {
-			commonDir = root
+			commonDir = filepath.Join(root, ".bare")
 		} else {
 			return nil, "", err
 		}
@@ -148,6 +148,12 @@ func (c *Client) LoadSharedConfig() (*SharedConfig, string, error) {
 	legacyCandidates := []string{
 		filepath.Join(commonDir, legacySharedConfigYML),
 		filepath.Join(commonDir, legacySharedConfigYAML),
+	}
+	if repoRoot, rootErr := c.GetRepoRoot(); rootErr == nil && repoRoot != "" {
+		legacyCandidates = append(legacyCandidates,
+			filepath.Join(repoRoot, legacySharedConfigYML),
+			filepath.Join(repoRoot, legacySharedConfigYAML),
+		)
 	}
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
@@ -160,7 +166,7 @@ func (c *Client) LoadSharedConfig() (*SharedConfig, string, error) {
 	}
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return &SharedConfig{Resources: []SharedResource{}}, configPath, nil
+		return &SharedConfig{Resources: []SharedResource{}}, filepath.Join(commonDir, sharedConfigName), nil
 	}
 
 	data, err := os.ReadFile(configPath)
@@ -232,6 +238,11 @@ func (c *Client) AddSharedResource(path string, strategy ResourceStrategy) (Repo
 func (c *Client) RemoveSharedResource(path string) (Report, error) {
 	var report Report
 
+	normalizedPath, err := c.NormalizeSharedResourcePath(path)
+	if err != nil {
+		return report, err
+	}
+
 	cfg, configPath, err := c.LoadSharedConfig()
 	if err != nil {
 		return report, err
@@ -239,13 +250,13 @@ func (c *Client) RemoveSharedResource(path string) (Report, error) {
 
 	var newResources []SharedResource
 	for _, res := range cfg.Resources {
-		if res.Path != path {
+		if res.Path != normalizedPath {
 			newResources = append(newResources, res)
 		}
 	}
 
 	if len(newResources) == len(cfg.Resources) {
-		return report, fmt.Errorf("resource not found in config: %s", path)
+		return report, fmt.Errorf("resource not found in config: %s", normalizedPath)
 	}
 
 	cfg.Resources = newResources
@@ -253,7 +264,7 @@ func (c *Client) RemoveSharedResource(path string) (Report, error) {
 		return report, err
 	}
 
-	report.Info("Removed shared resource: " + path)
+	report.Info("Removed shared resource: " + normalizedPath)
 	return report, nil
 }
 
@@ -298,28 +309,44 @@ func (c *Client) resolveWorktreePath(worktreeName string) (string, error) {
 	worktrees, err := c.List()
 	if err != nil {
 		if repoRoot != "" {
-			return filepath.Join(repoRoot, worktreeName), nil
+			candidate := filepath.Join(repoRoot, worktreeName)
+			if info, statErr := os.Stat(candidate); statErr == nil && info.IsDir() {
+				return candidate, nil
+			}
 		}
 		return "", err
 	}
+
+	var exactMatches []string
+	var relMatches []string
+	var baseMatches []string
 	for _, wt := range worktrees {
 		if wt.Path == worktreeName {
-			return wt.Path, nil
-		}
-		if filepath.Base(wt.Path) == worktreeName {
-			return wt.Path, nil
+			exactMatches = append(exactMatches, wt.Path)
+			continue
 		}
 		if repoRoot != "" {
 			if rel, relErr := filepath.Rel(repoRoot, wt.Path); relErr == nil && rel == worktreeName {
-				return wt.Path, nil
+				relMatches = append(relMatches, wt.Path)
+				continue
 			}
+		}
+		if filepath.Base(wt.Path) == worktreeName {
+			baseMatches = append(baseMatches, wt.Path)
 		}
 	}
 
-	if repoRoot != "" {
-		return filepath.Join(repoRoot, worktreeName), nil
+	if match, err := uniqueWorktreeMatch(worktreeName, exactMatches, "exact path"); match != "" || err != nil {
+		return match, err
 	}
-	return worktreeName, nil
+	if match, err := uniqueWorktreeMatch(worktreeName, relMatches, "repo-relative path"); match != "" || err != nil {
+		return match, err
+	}
+	if match, err := uniqueWorktreeMatch(worktreeName, baseMatches, "basename"); match != "" || err != nil {
+		return match, err
+	}
+
+	return "", fmt.Errorf("worktree not found: %s", worktreeName)
 }
 
 func (c *Client) currentTopLevel() string {
@@ -349,63 +376,93 @@ func (c *Client) NormalizeSharedResourcePath(path string) (string, error) {
 
 	if filepath.IsAbs(trimmed) {
 		currentRoot := c.currentTopLevel()
-		if currentRoot != "" {
-			rel, err := filepath.Rel(currentRoot, trimmed)
-			if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-				trimmed = rel
-			}
+		if currentRoot == "" {
+			return "", fmt.Errorf("absolute shared resource path must be inside the current worktree: %s", path)
 		}
+		rel, err := filepath.Rel(currentRoot, trimmed)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return "", fmt.Errorf("absolute shared resource path must stay within the current worktree: %s", path)
+		}
+		trimmed = rel
 	}
 
 	trimmed = filepath.Clean(trimmed)
 	if trimmed == "." {
 		return "", errors.New("shared resource path cannot be '.'")
 	}
-	if strings.HasPrefix(trimmed, ".."+string(filepath.Separator)) || trimmed == ".." {
+	if filepath.IsAbs(trimmed) || strings.HasPrefix(trimmed, ".."+string(filepath.Separator)) || trimmed == ".." {
 		return "", fmt.Errorf("shared resource path must stay within the worktree: %s", path)
 	}
 	return trimmed, nil
 }
 
 func (c *Client) resolveSharedPaths(repoRoot, targetRoot string, res SharedResource) (srcPath string, targetPath string, skip bool, err error) {
-	targetPath = res.Path
+	targetPath, err = sanitizeTargetRelativePath(res.Path)
+	if err != nil {
+		return "", "", false, err
+	}
 
 	parts := strings.SplitN(res.Path, string(filepath.Separator), 2)
 	if len(parts) == 2 {
 		worktrees, listErr := c.List()
 		if listErr == nil {
+			var baseMatches []string
 			for _, wt := range worktrees {
-				if filepath.Base(wt.Path) != parts[0] {
-					continue
+				if filepath.Base(wt.Path) == parts[0] {
+					baseMatches = append(baseMatches, wt.Path)
 				}
-				if wt.Path == targetRoot {
-					if c.verbose {
-						var report Report
-						report.Warn(fmt.Sprintf("Skipping %s: source worktree is target", res.Path))
-					}
+			}
+			if match, matchErr := uniqueWorktreeMatch(parts[0], baseMatches, "legacy basename"); matchErr != nil {
+				return "", "", false, matchErr
+			} else if match != "" {
+				if match == targetRoot {
 					return "", "", true, nil
 				}
-				srcPath = filepath.Join(wt.Path, parts[1])
-				targetPath = parts[1]
+				srcPath = filepath.Join(match, parts[1])
+				targetPath, err = sanitizeTargetRelativePath(parts[1])
+				if err != nil {
+					return "", "", false, err
+				}
 				return srcPath, targetPath, false, nil
 			}
 		}
 	}
 
-	srcPath = filepath.Join(repoRoot, res.Path)
+	srcPath = filepath.Join(repoRoot, targetPath)
 	if _, statErr := os.Stat(srcPath); statErr == nil {
 		return srcPath, targetPath, false, nil
 	}
 
 	currentRoot := c.currentTopLevel()
 	if currentRoot != "" {
-		candidate := filepath.Join(currentRoot, res.Path)
+		candidate := filepath.Join(currentRoot, targetPath)
 		if _, statErr := os.Stat(candidate); statErr == nil {
 			return candidate, targetPath, false, nil
 		}
 	}
 
 	return srcPath, targetPath, false, nil
+}
+
+func uniqueWorktreeMatch(input string, matches []string, matchType string) (string, error) {
+	if len(matches) == 0 {
+		return "", nil
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	return "", fmt.Errorf("ambiguous worktree %q by %s: %s", input, matchType, strings.Join(matches, ", "))
+}
+
+func sanitizeTargetRelativePath(path string) (string, error) {
+	cleaned := filepath.Clean(strings.TrimSpace(path))
+	if cleaned == "" || cleaned == "." {
+		return "", errors.New("shared resource path cannot be empty")
+	}
+	if filepath.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("shared resource path must stay within the worktree: %s", path)
+	}
+	return cleaned, nil
 }
 
 func copyFile(src, dst string) error {
