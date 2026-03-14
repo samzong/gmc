@@ -173,15 +173,8 @@ func FindBareRoot(startDir string) (string, error) {
 	return "", errors.New("no .bare directory found in parent directories")
 }
 
-// GetWorktreeRoot returns the root directory for worktrees (parent of .bare)
-func (c *Client) GetWorktreeRoot() (string, error) {
-	// First try to find .bare directory
-	root, err := FindBareRoot("")
-	if err == nil {
-		return root, nil
-	}
-
-	// Fall back to git-common-dir
+// GetGitCommonDir returns the absolute shared git directory for the current repository/worktree.
+func (c *Client) GetGitCommonDir() (string, error) {
 	result, err := c.runner.Run("rev-parse", "--git-common-dir")
 	if err != nil {
 		return "", fmt.Errorf("not in a git repository: %w", err)
@@ -192,19 +185,39 @@ func (c *Client) GetWorktreeRoot() (string, error) {
 		return "", errors.New("failed to determine git common directory")
 	}
 
-	// Get the absolute path
+	if filepath.IsAbs(commonDir) {
+		return filepath.Clean(commonDir), nil
+	}
+
 	absCommonDir, err := filepath.Abs(commonDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}
+	return absCommonDir, nil
+}
 
-	// If it ends with .bare, return parent
-	if filepath.Base(absCommonDir) == ".bare" {
-		return filepath.Dir(absCommonDir), nil
+// GetRepoRoot returns the main worktree/repository root for the current repository family.
+func (c *Client) GetRepoRoot() (string, error) {
+	// First try bare-root discovery for gmc's preferred layout.
+	root, err := FindBareRoot("")
+	if err == nil {
+		return root, nil
 	}
 
-	// Otherwise return parent of .git
-	return filepath.Dir(absCommonDir), nil
+	commonDir, err := c.GetGitCommonDir()
+	if err != nil {
+		return "", err
+	}
+
+	if filepath.Base(commonDir) == ".bare" {
+		return filepath.Dir(commonDir), nil
+	}
+	return filepath.Dir(commonDir), nil
+}
+
+// GetWorktreeRoot returns the root directory for worktrees (parent of .bare or main repo root).
+func (c *Client) GetWorktreeRoot() (string, error) {
+	return c.GetRepoRoot()
 }
 
 // IsBareWorktree checks if the current repository uses the .bare worktree pattern

@@ -222,16 +222,6 @@ func init() {
 }
 
 func runWorktreeDefault(wtClient *worktree.Client, cmd *cobra.Command) error {
-	// Auto-detect if we're in bare worktree mode
-	isBareWorktree := wtClient.IsBareWorktree()
-
-	// If not using bare worktree pattern, show status + help
-	if !isBareWorktree {
-		fmt.Fprintln(outWriter(), "Current repository is not using the bare worktree pattern.")
-		return nil
-	}
-
-	// In bare worktree mode - show full worktree info
 	worktrees, err := wtClient.List()
 	if err != nil {
 		return err
@@ -355,6 +345,20 @@ func runWorktreeClone(wtClient *worktree.Client, url string) error {
 	return err
 }
 
+func displayWorktreeName(root string, wtPath string) string {
+	if root == "" {
+		return filepath.Base(wtPath)
+	}
+	rel, err := filepath.Rel(root, wtPath)
+	if err != nil || rel == "." || rel == "" {
+		return filepath.Base(wtPath)
+	}
+	if strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+		return filepath.Base(wtPath)
+	}
+	return rel
+}
+
 func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Info) {
 	if len(worktrees) == 0 {
 		return
@@ -371,12 +375,7 @@ func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Info) {
 	maxName := len("Name")
 	maxBranch := len("Branch")
 	for _, wt := range worktrees {
-		var name string
-		if root != "" {
-			name = strings.TrimPrefix(wt.Path, root+string(filepath.Separator))
-		} else {
-			name = filepath.Base(wt.Path)
-		}
+		name := displayWorktreeName(root, wt.Path)
 		if len(name) > maxName {
 			maxName = len(name)
 		}
@@ -394,12 +393,7 @@ func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Info) {
 
 	// Print rows
 	for _, wt := range worktrees {
-		var name string
-		if root != "" {
-			name = strings.TrimPrefix(wt.Path, root+string(filepath.Separator))
-		} else {
-			name = filepath.Base(wt.Path)
-		}
+		name := displayWorktreeName(root, wt.Path)
 
 		shortCommit := stringsutil.ShortHash(wt.Commit, 7, "")
 

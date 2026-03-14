@@ -139,6 +139,8 @@ gmc tag --yes
 
 ### 🔥 Worktree management (`gmc wt`)
 
+`gmc wt` can discover the current repository's worktree family from any related repository/worktree directory. gmc still prefers the `.bare` + worktree layout when creating new setups (`gmc wt clone`, `gmc wt init`), but listing and shared-resource management are no longer limited to `.bare` repositories.
+
 ```bash
 gmc wt
 gmc wt list
@@ -158,6 +160,14 @@ gmc wt promote .dup-1 feature/best-solution  # Rename temp branch to permanent
 ```
 
 This is designed for the `.bare` + worktree pattern. See `docs/auto-bare-worktree.md`.
+
+### Shared resources across worktrees
+
+`gmc wt share` stores its config in the repository's shared git directory:
+- normal repositories: `.git/gmc-share.yml`
+- bare worktree setups: `.bare/gmc-share.yml`
+
+Shared paths are stored relative to the worktree root, and sync targets are resolved from Git's worktree metadata, so existing non-bare worktree repositories are supported too.
 
 #### Open source (fork + upstream) workflow
 

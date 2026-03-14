@@ -23,11 +23,28 @@ type SharedResource struct {
 	Strategy ResourceStrategy `yaml:"strategy"`
 }
 
+const (
+	sharedConfigName       = "gmc-share.yml"
+	legacySharedConfigYML  = ".gmc-shared.yml"
+	legacySharedConfigYAML = ".gmc-shared.yaml"
+)
+
 type SharedConfig struct {
 	Resources []SharedResource `yaml:"shared"`
 }
 
 func (c *Client) SyncSharedResources(worktreeName string) (Report, error) {
+	var report Report
+
+	targetRoot, err := c.resolveWorktreePath(worktreeName)
+	if err != nil {
+		return report, err
+	}
+
+	return c.syncSharedResourcesToPath(targetRoot)
+}
+
+func (c *Client) syncSharedResourcesToPath(targetRoot string) (Report, error) {
 	var report Report
 
 	cfg, _, err := c.LoadSharedConfig()
@@ -39,15 +56,13 @@ func (c *Client) SyncSharedResources(worktreeName string) (Report, error) {
 		return report, nil
 	}
 
-	root, err := c.GetWorktreeRoot()
+	repoRoot, err := c.GetRepoRoot()
 	if err != nil {
 		return report, err
 	}
 
-	targetRoot := filepath.Join(root, worktreeName)
-
 	for _, res := range cfg.Resources {
-		resourceReport, err := c.syncOneResource(root, targetRoot, res)
+		resourceReport, err := c.syncOneResource(repoRoot, targetRoot, res)
 		report.Merge(resourceReport)
 		if err != nil {
 			return report, err
@@ -56,7 +71,7 @@ func (c *Client) SyncSharedResources(worktreeName string) (Report, error) {
 	return report, nil
 }
 
-func (c *Client) syncOneResource(root, targetRoot string, res SharedResource) (Report, error) {
+func (c *Client) syncOneResource(repoRoot, targetRoot string, res SharedResource) (Report, error) {
 	var report Report
 
 	if res.Path == "" {
@@ -66,23 +81,12 @@ func (c *Client) syncOneResource(root, targetRoot string, res SharedResource) (R
 		return report, fmt.Errorf("shared resource '%s' missing 'strategy' field", res.Path)
 	}
 
-	srcPath := filepath.Join(root, res.Path)
-	targetPath := res.Path
-	parts := strings.SplitN(res.Path, string(filepath.Separator), 2)
-	if len(parts) == 2 {
-		potentialWorktree := filepath.Join(root, parts[0])
-		if info, err := os.Stat(potentialWorktree); err == nil && info.IsDir() {
-			if parts[0] != ".bare" {
-				targetPath = parts[1]
-				targetWorktreeName := filepath.Base(targetRoot)
-				if targetWorktreeName == parts[0] {
-					if c.verbose {
-						report.Warn(fmt.Sprintf("Skipping %s: source worktree is target", res.Path))
-					}
-					return report, nil
-				}
-			}
-		}
+	srcPath, targetPath, skip, err := c.resolveSharedPaths(repoRoot, targetRoot, res)
+	if err != nil {
+		return report, err
+	}
+	if skip {
+		return report, nil
 	}
 
 	dstPath := filepath.Join(targetRoot, targetPath)
@@ -131,16 +135,27 @@ func (c *Client) syncOneResource(root, targetRoot string, res SharedResource) (R
 }
 
 func (c *Client) LoadSharedConfig() (*SharedConfig, string, error) {
-	root, err := c.GetWorktreeRoot()
+	commonDir, err := c.GetGitCommonDir()
 	if err != nil {
-		return nil, "", err
+		if root, bareErr := FindBareRoot(""); bareErr == nil {
+			commonDir = root
+		} else {
+			return nil, "", err
+		}
 	}
 
-	configPath := filepath.Join(root, ".gmc-shared.yml")
+	configPath := filepath.Join(commonDir, sharedConfigName)
+	legacyCandidates := []string{
+		filepath.Join(commonDir, legacySharedConfigYML),
+		filepath.Join(commonDir, legacySharedConfigYAML),
+	}
+
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		yamlPath := filepath.Join(root, ".gmc-shared.yaml")
-		if _, err := os.Stat(yamlPath); err == nil {
-			configPath = yamlPath
+		for _, candidate := range legacyCandidates {
+			if _, statErr := os.Stat(candidate); statErr == nil {
+				configPath = candidate
+				break
+			}
 		}
 	}
 
@@ -167,7 +182,11 @@ func (c *Client) SaveSharedConfig(cfg *SharedConfig, path string) error {
 		return fmt.Errorf("failed to marshal shared config: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("failed to create shared config directory: %w", err)
+	}
+
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("failed to write shared config: %w", err)
 	}
 	return nil
@@ -176,6 +195,11 @@ func (c *Client) SaveSharedConfig(cfg *SharedConfig, path string) error {
 func (c *Client) AddSharedResource(path string, strategy ResourceStrategy) (Report, error) {
 	var report Report
 
+	normalizedPath, err := c.NormalizeSharedResourcePath(path)
+	if err != nil {
+		return report, err
+	}
+
 	cfg, configPath, err := c.LoadSharedConfig()
 	if err != nil {
 		return report, err
@@ -183,7 +207,7 @@ func (c *Client) AddSharedResource(path string, strategy ResourceStrategy) (Repo
 
 	found := false
 	for i, res := range cfg.Resources {
-		if res.Path == path {
+		if res.Path == normalizedPath {
 			cfg.Resources[i].Strategy = strategy
 			found = true
 			break
@@ -192,7 +216,7 @@ func (c *Client) AddSharedResource(path string, strategy ResourceStrategy) (Repo
 
 	if !found {
 		cfg.Resources = append(cfg.Resources, SharedResource{
-			Path:     path,
+			Path:     normalizedPath,
 			Strategy: strategy,
 		})
 	}
@@ -201,7 +225,7 @@ func (c *Client) AddSharedResource(path string, strategy ResourceStrategy) (Repo
 		return report, err
 	}
 
-	report.Info(fmt.Sprintf("Updated shared resource: %s (%s)", path, strategy))
+	report.Info(fmt.Sprintf("Updated shared resource: %s (%s)", normalizedPath, strategy))
 	return report, nil
 }
 
@@ -255,15 +279,133 @@ func (c *Client) SyncAllSharedResources() (Report, error) {
 
 	report.Info(fmt.Sprintf("Syncing resources to %d worktrees...", len(targets)))
 	for _, wt := range targets {
-		wtName := filepath.Base(wt.Path)
-		resourceReport, err := c.SyncSharedResources(wtName)
+		resourceReport, err := c.syncSharedResourcesToPath(wt.Path)
 		report.Merge(resourceReport)
 		if err != nil {
-			report.Warn(fmt.Sprintf("Warning: failed to sync %s: %v", wtName, err))
+			report.Warn(fmt.Sprintf("Warning: failed to sync %s: %v", filepath.Base(wt.Path), err))
 		}
 	}
 
 	return report, nil
+}
+
+func (c *Client) resolveWorktreePath(worktreeName string) (string, error) {
+	if worktreeName == "" {
+		return "", errors.New("worktree name cannot be empty")
+	}
+
+	repoRoot, _ := c.GetRepoRoot()
+	worktrees, err := c.List()
+	if err != nil {
+		if repoRoot != "" {
+			return filepath.Join(repoRoot, worktreeName), nil
+		}
+		return "", err
+	}
+	for _, wt := range worktrees {
+		if wt.Path == worktreeName {
+			return wt.Path, nil
+		}
+		if filepath.Base(wt.Path) == worktreeName {
+			return wt.Path, nil
+		}
+		if repoRoot != "" {
+			if rel, relErr := filepath.Rel(repoRoot, wt.Path); relErr == nil && rel == worktreeName {
+				return wt.Path, nil
+			}
+		}
+	}
+
+	if repoRoot != "" {
+		return filepath.Join(repoRoot, worktreeName), nil
+	}
+	return worktreeName, nil
+}
+
+func (c *Client) currentTopLevel() string {
+	result, err := c.runner.Run("rev-parse", "--show-toplevel")
+	if err != nil {
+		return ""
+	}
+	root := result.StdoutString(true)
+	if root == "" {
+		return ""
+	}
+	if filepath.IsAbs(root) {
+		return filepath.Clean(root)
+	}
+	absRoot, absErr := filepath.Abs(root)
+	if absErr != nil {
+		return ""
+	}
+	return absRoot
+}
+
+func (c *Client) NormalizeSharedResourcePath(path string) (string, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return "", errors.New("shared resource path cannot be empty")
+	}
+
+	if filepath.IsAbs(trimmed) {
+		currentRoot := c.currentTopLevel()
+		if currentRoot != "" {
+			rel, err := filepath.Rel(currentRoot, trimmed)
+			if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				trimmed = rel
+			}
+		}
+	}
+
+	trimmed = filepath.Clean(trimmed)
+	if trimmed == "." {
+		return "", errors.New("shared resource path cannot be '.'")
+	}
+	if strings.HasPrefix(trimmed, ".."+string(filepath.Separator)) || trimmed == ".." {
+		return "", fmt.Errorf("shared resource path must stay within the worktree: %s", path)
+	}
+	return trimmed, nil
+}
+
+func (c *Client) resolveSharedPaths(repoRoot, targetRoot string, res SharedResource) (srcPath string, targetPath string, skip bool, err error) {
+	targetPath = res.Path
+
+	parts := strings.SplitN(res.Path, string(filepath.Separator), 2)
+	if len(parts) == 2 {
+		worktrees, listErr := c.List()
+		if listErr == nil {
+			for _, wt := range worktrees {
+				if filepath.Base(wt.Path) != parts[0] {
+					continue
+				}
+				if wt.Path == targetRoot {
+					if c.verbose {
+						var report Report
+						report.Warn(fmt.Sprintf("Skipping %s: source worktree is target", res.Path))
+					}
+					return "", "", true, nil
+				}
+				srcPath = filepath.Join(wt.Path, parts[1])
+				targetPath = parts[1]
+				return srcPath, targetPath, false, nil
+			}
+		}
+	}
+
+	srcPath = filepath.Join(repoRoot, res.Path)
+	if _, statErr := os.Stat(srcPath); statErr == nil {
+		return srcPath, targetPath, false, nil
+	}
+
+	currentRoot := c.currentTopLevel()
+	if currentRoot != "" {
+		candidate := filepath.Join(currentRoot, res.Path)
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			return candidate, targetPath, false, nil
+		}
+	}
+
+	return srcPath, targetPath, false, nil
 }
 
 func copyFile(src, dst string) error {
