@@ -276,11 +276,19 @@ func (c *Client) SyncAllSharedResources() (Report, error) {
 		return report, err
 	}
 
+	root, _ := c.GetRepoRoot()
+	repoDir := repoDirForGit(root)
+	isBare := repoDir != root // bare layout: repoDir points to .bare
 	var targets []Info
 	for _, wt := range worktrees {
-		if !wt.IsBare && filepath.Base(wt.Path) != ".bare" {
-			targets = append(targets, wt)
+		if wt.IsBare || filepath.Base(wt.Path) == ".bare" {
+			continue
 		}
+		// In bare layout, skip worktrees outside the managed root directory
+		if isBare && isExternalPath(root, wt.Path) {
+			continue
+		}
+		targets = append(targets, wt)
 	}
 
 	if len(targets) == 0 {

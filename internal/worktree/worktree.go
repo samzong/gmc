@@ -315,7 +315,9 @@ func (c *Client) Add(name string, opts AddOptions) (Report, error) {
 		return report, gitutil.WrapGitError("failed to create worktree", result, err)
 	}
 
-	sharedReport, err := c.SyncSharedResources(name)
+	// Pass the directory name (base of targetPath), not the branch name,
+	// since SyncSharedResources resolves by worktree path.
+	sharedReport, err := c.SyncSharedResources(filepath.Base(ctx.targetPath))
 	report.Merge(sharedReport)
 	if err != nil {
 		report.Warn(fmt.Sprintf("Warning: failed to sync shared resources: %v", err))
@@ -387,7 +389,22 @@ func (c *Client) prepareAdd(name string, opts AddOptions) (addContext, error) {
 		return addContext{}, fmt.Errorf("failed to find worktree root: %w", err)
 	}
 
-	targetPath := filepath.Join(root, name)
+	// Directory name: replace "/" with "--" so branch names like "feat/login"
+	// become "feat--login" instead of a nested directory.
+	dirName := strings.ReplaceAll(name, "/", "--")
+
+	// Build target path:
+	//   bare layout  → <root>/<dirName>           (sibling of .bare)
+	//   non-bare     → <parent>/<repoName>--<dirName>  (sibling of the repo)
+	var targetPath string
+	repoDir := repoDirForGit(root)
+	if repoDir != root { // bare layout: .bare exists
+		targetPath = filepath.Join(root, dirName)
+	} else {
+		// Non-bare: create as a sibling of the repo, prefixed with the repo name.
+		targetPath = filepath.Join(filepath.Dir(root), filepath.Base(root)+"--"+dirName)
+	}
+
 	if _, err := os.Stat(targetPath); err == nil {
 		return addContext{}, fmt.Errorf("directory already exists: %s", targetPath)
 	}
@@ -399,7 +416,7 @@ func (c *Client) prepareAdd(name string, opts AddOptions) (addContext, error) {
 
 	return addContext{
 		name:       name,
-		repoDir:    repoDirForGit(root),
+		repoDir:    repoDir,
 		targetPath: targetPath,
 		baseBranch: baseBranch,
 	}, nil
@@ -441,7 +458,13 @@ func (c *Client) prepareRemove(name string) (removeContext, error) {
 		return removeContext{}, fmt.Errorf("failed to find worktree root: %w", err)
 	}
 
-	targetPath := filepath.Join(root, name)
+	// searchRoot is where linked worktrees live (parent of repo for non-bare).
+	searchRoot, err := c.worktreeSearchRoot()
+	if err != nil {
+		return removeContext{}, fmt.Errorf("failed to determine worktree search root: %w", err)
+	}
+
+	targetPath := filepath.Join(searchRoot, name)
 	worktrees, err := c.List()
 	if err != nil {
 		return removeContext{}, err
@@ -450,7 +473,7 @@ func (c *Client) prepareRemove(name string) (removeContext, error) {
 	var found bool
 	var wtInfo Info
 	for _, wt := range worktrees {
-		relPath := strings.TrimPrefix(wt.Path, root+string(filepath.Separator))
+		relPath := strings.TrimPrefix(wt.Path, searchRoot+string(filepath.Separator))
 		if wt.Path == targetPath || relPath == name {
 			wtInfo = wt
 			targetPath = wt.Path
@@ -463,6 +486,12 @@ func (c *Client) prepareRemove(name string) (removeContext, error) {
 	}
 	if wtInfo.IsBare {
 		return removeContext{}, errors.New("cannot remove the main bare worktree")
+	}
+
+	// Reject agent/external worktrees (outside searchRoot).
+	rel, err := filepath.Rel(searchRoot, wtInfo.Path)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return removeContext{}, fmt.Errorf("worktree '%s' is external (not managed by gmc wt)", name)
 	}
 
 	return removeContext{
@@ -636,12 +665,12 @@ func (c *Client) Promote(worktreeName, newBranchName string) (Report, error) {
 		return report, err
 	}
 
-	root, err := c.GetWorktreeRoot()
+	searchRoot, err := c.worktreeSearchRoot()
 	if err != nil {
-		return report, fmt.Errorf("failed to find worktree root: %w", err)
+		return report, fmt.Errorf("failed to determine worktree search root: %w", err)
 	}
 
-	targetPath := filepath.Join(root, worktreeName)
+	targetPath := filepath.Join(searchRoot, worktreeName)
 
 	// Verify worktree exists
 	if _, err := os.Stat(targetPath); os.IsNotExist(err) {
@@ -673,6 +702,33 @@ func (c *Client) Promote(worktreeName, newBranchName string) (Report, error) {
 // getCurrentTimestamp returns current unix timestamp
 func getCurrentTimestamp() int64 {
 	return time.Now().Unix()
+}
+
+// worktreeSearchRoot returns the directory in which linked worktrees are expected to live.
+// Bare layout: root (parent of .bare) — managed worktrees are direct children.
+// Non-bare layout: parent of the repo dir — linked worktrees can be siblings of the repo.
+func (c *Client) worktreeSearchRoot() (string, error) {
+	root, err := c.GetWorktreeRoot()
+	if err != nil {
+		return "", err
+	}
+	repoDir := repoDirForGit(root)
+	if repoDir != root { // bare layout: .bare exists
+		return root, nil
+	}
+	return filepath.Dir(root), nil
+}
+
+// isExternalPath reports whether wtPath is outside the managed root directory.
+func isExternalPath(root, wtPath string) bool {
+	if root == "" {
+		return false
+	}
+	rel, err := filepath.Rel(root, wtPath)
+	if err != nil {
+		return true
+	}
+	return strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".."
 }
 
 // listGitRefs runs a git command in the repo dir and splits output by newline.

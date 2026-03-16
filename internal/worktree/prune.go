@@ -39,9 +39,14 @@ func (c *Client) Prune(opts PruneOptions) (Report, error) {
 	}
 
 	repoDir := repoDirForGit(root)
+	isBare := repoDir != root // bare layout: repoDir points to .bare, not root itself
 	var prunedAny bool
 	for _, wt := range worktrees {
 		if wt.IsBare || filepath.Base(wt.Path) == ".bare" || wt.Path == root {
+			continue
+		}
+		// In bare layout, skip worktrees outside the managed root directory
+		if isBare && isExternalPath(root, wt.Path) {
 			continue
 		}
 

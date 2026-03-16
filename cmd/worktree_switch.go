@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/charmbracelet/huh"
 	"github.com/samzong/gmc/internal/shell"
@@ -36,14 +35,11 @@ func runWorktreeSwitch(wtClient *worktree.Client) error {
 		return fmt.Errorf("no worktrees found")
 	}
 
-	root, _ := wtClient.GetWorktreeRoot()
+	root := getDisplayRoot(wtClient)
 
 	options := make([]huh.Option[string], 0, len(filtered))
 	for _, wt := range filtered {
-		name := filepath.Base(wt.Path)
-		if rel, err := filepath.Rel(root, wt.Path); err == nil && root != "" {
-			name = rel
-		}
+		name := displayWorktreeName(root, wt.Path)
 		options = append(options, huh.NewOption(fmt.Sprintf("%s (%s)", name, wt.Branch), wt.Path))
 	}
 

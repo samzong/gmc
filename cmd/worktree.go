@@ -221,7 +221,7 @@ func init() {
 	rootCmd.AddCommand(wtCmd)
 }
 
-func runWorktreeDefault(wtClient *worktree.Client, cmd *cobra.Command) error {
+func runWorktreeDefault(wtClient *worktree.Client, _ *cobra.Command) error {
 	worktrees, err := wtClient.List()
 	if err != nil {
 		return err
@@ -232,22 +232,6 @@ func runWorktreeDefault(wtClient *worktree.Client, cmd *cobra.Command) error {
 
 	fmt.Fprintln(outWriter(), "Current Worktrees:")
 	printWorktreeTable(wtClient, filtered)
-
-	// Print common commands
-	fmt.Fprintln(outWriter())
-	fmt.Fprintln(outWriter(), "Available Commands:")
-
-	// Dynamically generate from subcommands
-	for _, subcmd := range cmd.Commands() {
-		if subcmd.Hidden {
-			continue
-		}
-		// Format: "  command_name   Description"
-		fmt.Fprintf(outWriter(), "  %-18s %s\n", subcmd.Name(), subcmd.Short)
-	}
-
-	fmt.Fprintln(outWriter())
-	fmt.Fprintf(outWriter(), "Run 'gmc wt <command> --help' for more information on a command.\n")
 
 	// Show current location
 	cwd, err := os.Getwd()
@@ -345,16 +329,63 @@ func runWorktreeClone(wtClient *worktree.Client, url string) error {
 	return err
 }
 
-func displayWorktreeName(root string, wtPath string) string {
-	if root == "" {
+// getDisplayRoot returns the root to use for worktree name display and external detection.
+// Bare layout: root (parent of .bare) — all managed worktrees live inside it.
+// Non-bare layout: parent of the repo dir — sibling linked worktrees show with short names.
+func getDisplayRoot(wtClient *worktree.Client) string {
+	root, err := wtClient.GetWorktreeRoot()
+	if err != nil || root == "" {
+		return ""
+	}
+	bareDir := filepath.Join(root, ".bare")
+	if info, err := os.Stat(bareDir); err == nil && info.IsDir() {
+		return root // bare layout
+	}
+	return filepath.Dir(root) // non-bare: use parent so siblings are not flagged external
+}
+
+// isExternalWorktree reports whether wtPath is outside the display root.
+func isExternalWorktree(displayRoot, wtPath string) bool {
+	if displayRoot == "" {
+		return false
+	}
+	rel, err := filepath.Rel(displayRoot, wtPath)
+	if err != nil {
+		return true
+	}
+	return strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".."
+}
+
+// isAgentWorktree reports whether the path is inside a known AI-agent worktree directory
+// (e.g. .claude/worktrees/ or .codex/worktrees/).
+func isAgentWorktree(wtPath string) bool {
+	normalized := filepath.ToSlash(wtPath)
+	return strings.Contains(normalized, "/.claude/worktrees/") ||
+		strings.Contains(normalized, "/.codex/worktrees/")
+}
+
+func abbrevPath(path string) string {
+	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(path, home+string(filepath.Separator)) {
+		return "~" + path[len(home):]
+	}
+	return path
+}
+
+func displayWorktreeName(displayRoot string, wtPath string) string {
+	if displayRoot == "" {
 		return filepath.Base(wtPath)
 	}
-	rel, err := filepath.Rel(root, wtPath)
+	rel, err := filepath.Rel(displayRoot, wtPath)
 	if err != nil || rel == "." || rel == "" {
 		return filepath.Base(wtPath)
 	}
 	if strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
-		return filepath.Base(wtPath)
+		// External: always show absolute path so the user knows where it is.
+		return abbrevPath(wtPath)
+	}
+	// Agent worktrees inside the root also show their absolute path for easy navigation.
+	if isAgentWorktree(wtPath) {
+		return abbrevPath(wtPath)
 	}
 	return rel
 }
@@ -364,12 +395,7 @@ func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Info) {
 		return
 	}
 
-	// Get root for calculating relative paths
-	root, err := wtClient.GetWorktreeRoot()
-	if err != nil {
-		// Fallback to base name if we can't get root
-		root = ""
-	}
+	root := getDisplayRoot(wtClient)
 
 	// Calculate column widths
 	maxName := len("Name")
@@ -394,13 +420,14 @@ func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Info) {
 	// Print rows
 	for _, wt := range worktrees {
 		name := displayWorktreeName(root, wt.Path)
-
 		shortCommit := stringsutil.ShortHash(wt.Commit, 7, "")
 
-		// Get enhanced status
 		status := wtClient.GetWorktreeStatus(wt.Path)
-		if wt.IsBare {
+		switch {
+		case wt.IsBare:
 			status = "bare"
+		case isExternalWorktree(root, wt.Path), isAgentWorktree(wt.Path):
+			status = "agent"
 		}
 
 		fmt.Fprintf(outWriter(), "%-*s %-*s %-8s %s\n", maxName, name, maxBranch, wt.Branch, shortCommit, status)
@@ -459,17 +486,15 @@ func completeWorktreeNames(_ *cobra.Command, _ []string, _ string) ([]string, co
 	}
 
 	filtered := filterBareWorktrees(worktrees)
-	root, _ := wtClient.GetWorktreeRoot()
+	root := getDisplayRoot(wtClient)
 
 	names := make([]string, 0, len(filtered))
 	for _, wt := range filtered {
-		name := filepath.Base(wt.Path)
-		if root != "" {
-			if rel, err := filepath.Rel(root, wt.Path); err == nil {
-				name = rel
-			}
+		// Skip agent/external worktrees — rm/promote cannot operate on them
+		if isExternalWorktree(root, wt.Path) || isAgentWorktree(wt.Path) {
+			continue
 		}
-		names = append(names, name)
+		names = append(names, displayWorktreeName(root, wt.Path))
 	}
 	return names, cobra.ShellCompDirectiveNoFileComp
 }
