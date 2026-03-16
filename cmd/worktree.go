@@ -38,21 +38,22 @@ bare repository (.bare) + worktree pattern.
 }
 
 var wtAddCmd = &cobra.Command{
-	Use:   "add <name>",
-	Short: "Create a new worktree with a new branch",
-	Long: `Create a new worktree with a new branch.
+	Use:   "add <name> [name...]",
+	Short: "Create new worktrees with new branches",
+	Long: `Create one or more worktrees with new branches.
 
 The branch name will be the same as the worktree directory name.
 
 Examples:
-  gmc wt add feature-login           # Create based on current HEAD
-  gmc wt add feature-login -b main   # Create based on main branch
-  gmc wt add feature-login --sync    # Sync base branch before add
+  gmc wt add feature-login                    # Create one worktree
+  gmc wt add feat-a feat-b feat-c             # Create multiple worktrees
+  gmc wt add feature-login -b main            # Create based on main branch
+  gmc wt add feature-login --sync             # Sync base branch before add
   gmc wt add hotfix-bug123 -b release`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		wtClient := newWorktreeClient()
-		return runWorktreeAdd(wtClient, args[0])
+		return runWorktreeAdd(wtClient, args)
 	},
 }
 
@@ -68,23 +69,24 @@ var wtListCmd = &cobra.Command{
 }
 
 var wtRemoveCmd = &cobra.Command{
-	Use:     "remove <name>",
+	Use:     "remove <name> [name...]",
 	Aliases: []string{"rm"},
-	Short:   "Remove a worktree (alias: rm)",
-	Long: `Remove a worktree.
+	Short:   "Remove worktrees (alias: rm)",
+	Long: `Remove one or more worktrees.
 
 By default, only removes the worktree directory, keeping the branch.
 Use -D to also delete the branch.
 
 Examples:
-  gmc wt remove feature-login      # Remove worktree, keep branch
-  gmc wt rm feature-login -D       # Remove worktree and delete branch
-  gmc wt rm feature-login -f       # Force remove (ignore dirty state)
-  gmc wt rm feature-login --dry-run  # Preview what would be removed`,
-	Args: cobra.ExactArgs(1),
+  gmc wt remove feature-login           # Remove one worktree
+  gmc wt rm feat-a feat-b feat-c        # Remove multiple worktrees
+  gmc wt rm feature-login -D            # Remove worktree and delete branch
+  gmc wt rm feature-login -f            # Force remove (ignore dirty state)
+  gmc wt rm feature-login --dry-run     # Preview what would be removed`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		wtClient := newWorktreeClient()
-		return runWorktreeRemove(wtClient, args[0])
+		return runWorktreeRemove(wtClient, args)
 	},
 }
 
@@ -261,7 +263,7 @@ func filterBareWorktrees(worktrees []worktree.Info) []worktree.Info {
 	return filtered
 }
 
-func runWorktreeAdd(wtClient *worktree.Client, name string) error {
+func runWorktreeAdd(wtClient *worktree.Client, names []string) error {
 	baseBranch := wtBaseBranch
 	if wtAddSync {
 		if baseBranch == "" {
@@ -285,9 +287,19 @@ func runWorktreeAdd(wtClient *worktree.Client, name string) error {
 		BaseBranch: baseBranch,
 		Fetch:      false,
 	}
-	report, err := wtClient.Add(name, opts)
-	printWorktreeReport(report)
-	return err
+	var failed []string
+	for _, name := range names {
+		report, err := wtClient.Add(name, opts)
+		printWorktreeReport(report)
+		if err != nil {
+			fmt.Fprintf(errWriter(), "Error adding '%s': %v\n", name, err)
+			failed = append(failed, name)
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("failed to add worktrees: %s", strings.Join(failed, ", "))
+	}
+	return nil
 }
 
 func runWorktreeList(wtClient *worktree.Client) error {
@@ -308,15 +320,25 @@ func runWorktreeList(wtClient *worktree.Client) error {
 	return nil
 }
 
-func runWorktreeRemove(wtClient *worktree.Client, name string) error {
+func runWorktreeRemove(wtClient *worktree.Client, names []string) error {
 	opts := worktree.RemoveOptions{
 		Force:        wtForce,
 		DeleteBranch: wtDeleteBranch,
 		DryRun:       wtDryRun,
 	}
-	report, err := wtClient.Remove(name, opts)
-	printWorktreeReport(report)
-	return err
+	var failed []string
+	for _, name := range names {
+		report, err := wtClient.Remove(name, opts)
+		printWorktreeReport(report)
+		if err != nil {
+			fmt.Fprintf(errWriter(), "Error removing '%s': %v\n", name, err)
+			failed = append(failed, name)
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("failed to remove worktrees: %s", strings.Join(failed, ", "))
+	}
+	return nil
 }
 
 func runWorktreeClone(wtClient *worktree.Client, url string) error {
