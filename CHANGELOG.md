@@ -1,6 +1,17 @@
 # Changelog
 
 
+## [v0.7.3] - 2026-03-16
+### Code Refactoring
+- eliminate redundant code across packages
+
+### Features
+- introduce structured reporting for worktree operations and refactor tag command logic.
+- **worktree:** support batch operations for add and remove commands
+- **worktree:** support bare/non-bare layout detection and isolate external worktrees
+- **worktree:** Git-first discovery + shared config in git common dir ([#48](https://github.com/samzong/gmc/issues/48))
+
+
 ## [v0.7.2] - 2026-02-03
 ### Code Refactoring
 - **sync:** refactor Sync to use syncContext and improve worktree status
@@ -201,7 +212,8 @@
 - **gma:** add option to automatically stage all changes ([#123](https://github.com/samzong/gmc/issues/123))
 
 
-[Unreleased]: https://github.com/samzong/gmc/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/samzong/gmc/compare/v0.7.3...HEAD
+[v0.7.3]: https://github.com/samzong/gmc/compare/v0.7.2...v0.7.3
 [v0.7.2]: https://github.com/samzong/gmc/compare/v0.7.1...v0.7.2
 [v0.7.1]: https://github.com/samzong/gmc/compare/v0.7.0...v0.7.1
 [v0.7.0]: https://github.com/samzong/gmc/compare/v0.6.2...v0.7.0
