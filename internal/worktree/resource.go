@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -23,6 +24,11 @@ type SharedResource struct {
 	Strategy ResourceStrategy `yaml:"strategy"`
 }
 
+type Hook struct {
+	Cmd  string `yaml:"cmd"`
+	Desc string `yaml:"desc,omitempty"`
+}
+
 const (
 	sharedConfigName       = "gmc-share.yml"
 	legacySharedConfigYML  = ".gmc-shared.yml"
@@ -31,6 +37,7 @@ const (
 
 type SharedConfig struct {
 	Resources []SharedResource `yaml:"shared"`
+	Hooks     []Hook           `yaml:"hooks,omitempty"`
 }
 
 func (c *Client) SyncSharedResources(worktreeName string) (Report, error) {
@@ -41,10 +48,10 @@ func (c *Client) SyncSharedResources(worktreeName string) (Report, error) {
 		return report, err
 	}
 
-	return c.syncSharedResourcesToPath(targetRoot)
+	return c.syncSharedResourcesToPath(targetRoot, true)
 }
 
-func (c *Client) syncSharedResourcesToPath(targetRoot string) (Report, error) {
+func (c *Client) syncSharedResourcesToPath(targetRoot string, runHooks bool) (Report, error) {
 	var report Report
 
 	cfg, _, err := c.LoadSharedConfig()
@@ -52,7 +59,7 @@ func (c *Client) syncSharedResourcesToPath(targetRoot string) (Report, error) {
 		return report, err
 	}
 
-	if len(cfg.Resources) == 0 {
+	if len(cfg.Resources) == 0 && (!runHooks || len(cfg.Hooks) == 0) {
 		return report, nil
 	}
 
@@ -68,6 +75,13 @@ func (c *Client) syncSharedResourcesToPath(targetRoot string) (Report, error) {
 			return report, err
 		}
 	}
+
+	if runHooks {
+		if err := c.runHooks(targetRoot, cfg.Hooks, &report); err != nil {
+			return report, err
+		}
+	}
+
 	return report, nil
 }
 
@@ -268,6 +282,59 @@ func (c *Client) RemoveSharedResource(path string) (Report, error) {
 	return report, nil
 }
 
+func (c *Client) AddHook(hook Hook) (Report, error) {
+	var report Report
+
+	if hook.Cmd == "" {
+		return report, errors.New("hook command cannot be empty")
+	}
+
+	cfg, configPath, err := c.LoadSharedConfig()
+	if err != nil {
+		return report, err
+	}
+
+	cfg.Hooks = append(cfg.Hooks, hook)
+
+	if err := c.SaveSharedConfig(cfg, configPath); err != nil {
+		return report, err
+	}
+
+	desc := hook.Desc
+	if desc == "" {
+		desc = hook.Cmd
+	}
+	report.Info(fmt.Sprintf("Added hook: %s", desc))
+	return report, nil
+}
+
+func (c *Client) RemoveHook(index int) (Report, error) {
+	var report Report
+
+	cfg, configPath, err := c.LoadSharedConfig()
+	if err != nil {
+		return report, err
+	}
+
+	if index < 0 || index >= len(cfg.Hooks) {
+		return report, fmt.Errorf("hook index %d out of range (total: %d)", index, len(cfg.Hooks))
+	}
+
+	removed := cfg.Hooks[index]
+	cfg.Hooks = append(cfg.Hooks[:index], cfg.Hooks[index+1:]...)
+
+	if err := c.SaveSharedConfig(cfg, configPath); err != nil {
+		return report, err
+	}
+
+	desc := removed.Desc
+	if desc == "" {
+		desc = removed.Cmd
+	}
+	report.Info(fmt.Sprintf("Removed hook: %s", desc))
+	return report, nil
+}
+
 func (c *Client) SyncAllSharedResources() (Report, error) {
 	var report Report
 
@@ -298,7 +365,7 @@ func (c *Client) SyncAllSharedResources() (Report, error) {
 
 	report.Info(fmt.Sprintf("Syncing resources to %d worktrees...", len(targets)))
 	for _, wt := range targets {
-		resourceReport, err := c.syncSharedResourcesToPath(wt.Path)
+		resourceReport, err := c.syncSharedResourcesToPath(wt.Path, false)
 		report.Merge(resourceReport)
 		if err != nil {
 			report.Warn(fmt.Sprintf("Warning: failed to sync %s: %v", filepath.Base(wt.Path), err))
@@ -518,4 +585,33 @@ func copyDir(src, dst string) error {
 
 		return copyFile(path, destPath)
 	})
+}
+
+func (c *Client) runHooks(worktreeRoot string, hooks []Hook, report *Report) error {
+	if len(hooks) == 0 {
+		return nil
+	}
+
+	for _, hook := range hooks {
+		if hook.Cmd == "" {
+			continue
+		}
+
+		label := hook.Cmd
+		if hook.Desc != "" {
+			label = hook.Desc
+		}
+		report.Info(fmt.Sprintf("Running hook: %s", label))
+
+		cmd := exec.Command("sh", "-c", hook.Cmd)
+		cmd.Dir = worktreeRoot
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("hook failed '%s': %w", hook.Cmd, err)
+		}
+	}
+
+	return nil
 }
