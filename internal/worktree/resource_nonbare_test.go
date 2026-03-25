@@ -53,6 +53,31 @@ func TestSyncAllSharedResources_WorksFromNonBareWorktreeRepo(t *testing.T) {
 	assert.Equal(t, "SECRET=123", string(data))
 }
 
+func TestSyncAllSharedResources_DoesNotRunHooks(t *testing.T) {
+	repoDir := initTestRepo(t)
+	linkedWt := filepath.Join(t.TempDir(), "feature-wt")
+	runGit(t, repoDir, "worktree", "add", "-b", "feature/test-sync-hooks", linkedWt, "main")
+
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".env"), []byte("SECRET=123"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".git", "gmc-share.yml"), []byte("shared:\n  - path: .env\n    strategy: copy\nhooks:\n  - cmd: printf 'hook-ran' > hook.txt\n"), 0o644))
+
+	client := NewClient(Options{})
+	oldCwd, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() { _ = os.Chdir(oldCwd) }()
+	require.NoError(t, os.Chdir(linkedWt))
+
+	_, err = client.SyncAllSharedResources()
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(linkedWt, ".env"))
+	require.NoError(t, err)
+	assert.Equal(t, "SECRET=123", string(data))
+
+	_, err = os.Stat(filepath.Join(linkedWt, "hook.txt"))
+	assert.True(t, os.IsNotExist(err))
+}
+
 func TestLoadSharedConfig_FallsBackToLegacyRepoRootConfig(t *testing.T) {
 	repoDir := initTestRepo(t)
 	require.NoError(t, os.WriteFile(filepath.Join(repoDir, legacySharedConfigYML), []byte("shared:\n  - path: .env\n    strategy: copy\n"), 0o644))
