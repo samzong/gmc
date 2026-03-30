@@ -58,7 +58,7 @@ func runTagCommand() error {
 
 	lastTag, commits, err := collectTagContext(gitClient)
 	if err != nil {
-		return err
+		return wrapTagError(err)
 	}
 	if len(commits) == 0 {
 		printNoCommitsSinceLastTag(lastTag)
@@ -74,7 +74,7 @@ func runTagCommand() error {
 
 	finalVersion, finalReason, source, err := pickTagSuggestion(baseVersion, commits, llmClient)
 	if err != nil {
-		return err
+		return wrapTagError(err)
 	}
 	fmt.Fprintf(outWriter(), "Suggested version (%s): %s\n", source, finalVersion.String())
 	if strings.TrimSpace(finalReason) != "" {
@@ -275,4 +275,11 @@ func confirmTagCreation(tag string) (bool, error) {
 
 	answer := strings.TrimSpace(strings.ToLower(input))
 	return answer == "y" || answer == "yes", nil
+}
+
+func wrapTagError(err error) error {
+	if coded := classifyError(err); coded != nil {
+		return coded
+	}
+	return err
 }

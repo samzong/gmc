@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/samzong/gmc/internal/config"
+	"github.com/samzong/gmc/internal/exitcode"
 	"github.com/samzong/gmc/internal/git"
 	"github.com/samzong/gmc/internal/llm"
 	"github.com/samzong/gmc/internal/workflow"
@@ -58,6 +59,29 @@ func TestHandleErrors(t *testing.T) {
 
 		assert.ErrorIs(t, errWithHint, workflow.ErrNoChanges)
 		assert.ErrorIs(t, errWithoutHint, workflow.ErrNoChanges)
+	})
+
+	t.Run("not git repo returns exit code 11", func(t *testing.T) {
+		err := handleErrors(fmt.Errorf("failed: %w", git.ErrNotGitRepo), false)
+		var exitErr *exitcode.Error
+		assert.ErrorAs(t, err, &exitErr)
+		assert.Equal(t, exitcode.NotGitRepo, exitErr.Code)
+		assert.ErrorIs(t, err, git.ErrNotGitRepo)
+	})
+
+	t.Run("LLM error returns exit code 12", func(t *testing.T) {
+		err := handleErrors(fmt.Errorf("generation failed: %w", llm.ErrLLM), false)
+		var exitErr *exitcode.Error
+		assert.ErrorAs(t, err, &exitErr)
+		assert.Equal(t, exitcode.LLMError, exitErr.Code)
+		assert.ErrorIs(t, err, llm.ErrLLM)
+	})
+
+	t.Run("no staged changes returns exit code 10", func(t *testing.T) {
+		err := handleErrors(workflow.ErrNoChanges, false)
+		var exitErr *exitcode.Error
+		assert.ErrorAs(t, err, &exitErr)
+		assert.Equal(t, exitcode.NoStagedChanges, exitErr.Code)
 	})
 
 	t.Run("propagates generic error", func(t *testing.T) {

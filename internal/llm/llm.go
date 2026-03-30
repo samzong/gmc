@@ -12,6 +12,8 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
+var ErrLLM = errors.New("LLM error")
+
 type Options struct {
 	Timeout time.Duration
 }
@@ -99,11 +101,11 @@ func (c *Client) GenerateCommitMessage(prompt string, model string) (string, err
 	)
 
 	if err != nil {
-		return "", fmt.Errorf("failed to call LLM: %w", err)
+		return "", fmt.Errorf("failed to call LLM: %w (%w)", err, ErrLLM)
 	}
 
 	if len(resp.Choices) == 0 {
-		return "", errors.New("LLM returned empty response")
+		return "", fmt.Errorf("LLM returned empty response: %w", ErrLLM)
 	}
 
 	return strings.TrimSpace(resp.Choices[0].Message.Content), nil
@@ -143,11 +145,11 @@ func (c *Client) SuggestVersion(baseVersion string, commits []string, model stri
 	)
 
 	if err != nil {
-		return "", "", fmt.Errorf("failed to call LLM: %w", err)
+		return "", "", fmt.Errorf("failed to call LLM: %w (%w)", err, ErrLLM)
 	}
 
 	if len(resp.Choices) == 0 {
-		return "", "", errors.New("LLM returned empty response")
+		return "", "", fmt.Errorf("LLM returned empty response: %w", ErrLLM)
 	}
 
 	version, reason, err := parseVersionSuggestion(resp.Choices[0].Message.Content)

@@ -52,9 +52,11 @@ func (c *Client) IsGitRepository() bool {
 	return err == nil
 }
 
+var ErrNotGitRepo = errors.New("not a git repository")
+
 func (c *Client) CheckGitRepository() error {
 	if !c.IsGitRepository() {
-		return errors.New("not in a git repository. Please run this command in a git repository directory")
+		return fmt.Errorf("%w: please run this command inside a git working tree", ErrNotGitRepo)
 	}
 	return nil
 }
