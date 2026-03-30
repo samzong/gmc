@@ -1,6 +1,14 @@
 # Changelog
 
 
+## [v0.8.0] - 2026-03-30
+### Features
+- support hook plugin
+- **output:** add global --output json flag for structured output ([#60](https://github.com/samzong/gmc/issues/60))
+- **worktree:** add share discover subcommand for auto-detecting shareable files ([#58](https://github.com/samzong/gmc/issues/58))
+- **worktree:** implement hook execution with real-time output ([#51](https://github.com/samzong/gmc/issues/51))
+
+
 ## [v0.7.3] - 2026-03-16
 ### Code Refactoring
 - eliminate redundant code across packages
@@ -212,7 +220,8 @@
 - **gma:** add option to automatically stage all changes ([#123](https://github.com/samzong/gmc/issues/123))
 
 
-[Unreleased]: https://github.com/samzong/gmc/compare/v0.7.3...HEAD
+[Unreleased]: https://github.com/samzong/gmc/compare/v0.8.0...HEAD
+[v0.8.0]: https://github.com/samzong/gmc/compare/v0.7.3...v0.8.0
 [v0.7.3]: https://github.com/samzong/gmc/compare/v0.7.2...v0.7.3
 [v0.7.2]: https://github.com/samzong/gmc/compare/v0.7.1...v0.7.2
 [v0.7.1]: https://github.com/samzong/gmc/compare/v0.7.0...v0.7.1
