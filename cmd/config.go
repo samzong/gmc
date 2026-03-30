@@ -241,7 +241,7 @@ func runConfigGet() error {
 		return err
 	}
 
-	if configOutputJSON {
+	if configOutputJSON || outputFormat() == "json" {
 		// JSON output to stdout for machine consumption
 		output := configJSONOutput{
 			Role:           cfg.Role,
@@ -279,7 +279,8 @@ func init() {
 	configSetCmd.AddCommand(configSetPromptTemplateCmd)
 	configSetCmd.AddCommand(configSetEnableEmojiCmd)
 
-	configGetCmd.Flags().BoolVar(&configOutputJSON, "json", false, "Output configuration in JSON format")
+	configGetCmd.Flags().BoolVar(&configOutputJSON, "json", false, "Output in JSON format (deprecated: use -o json)")
+	_ = configGetCmd.Flags().MarkDeprecated("json", "use -o json instead")
 
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configGetCmd)

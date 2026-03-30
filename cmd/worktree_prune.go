@@ -24,13 +24,39 @@ By default it removes both the worktree directory and the local branch.`,
 	},
 }
 
+type PruneJSON struct {
+	Name   string `json:"name"`
+	Branch string `json:"branch"`
+	Status string `json:"status"`
+	Action string `json:"action"`
+}
+
 func runWorktreePrune(wtClient *worktree.Client) error {
 	opts := worktree.PruneOptions{
 		BaseBranch: wtPruneBase,
 		Force:      wtPruneForce,
 		DryRun:     wtPruneDryRun,
 	}
-	report, err := wtClient.Prune(opts)
-	printWorktreeReport(report)
-	return err
+	result, err := wtClient.Prune(opts)
+	if err != nil {
+		return err
+	}
+	if outputFormat() == "json" {
+		action := "removed"
+		if opts.DryRun {
+			action = "would-remove"
+		}
+		items := make([]PruneJSON, len(result.Candidates))
+		for i, c := range result.Candidates {
+			items[i] = PruneJSON{
+				Name:   c.Name,
+				Branch: c.Branch,
+				Status: c.Status,
+				Action: action,
+			}
+		}
+		return printJSON(outWriter(), items)
+	}
+	printWorktreeReport(result.Report)
+	return nil
 }

@@ -59,6 +59,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(
 		&cfgFile, "config", "", "Config file (default: $XDG_CONFIG_HOME/gmc/config.yaml)")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Enable debug output")
+	rootCmd.PersistentFlags().VarP(outputFlag, "output", "o", "Output format: text or json")
+	_ = rootCmd.RegisterFlagCompletionFunc("output", completeOutputFormat)
 
 	rootCmd.Flags().BoolP("version", "V", false, "version for gmc")
 	rootCmd.Flags().BoolVar(&noVerify, "no-verify", false, "Skip pre-commit hooks")
@@ -223,6 +225,10 @@ func generateStdinMessage(
 	}
 
 	return formattedMessage, nil
+}
+
+func completeOutputFormat(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+	return []string{"text", "json"}, cobra.ShellCompDirectiveNoFileComp
 }
 
 func ensureConfiguredAndGetConfig(

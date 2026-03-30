@@ -223,19 +223,29 @@ func init() {
 	rootCmd.AddCommand(wtCmd)
 }
 
+type WorktreeJSON struct {
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	Branch string `json:"branch"`
+	Commit string `json:"commit"`
+	Status string `json:"status"`
+}
+
 func runWorktreeDefault(wtClient *worktree.Client, _ *cobra.Command) error {
 	worktrees, err := wtClient.List()
 	if err != nil {
 		return err
 	}
 
-	// Filter out bare worktrees
 	filtered := filterBareWorktrees(worktrees)
+
+	if outputFormat() == "json" {
+		return printWorktreeJSON(wtClient, filtered)
+	}
 
 	fmt.Fprintln(outWriter(), "Current Worktrees:")
 	printWorktreeTable(wtClient, filtered)
 
-	// Show current location
 	cwd, err := os.Getwd()
 	if err == nil {
 		for _, wt := range filtered {
@@ -308,8 +318,11 @@ func runWorktreeList(wtClient *worktree.Client) error {
 		return err
 	}
 
-	// Filter out bare worktrees
 	filtered := filterBareWorktrees(worktrees)
+
+	if outputFormat() == "json" {
+		return printWorktreeJSON(wtClient, filtered)
+	}
 
 	if len(filtered) == 0 {
 		fmt.Fprintln(outWriter(), "No worktrees found.")
@@ -412,6 +425,17 @@ func displayWorktreeName(displayRoot string, wtPath string) string {
 	return rel
 }
 
+func resolveWorktreeStatus(wtClient *worktree.Client, root string, wt worktree.Info) string {
+	switch {
+	case wt.IsBare:
+		return "bare"
+	case isExternalWorktree(root, wt.Path), isAgentWorktree(wt.Path):
+		return "agent"
+	default:
+		return wtClient.GetWorktreeStatus(wt.Path)
+	}
+}
+
 func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Info) {
 	if len(worktrees) == 0 {
 		return
@@ -419,7 +443,6 @@ func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Info) {
 
 	root := getDisplayRoot(wtClient)
 
-	// Calculate column widths
 	maxName := len("Name")
 	maxBranch := len("Branch")
 	for _, wt := range worktrees {
@@ -432,28 +455,36 @@ func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Info) {
 		}
 	}
 
-	// Add padding
 	maxName += 2
 	maxBranch += 2
 
-	// Print header
 	fmt.Fprintf(outWriter(), "%-*s %-*s %-8s %s\n", maxName, "NAME", maxBranch, "BRANCH", "COMMIT", "STATUS")
 
-	// Print rows
 	for _, wt := range worktrees {
 		name := displayWorktreeName(root, wt.Path)
 		shortCommit := stringsutil.ShortHash(wt.Commit, 7, "")
-
-		status := wtClient.GetWorktreeStatus(wt.Path)
-		switch {
-		case wt.IsBare:
-			status = "bare"
-		case isExternalWorktree(root, wt.Path), isAgentWorktree(wt.Path):
-			status = "agent"
-		}
-
+		status := resolveWorktreeStatus(wtClient, root, wt)
 		fmt.Fprintf(outWriter(), "%-*s %-*s %-8s %s\n", maxName, name, maxBranch, wt.Branch, shortCommit, status)
 	}
+}
+
+func buildWorktreeJSON(wtClient *worktree.Client, worktrees []worktree.Info) []WorktreeJSON {
+	root := getDisplayRoot(wtClient)
+	result := make([]WorktreeJSON, 0, len(worktrees))
+	for _, wt := range worktrees {
+		result = append(result, WorktreeJSON{
+			Name:   displayWorktreeName(root, wt.Path),
+			Path:   wt.Path,
+			Branch: wt.Branch,
+			Commit: wt.Commit,
+			Status: resolveWorktreeStatus(wtClient, root, wt),
+		})
+	}
+	return result
+}
+
+func printWorktreeJSON(wtClient *worktree.Client, worktrees []worktree.Info) error {
+	return printJSON(outWriter(), buildWorktreeJSON(wtClient, worktrees))
 }
 
 func runWorktreeDup(wtClient *worktree.Client, args []string) error {

@@ -17,56 +17,66 @@ type PruneOptions struct {
 	DryRun     bool   // Preview what would be removed without making changes
 }
 
+type PruneCandidate struct {
+	Name   string
+	Branch string
+	Status string
+}
+
+type PruneResult struct {
+	Report
+	Candidates []PruneCandidate
+}
+
 // Prune removes worktrees whose branches are merged into the base branch.
-func (c *Client) Prune(opts PruneOptions) (Report, error) {
-	var report Report
+func (c *Client) Prune(opts PruneOptions) (PruneResult, error) {
+	var result PruneResult
 
 	root, err := c.GetWorktreeRoot()
 	if err != nil {
-		return report, fmt.Errorf("failed to find worktree root: %w", err)
+		return result, fmt.Errorf("failed to find worktree root: %w", err)
 	}
 
 	baseBranch, err := c.resolveBaseBranch(root, opts.BaseBranch)
 	if err != nil {
-		return report, err
+		return result, err
 	}
 
 	baseBranchName := localBranchName(baseBranch)
 
 	worktrees, err := c.List()
 	if err != nil {
-		return report, err
+		return result, err
 	}
 
 	repoDir := repoDirForGit(root)
-	isBare := repoDir != root // bare layout: repoDir points to .bare, not root itself
+	isBare := repoDir != root
 	var prunedAny bool
 	for _, wt := range worktrees {
 		if wt.IsBare || filepath.Base(wt.Path) == ".bare" || wt.Path == root {
 			continue
 		}
-		// In bare layout, skip worktrees outside the managed root directory
 		if isBare && isExternalPath(root, wt.Path) {
 			continue
 		}
 
 		name := filepath.Base(wt.Path)
 		if wt.IsLocked {
-			report.Warn(fmt.Sprintf("Skipped %s: worktree is locked", name))
+			result.Warn(fmt.Sprintf("Skipped %s: worktree is locked", name))
 			continue
 		}
 		if wt.Branch == "" || wt.Branch == "(detached)" {
-			report.Warn(fmt.Sprintf("Skipped %s: detached HEAD", name))
+			result.Warn(fmt.Sprintf("Skipped %s: detached HEAD", name))
 			continue
 		}
 		if wt.Branch == baseBranchName {
-			report.Warn(fmt.Sprintf("Skipped %s: base branch '%s'", name, baseBranchName))
+			result.Warn(fmt.Sprintf("Skipped %s: base branch '%s'", name, baseBranchName))
 			continue
 		}
 
 		merged, err := c.isBranchMerged(root, wt.Branch, baseBranch)
 		if err != nil {
-			report.Warn(fmt.Sprintf("Skipped %s: %v", name, err))
+			result.Warn(fmt.Sprintf("Skipped %s: %v", name, err))
 			continue
 		}
 		if !merged {
@@ -75,15 +85,18 @@ func (c *Client) Prune(opts PruneOptions) (Report, error) {
 
 		status := c.GetWorktreeStatus(wt.Path)
 		if status == "modified" && !opts.Force {
-			report.Warn(fmt.Sprintf("Skipped %s: worktree has uncommitted changes (use --force)", name))
+			result.Warn(fmt.Sprintf("Skipped %s: worktree has uncommitted changes (use --force)", name))
 			continue
 		}
 
+		candidate := PruneCandidate{Name: name, Branch: wt.Branch, Status: status}
+
 		if opts.DryRun {
-			report.Warn("Would remove worktree: " + wt.Path)
-			report.Warn("  Branch: " + wt.Branch)
-			report.Warn("  Status: " + status)
-			report.Warn("Would delete branch: " + wt.Branch)
+			result.Warn("Would remove worktree: " + wt.Path)
+			result.Warn("  Branch: " + wt.Branch)
+			result.Warn("  Status: " + status)
+			result.Warn("Would delete branch: " + wt.Branch)
+			result.Candidates = append(result.Candidates, candidate)
 			prunedAny = true
 			continue
 		}
@@ -94,25 +107,26 @@ func (c *Client) Prune(opts PruneOptions) (Report, error) {
 		}
 		args = append(args, wt.Path)
 
-		result, err := c.runner.RunLogged(args...)
+		gitResult, err := c.runner.RunLogged(args...)
 		if err != nil {
-			return report, gitutil.WrapGitError("failed to remove worktree", result, err)
+			return result, gitutil.WrapGitError("failed to remove worktree", gitResult, err)
 		}
-		report.Warn(fmt.Sprintf("Removed worktree '%s'", name))
+		result.Warn(fmt.Sprintf("Removed worktree '%s'", name))
 
-		result, err = c.runner.RunLogged("-C", repoDir, "branch", "-D", wt.Branch)
+		gitResult, err = c.runner.RunLogged("-C", repoDir, "branch", "-D", wt.Branch)
 		if err != nil {
-			return report, gitutil.WrapGitError("failed to delete branch", result, err)
+			return result, gitutil.WrapGitError("failed to delete branch", gitResult, err)
 		}
-		report.Warn(fmt.Sprintf("Deleted branch '%s'", wt.Branch))
+		result.Warn(fmt.Sprintf("Deleted branch '%s'", wt.Branch))
+		result.Candidates = append(result.Candidates, candidate)
 		prunedAny = true
 	}
 
 	if !prunedAny {
-		report.Warn("No worktrees pruned.")
+		result.Warn("No worktrees pruned.")
 	}
 
-	return report, nil
+	return result, nil
 }
 
 func (c *Client) resolveBaseBranch(root string, override string) (string, error) {
