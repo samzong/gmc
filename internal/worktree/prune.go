@@ -84,7 +84,7 @@ func (c *Client) Prune(opts PruneOptions) (PruneResult, error) {
 		}
 
 		status := c.GetWorktreeStatus(wt.Path)
-		if status == "modified" && !opts.Force {
+		if status != "clean" && !opts.Force {
 			result.Warn(fmt.Sprintf("Skipped %s: worktree has uncommitted changes (use --force)", name))
 			continue
 		}
