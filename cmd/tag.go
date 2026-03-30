@@ -67,7 +67,7 @@ func runTagCommand() error {
 
 	baseVersion, displayTag, err := resolveBaseVersion(lastTag)
 	if err != nil {
-		return err
+		return wrapTagError(err)
 	}
 
 	printCommitSummary(displayTag, commits)
@@ -89,7 +89,7 @@ func runTagCommand() error {
 
 	confirmed, err := confirmTagCreation(finalVersion.String())
 	if err != nil {
-		return fmt.Errorf("failed to read confirmation: %w", err)
+		return wrapTagError(fmt.Errorf("failed to read confirmation: %w", err))
 	}
 
 	if !confirmed {
@@ -103,7 +103,7 @@ func runTagCommand() error {
 	}
 
 	if err := gitClient.CreateAnnotatedTag(finalVersion.String(), tagMessage); err != nil {
-		return fmt.Errorf("failed to create tag: %w", err)
+		return wrapTagError(fmt.Errorf("failed to create tag: %w", err))
 	}
 
 	fmt.Fprintf(outWriter(), "Tag %s created successfully.\n", finalVersion.String())
