@@ -52,6 +52,12 @@ func init() {
 	rootCmd.AddCommand(tagCmd)
 }
 
+type TagJSON struct {
+	Current   string   `json:"current"`
+	Suggested string   `json:"suggested"`
+	Commits   []string `json:"commits"`
+}
+
 func runTagCommand() error {
 	gitClient := git.NewClient(git.Options{Verbose: verbose})
 	llmClient := llm.NewClient(llm.Options{Timeout: time.Duration(timeoutSeconds) * time.Second})
@@ -61,6 +67,9 @@ func runTagCommand() error {
 		return wrapTagError(err)
 	}
 	if len(commits) == 0 {
+		if outputFormat() == "json" {
+			return printJSON(outWriter(), TagJSON{Current: lastTag})
+		}
 		printNoCommitsSinceLastTag(lastTag)
 		return nil
 	}
@@ -70,12 +79,27 @@ func runTagCommand() error {
 		return wrapTagError(err)
 	}
 
-	printCommitSummary(displayTag, commits)
+	if outputFormat() != "json" {
+		printCommitSummary(displayTag, commits)
+	}
 
 	finalVersion, finalReason, source, err := pickTagSuggestion(baseVersion, commits, llmClient)
 	if err != nil {
 		return wrapTagError(err)
 	}
+
+	if outputFormat() == "json" {
+		commitMsgs := make([]string, len(commits))
+		for i, c := range commits {
+			commitMsgs[i] = c.Message
+		}
+		return printJSON(outWriter(), TagJSON{
+			Current:   lastTag,
+			Suggested: finalVersion.String(),
+			Commits:   commitMsgs,
+		})
+	}
+
 	fmt.Fprintf(outWriter(), "Suggested version (%s): %s\n", source, finalVersion.String())
 	if strings.TrimSpace(finalReason) != "" {
 		fmt.Fprintf(outWriter(), "Reason: %s\n", finalReason)

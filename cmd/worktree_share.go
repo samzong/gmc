@@ -74,6 +74,11 @@ var wtShareRemoveCmd = &cobra.Command{
 	},
 }
 
+type ShareJSON struct {
+	Path     string `json:"path"`
+	Strategy string `json:"strategy"`
+}
+
 var wtShareListCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
@@ -83,6 +88,14 @@ var wtShareListCmd = &cobra.Command{
 		cfg, _, err := wtClient.LoadSharedConfig()
 		if err != nil {
 			return err
+		}
+
+		if outputFormat() == "json" {
+			items := make([]ShareJSON, len(cfg.Resources))
+			for i, res := range cfg.Resources {
+				items[i] = ShareJSON{Path: res.Path, Strategy: string(res.Strategy)}
+			}
+			return printJSON(outWriter(), items)
 		}
 
 		if len(cfg.Resources) == 0 {
