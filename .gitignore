@@ -34,3 +34,5 @@ go.work
 .env
 
 mdctl/
+
+!skills/gmc/
