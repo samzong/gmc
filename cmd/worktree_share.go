@@ -13,6 +13,7 @@ import (
 
 var (
 	shareStrategy string
+	discoverAuto  bool
 )
 
 var wtShareCmd = &cobra.Command{
@@ -97,6 +98,74 @@ var wtShareListCmd = &cobra.Command{
 	},
 }
 
+var wtShareDiscoverCmd = &cobra.Command{
+	Use:   "discover",
+	Short: "Discover files that should be shared across worktrees",
+	Long: `Scan the main worktree for files that should be shared across worktrees.
+
+By default, shows a preview of discovered files (dry-run mode).
+Use --auto to actually add discovered files and sync them.`,
+	RunE: func(_ *cobra.Command, _ []string) error {
+		wtClient := newWorktreeClient()
+
+		results, err := wtClient.Discover(worktree.DiscoverOptions{})
+		if err != nil {
+			return err
+		}
+
+		if len(results) == 0 {
+			fmt.Println("No new shareable files discovered.")
+			return nil
+		}
+
+		var copyResults, linkResults []worktree.DiscoverResult
+		for _, r := range results {
+			switch r.Strategy {
+			case worktree.StrategyCopy:
+				copyResults = append(copyResults, r)
+			case worktree.StrategySymlink:
+				linkResults = append(linkResults, r)
+			}
+		}
+
+		fmt.Println("Discovered shareable files:")
+		fmt.Println()
+		if len(copyResults) > 0 {
+			fmt.Println("Copy strategy (isolated per worktree):")
+			for _, r := range copyResults {
+				fmt.Printf("  %s\n", r.Path)
+			}
+		}
+		if len(linkResults) > 0 {
+			fmt.Println("Link strategy (shared, saves disk):")
+			for _, r := range linkResults {
+				fmt.Printf("  %s\n", r.Path)
+			}
+		}
+
+		if !discoverAuto {
+			fmt.Printf("\n[dry-run] Would add %d copy + %d link resources\n", len(copyResults), len(linkResults))
+			return nil
+		}
+
+		fmt.Println()
+		addReport, addErr := wtClient.AddDiscoveredResources(results)
+		printWorktreeReport(addReport)
+		if addErr != nil {
+			return addErr
+		}
+
+		fmt.Println("\nSyncing to all worktrees...")
+		report, err := wtClient.SyncAllSharedResources()
+		printWorktreeReport(report)
+		if err != nil {
+			return err
+		}
+		fmt.Println("Done.")
+		return nil
+	},
+}
+
 var wtShareSyncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Manually sync shared resources to all worktrees",
@@ -114,9 +183,13 @@ func init() {
 	wtShareCmd.AddCommand(wtShareRemoveCmd)
 	wtShareCmd.AddCommand(wtShareListCmd)
 	wtShareCmd.AddCommand(wtShareSyncCmd)
+	wtShareCmd.AddCommand(wtShareDiscoverCmd)
 
 	wtShareAddCmd.Flags().StringVarP(&shareStrategy, "strategy", "s", "copy", "Sync strategy: copy or link")
 	_ = wtShareAddCmd.RegisterFlagCompletionFunc("strategy", completeStrategies)
+
+	wtShareDiscoverCmd.Flags().BoolVar(&discoverAuto, "auto", false, "Actually add discovered items and sync")
+	wtShareDiscoverCmd.Flags().Bool("dry-run", true, "Preview mode (default behavior)")
 }
 
 func runWorktreeShareInteractive(c *worktree.Client) error {
