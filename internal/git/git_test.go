@@ -428,20 +428,17 @@ func TestOutsideGitRepo(t *testing.T) {
 
 	t.Run("CheckGitRepository_OutsideRepo", func(t *testing.T) {
 		err := client.CheckGitRepository()
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "not in a git repository")
+		assert.ErrorIs(t, err, ErrNotGitRepo)
 	})
 
 	t.Run("GetDiff_OutsideRepo", func(t *testing.T) {
 		_, err := client.GetDiff()
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "not in a git repository")
+		assert.ErrorIs(t, err, ErrNotGitRepo)
 	})
 
 	t.Run("GetStagedDiff_OutsideRepo", func(t *testing.T) {
 		_, err := client.GetStagedDiff()
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "not in a git repository")
+		assert.ErrorIs(t, err, ErrNotGitRepo)
 	})
 
 	t.Run("AddAll_OutsideRepo", func(t *testing.T) {
