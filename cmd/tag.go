@@ -58,7 +58,7 @@ func runTagCommand() error {
 
 	lastTag, commits, err := collectTagContext(gitClient)
 	if err != nil {
-		return err
+		return wrapTagError(err)
 	}
 	if len(commits) == 0 {
 		printNoCommitsSinceLastTag(lastTag)
@@ -67,14 +67,14 @@ func runTagCommand() error {
 
 	baseVersion, displayTag, err := resolveBaseVersion(lastTag)
 	if err != nil {
-		return err
+		return wrapTagError(err)
 	}
 
 	printCommitSummary(displayTag, commits)
 
 	finalVersion, finalReason, source, err := pickTagSuggestion(baseVersion, commits, llmClient)
 	if err != nil {
-		return err
+		return wrapTagError(err)
 	}
 	fmt.Fprintf(outWriter(), "Suggested version (%s): %s\n", source, finalVersion.String())
 	if strings.TrimSpace(finalReason) != "" {
@@ -89,7 +89,7 @@ func runTagCommand() error {
 
 	confirmed, err := confirmTagCreation(finalVersion.String())
 	if err != nil {
-		return fmt.Errorf("failed to read confirmation: %w", err)
+		return wrapTagError(fmt.Errorf("failed to read confirmation: %w", err))
 	}
 
 	if !confirmed {
@@ -103,7 +103,7 @@ func runTagCommand() error {
 	}
 
 	if err := gitClient.CreateAnnotatedTag(finalVersion.String(), tagMessage); err != nil {
-		return fmt.Errorf("failed to create tag: %w", err)
+		return wrapTagError(fmt.Errorf("failed to create tag: %w", err))
 	}
 
 	fmt.Fprintf(outWriter(), "Tag %s created successfully.\n", finalVersion.String())
@@ -275,4 +275,11 @@ func confirmTagCreation(tag string) (bool, error) {
 
 	answer := strings.TrimSpace(strings.ToLower(input))
 	return answer == "y" || answer == "yes", nil
+}
+
+func wrapTagError(err error) error {
+	if coded := classifyError(err); coded != nil {
+		return coded
+	}
+	return err
 }

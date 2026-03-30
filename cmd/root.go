@@ -10,6 +10,7 @@ import (
 
 	"github.com/mattn/go-isatty"
 	"github.com/samzong/gmc/internal/config"
+	"github.com/samzong/gmc/internal/exitcode"
 	"github.com/samzong/gmc/internal/formatter"
 	"github.com/samzong/gmc/internal/git"
 	"github.com/samzong/gmc/internal/llm"
@@ -99,10 +100,24 @@ func handleErrors(err error, addAllFlag bool) error {
 		if !addAllFlag {
 			msg += "\nHint: You can use -a or --all to automatically add all changes to the staging area."
 		}
-		return userFacingError{msg: msg, err: err}
+		return exitcode.New(exitcode.NoStagedChanges, msg, err)
+	}
+
+	if coded := classifyError(err); coded != nil {
+		return coded
 	}
 
 	return userFacingError{msg: fmt.Sprintf("gmc: %v", err), err: err}
+}
+
+func classifyError(err error) *exitcode.Error {
+	if errors.Is(err, git.ErrNotGitRepo) {
+		return exitcode.New(exitcode.NotGitRepo, err.Error(), err)
+	}
+	if errors.Is(err, llm.ErrLLM) {
+		return exitcode.New(exitcode.LLMError, err.Error(), err)
+	}
+	return nil
 }
 
 type userFacingError struct {
