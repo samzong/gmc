@@ -20,6 +20,7 @@
 5. **Branch name generation**: create and switch to a new branch from a description (`--branch`)
 6. **Auto semantic version tagging**: suggest and create annotated tags (`gmc tag`)
 7. 🔥 **Worktree workflows**: manage `.bare` + worktree structure (`gmc wt`)
+8. **Agent-friendly**: `--output json` structured output and machine-readable exit codes for CI/automation
 
 ## Installation
 
