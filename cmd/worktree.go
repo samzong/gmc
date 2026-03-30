@@ -204,6 +204,7 @@ func init() {
 	wtPruneCmd.Flags().StringVarP(&wtPruneBase, "base", "b", "", "Base branch to check merge status against")
 	wtPruneCmd.Flags().BoolVarP(&wtPruneForce, "force", "f", false, "Force removal even if worktree is dirty")
 	wtPruneCmd.Flags().BoolVar(&wtPruneDryRun, "dry-run", false, "Preview what would be removed without making changes")
+	wtPruneCmd.Flags().BoolVar(&wtPrunePRAware, "pr-aware", false, "Check GitHub PR state before pruning (requires gh CLI)")
 
 	// Flags for pr-review command
 	wtPrReviewCmd.Flags().StringVarP(&prRemote, "remote", "r", "",
