@@ -64,12 +64,10 @@ func (c *Client) PRExists(prNumber int, remote, repoDir string) (bool, string, e
 func (c *Client) AddPR(prNumber int, remote string) (Report, error) {
 	var report Report
 
-	// Setup paths to get repoDir
-	root, err := c.GetWorktreeRoot()
-	if err != nil {
+	if err := c.ensureInit(); err != nil {
 		return report, fmt.Errorf("failed to find worktree root: %w", err)
 	}
-	repoDir := repoDirForGit(root)
+	repoDir := c.repoDir
 
 	// Auto-detect remote if not specified
 	if remote == "" {
@@ -92,7 +90,7 @@ func (c *Client) AddPR(prNumber int, remote string) (Report, error) {
 
 	// Prepare worktree paths
 	branchName := fmt.Sprintf("pr-%d", prNumber)
-	targetPath := filepath.Join(root, branchName)
+	targetPath := filepath.Join(c.worktreeRoot, branchName)
 
 	if _, err := os.Stat(targetPath); err == nil {
 		return report, fmt.Errorf("directory already exists: %s", targetPath)
@@ -115,7 +113,8 @@ func (c *Client) AddPR(prNumber int, remote string) (Report, error) {
 		return report, gitutil.WrapGitError("failed to create worktree", result, err)
 	}
 
-	// Sync shared resources
+	c.InvalidateList()
+
 	sharedReport, err := c.SyncSharedResources(branchName)
 	report.Merge(sharedReport)
 	if err != nil {

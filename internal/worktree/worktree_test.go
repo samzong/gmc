@@ -1,6 +1,7 @@
 package worktree
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -633,5 +634,308 @@ func writeFile(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatalf("writeFile(%s) failed: %v", path, err)
+	}
+}
+
+func initBareLayoutRepo(t *testing.T) string {
+	t.Helper()
+	tmpDir := t.TempDir()
+
+	bareDir := filepath.Join(tmpDir, ".bare")
+	runGit(t, tmpDir, "init", "--bare", bareDir)
+	runGit(t, bareDir, "config", "user.name", "Test User")
+	runGit(t, bareDir, "config", "user.email", "test@example.com")
+
+	mainDir := filepath.Join(tmpDir, "main")
+	runGit(t, bareDir, "worktree", "add", mainDir, "-b", "main")
+	writeFile(t, filepath.Join(mainDir, "README.md"), "init")
+	runGit(t, mainDir, "add", ".")
+	runGit(t, mainDir, "commit", "-m", "init")
+
+	return tmpDir
+}
+
+func TestClientCacheInitialization(t *testing.T) {
+	repoDir := initBareLayoutRepo(t)
+	repoDir, _ = filepath.EvalSymlinks(repoDir)
+	mainDir := filepath.Join(repoDir, "main")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(cwd) }()
+	if err := os.Chdir(mainDir); err != nil {
+		t.Fatal(err)
+	}
+
+	client := NewClient(Options{})
+
+	root, err := client.GetWorktreeRoot()
+	if err != nil {
+		t.Fatalf("GetWorktreeRoot() error = %v", err)
+	}
+	if root != repoDir {
+		t.Errorf("GetWorktreeRoot() = %q, want %q", root, repoDir)
+	}
+
+	if !client.IsBareWorktree() {
+		t.Error("IsBareWorktree() should return true for bare layout")
+	}
+
+	if client.bareRoot != repoDir {
+		t.Errorf("bareRoot = %q, want %q", client.bareRoot, repoDir)
+	}
+	if client.worktreeRoot != repoDir {
+		t.Errorf("worktreeRoot = %q, want %q", client.worktreeRoot, repoDir)
+	}
+	expectedRepoDir := filepath.Join(repoDir, ".bare")
+	if client.repoDir != expectedRepoDir {
+		t.Errorf("repoDir = %q, want %q", client.repoDir, expectedRepoDir)
+	}
+	if client.searchRoot != repoDir {
+		t.Errorf("searchRoot = %q, want %q", client.searchRoot, repoDir)
+	}
+
+	root2, _ := client.GetWorktreeRoot()
+	if root2 != root {
+		t.Errorf("second GetWorktreeRoot() = %q, want %q (should be cached)", root2, root)
+	}
+}
+
+func TestListCacheInvalidation(t *testing.T) {
+	repoDir := initBareLayoutRepo(t)
+	mainDir := filepath.Join(repoDir, "main")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(cwd) }()
+	if err := os.Chdir(mainDir); err != nil {
+		t.Fatal(err)
+	}
+
+	client := NewClient(Options{})
+
+	list1, err := client.ListCached()
+	if err != nil {
+		t.Fatalf("ListCached() error = %v", err)
+	}
+	initialCount := len(list1)
+
+	list2, err := client.ListCached()
+	if err != nil {
+		t.Fatalf("ListCached() second call error = %v", err)
+	}
+	if len(list2) != initialCount {
+		t.Errorf("ListCached() returned different count: %d vs %d", len(list2), initialCount)
+	}
+
+	bareDir := filepath.Join(repoDir, ".bare")
+	featureDir := filepath.Join(repoDir, "feature-test")
+	runGit(t, bareDir, "worktree", "add", "-b", "feature-test", featureDir, "main")
+
+	staleList, _ := client.ListCached()
+	if len(staleList) != initialCount {
+		t.Error("ListCached() should return stale data before invalidation")
+	}
+
+	client.InvalidateList()
+
+	freshList, err := client.ListCached()
+	if err != nil {
+		t.Fatalf("ListCached() after invalidation error = %v", err)
+	}
+	if len(freshList) != initialCount+1 {
+		t.Errorf("ListCached() after invalidation = %d worktrees, want %d", len(freshList), initialCount+1)
+	}
+}
+
+func TestRemoveBatch(t *testing.T) {
+	repoDir := initBareLayoutRepo(t)
+	mainDir := filepath.Join(repoDir, "main")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(cwd) }()
+	if err := os.Chdir(mainDir); err != nil {
+		t.Fatal(err)
+	}
+
+	client := NewClient(Options{})
+	bareDir := filepath.Join(repoDir, ".bare")
+
+	names := []string{"wt-a", "wt-b", "wt-c"}
+	for _, name := range names {
+		dir := filepath.Join(repoDir, name)
+		runGit(t, bareDir, "worktree", "add", "-b", name, dir, "main")
+	}
+	client.InvalidateList()
+
+	result := client.RemoveBatch(names, RemoveOptions{Force: true, DeleteBranch: true})
+
+	if len(result.Failed) > 0 {
+		t.Fatalf("RemoveBatch() had failures: %v", result.Failed)
+	}
+	if len(result.Succeeded) != 3 {
+		t.Errorf("RemoveBatch() succeeded = %d, want 3", len(result.Succeeded))
+	}
+
+	for _, name := range names {
+		dir := filepath.Join(repoDir, name)
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Errorf("worktree %s still exists", name)
+		}
+	}
+
+	for _, name := range names {
+		if _, err := client.runner.Run("-C", bareDir, "rev-parse", "--verify", "refs/heads/"+name); err == nil {
+			t.Errorf("branch %s still exists", name)
+		}
+	}
+}
+
+func TestRemoveBatchPartialFailure(t *testing.T) {
+	repoDir := initBareLayoutRepo(t)
+	mainDir := filepath.Join(repoDir, "main")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(cwd) }()
+	if err := os.Chdir(mainDir); err != nil {
+		t.Fatal(err)
+	}
+
+	client := NewClient(Options{})
+	bareDir := filepath.Join(repoDir, ".bare")
+
+	dir := filepath.Join(repoDir, "wt-good")
+	runGit(t, bareDir, "worktree", "add", "-b", "wt-good", dir, "main")
+	client.InvalidateList()
+
+	result := client.RemoveBatch([]string{"wt-good", "wt-nonexistent"}, RemoveOptions{Force: true})
+
+	if len(result.Failed) == 0 {
+		t.Fatal("RemoveBatch() should have failures for nonexistent worktree")
+	}
+	if _, ok := result.Failed["wt-nonexistent"]; !ok {
+		t.Error("expected wt-nonexistent in Failed map")
+	}
+
+	if len(result.Succeeded) != 0 {
+		t.Error("RemoveBatch() should not have succeeded entries when validation fails")
+	}
+
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		t.Error("wt-good should NOT be removed when batch validation fails (fail-fast)")
+	}
+}
+
+func TestRemoveBatchDryRun(t *testing.T) {
+	repoDir := initBareLayoutRepo(t)
+	mainDir := filepath.Join(repoDir, "main")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(cwd) }()
+	if err := os.Chdir(mainDir); err != nil {
+		t.Fatal(err)
+	}
+
+	client := NewClient(Options{})
+	bareDir := filepath.Join(repoDir, ".bare")
+
+	dir := filepath.Join(repoDir, "wt-dry")
+	runGit(t, bareDir, "worktree", "add", "-b", "wt-dry", dir, "main")
+	client.InvalidateList()
+
+	result := client.RemoveBatch([]string{"wt-dry"}, RemoveOptions{DryRun: true, DeleteBranch: true})
+
+	if len(result.Failed) > 0 {
+		t.Fatalf("RemoveBatch(DryRun) failures: %v", result.Failed)
+	}
+	if len(result.Succeeded) != 1 {
+		t.Errorf("RemoveBatch(DryRun) succeeded = %d, want 1", len(result.Succeeded))
+	}
+
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		t.Error("DryRun should not actually remove the worktree")
+	}
+
+	if len(result.Report.Events) == 0 {
+		t.Error("DryRun should produce report events")
+	}
+}
+
+func BenchmarkRemoveBatch(b *testing.B) {
+	for range b.N {
+		b.StopTimer()
+
+		tmpDir := b.TempDir()
+		bareDir := filepath.Join(tmpDir, ".bare")
+
+		cmd := exec.Command("git", "init", "--bare", bareDir)
+		cmd.Dir = tmpDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			b.Fatalf("git init --bare: %v\n%s", err, out)
+		}
+
+		mainDir := filepath.Join(tmpDir, "main")
+		cmd = exec.Command("git", "-C", bareDir, "worktree", "add", mainDir, "-b", "main")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			b.Fatalf("git worktree add main: %v\n%s", err, out)
+		}
+
+		cmd = exec.Command("git", "-C", mainDir, "config", "user.name", "Bench")
+		if _, err := cmd.CombinedOutput(); err != nil {
+			b.Fatal(err)
+		}
+		cmd = exec.Command("git", "-C", mainDir, "config", "user.email", "b@b.com")
+		if _, err := cmd.CombinedOutput(); err != nil {
+			b.Fatal(err)
+		}
+
+		if err := os.WriteFile(filepath.Join(mainDir, "f"), []byte("x"), 0644); err != nil {
+			b.Fatal(err)
+		}
+		cmd = exec.Command("git", "-C", mainDir, "add", ".")
+		if _, err := cmd.CombinedOutput(); err != nil {
+			b.Fatal(err)
+		}
+		cmd = exec.Command("git", "-C", mainDir, "commit", "-m", "init")
+		if _, err := cmd.CombinedOutput(); err != nil {
+			b.Fatal(err)
+		}
+
+		names := make([]string, 5)
+		for j := range 5 {
+			name := fmt.Sprintf("bench-%d", j)
+			names[j] = name
+			dir := filepath.Join(tmpDir, name)
+			cmd = exec.Command("git", "-C", bareDir, "worktree", "add", "-b", name, dir, "main")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				b.Fatalf("add worktree %s: %v\n%s", name, err, out)
+			}
+		}
+
+		origDir, _ := os.Getwd()
+		if err := os.Chdir(mainDir); err != nil {
+			b.Fatal(err)
+		}
+
+		client := NewClient(Options{})
+
+		b.StartTimer()
+		client.RemoveBatch(names, RemoveOptions{Force: true, DeleteBranch: true})
+		b.StopTimer()
+
+		_ = os.Chdir(origDir)
 	}
 }

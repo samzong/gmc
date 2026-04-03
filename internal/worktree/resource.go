@@ -63,13 +63,12 @@ func (c *Client) syncSharedResourcesToPath(targetRoot string, runHooks bool) (Re
 		return report, nil
 	}
 
-	repoRoot, err := c.GetRepoRoot()
-	if err != nil {
+	if err := c.ensureInit(); err != nil {
 		return report, err
 	}
 
 	for _, res := range cfg.Resources {
-		resourceReport, err := c.syncOneResource(repoRoot, targetRoot, res)
+		resourceReport, err := c.syncOneResource(c.worktreeRoot, targetRoot, res)
 		report.Merge(resourceReport)
 		if err != nil {
 			return report, err
@@ -149,10 +148,12 @@ func (c *Client) syncOneResource(repoRoot, targetRoot string, res SharedResource
 }
 
 func (c *Client) LoadSharedConfig() (*SharedConfig, string, error) {
+	c.once.Do(c.init)
+
 	commonDir, err := c.GetGitCommonDir()
 	if err != nil {
-		if root, bareErr := FindBareRoot(""); bareErr == nil {
-			commonDir = filepath.Join(root, ".bare")
+		if c.bareRoot != "" {
+			commonDir = filepath.Join(c.bareRoot, ".bare")
 		} else {
 			return nil, "", err
 		}
@@ -163,10 +164,10 @@ func (c *Client) LoadSharedConfig() (*SharedConfig, string, error) {
 		filepath.Join(commonDir, legacySharedConfigYML),
 		filepath.Join(commonDir, legacySharedConfigYAML),
 	}
-	if repoRoot, rootErr := c.GetRepoRoot(); rootErr == nil && repoRoot != "" {
+	if c.worktreeRoot != "" {
 		legacyCandidates = append(legacyCandidates,
-			filepath.Join(repoRoot, legacySharedConfigYML),
-			filepath.Join(repoRoot, legacySharedConfigYAML),
+			filepath.Join(c.worktreeRoot, legacySharedConfigYML),
+			filepath.Join(c.worktreeRoot, legacySharedConfigYAML),
 		)
 	}
 
@@ -338,21 +339,21 @@ func (c *Client) RemoveHook(index int) (Report, error) {
 func (c *Client) SyncAllSharedResources() (Report, error) {
 	var report Report
 
-	worktrees, err := c.List()
+	worktrees, err := c.ListCached()
 	if err != nil {
 		return report, err
 	}
 
-	root, _ := c.GetRepoRoot()
-	repoDir := repoDirForGit(root)
-	isBare := repoDir != root // bare layout: repoDir points to .bare
+	if err := c.ensureInit(); err != nil {
+		return report, err
+	}
+	isBare := c.repoDir != c.worktreeRoot
 	var targets []Info
 	for _, wt := range worktrees {
 		if wt.IsBare || filepath.Base(wt.Path) == ".bare" {
 			continue
 		}
-		// In bare layout, skip worktrees outside the managed root directory
-		if isBare && isExternalPath(root, wt.Path) {
+		if isBare && isExternalPath(c.worktreeRoot, wt.Path) {
 			continue
 		}
 		targets = append(targets, wt)
@@ -380,8 +381,9 @@ func (c *Client) resolveWorktreePath(worktreeName string) (string, error) {
 		return "", errors.New("worktree name cannot be empty")
 	}
 
-	repoRoot, _ := c.GetRepoRoot()
-	worktrees, err := c.List()
+	c.once.Do(c.init)
+	repoRoot := c.worktreeRoot
+	worktrees, err := c.ListCached()
 	if err != nil {
 		if repoRoot != "" {
 			candidate := filepath.Join(repoRoot, worktreeName)
@@ -479,7 +481,7 @@ func (c *Client) resolveSharedPaths(repoRoot, targetRoot string, res SharedResou
 
 	parts := strings.SplitN(res.Path, string(filepath.Separator), 2)
 	if len(parts) == 2 {
-		worktrees, listErr := c.List()
+		worktrees, listErr := c.ListCached()
 		if listErr == nil {
 			var baseMatches []string
 			for _, wt := range worktrees {
