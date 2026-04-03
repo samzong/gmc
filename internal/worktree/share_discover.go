@@ -124,8 +124,8 @@ func (c *Client) findMainWorktreePath() (string, error) {
 		return "", fmt.Errorf("failed to list worktrees: %w", err)
 	}
 
-	mainBranch := c.resolvedMainBranch()
-	if mainBranch != "" {
+	mainBranch, err := c.resolvedMainBranch()
+	if err == nil && mainBranch != "" {
 		for _, wt := range worktrees {
 			if wt.Branch == mainBranch {
 				return wt.Path, nil

@@ -484,7 +484,10 @@ func (c *Client) prepareRemove(name string) (removeContext, error) {
 	if !found {
 		return removeContext{}, fmt.Errorf("worktree not found: %s\nUse 'gmc wt ls' to see available worktrees", name)
 	}
-	pp := c.NewProtectionPolicy()
+	pp, err := c.NewProtectionPolicy()
+	if err != nil {
+		return removeContext{}, err
+	}
 	if pp.IsProtected(wtInfo) {
 		return removeContext{}, fmt.Errorf("cannot remove protected worktree '%s' (%s)", name, pp.Reason(wtInfo))
 	}
@@ -687,7 +690,10 @@ func (c *Client) Promote(worktreeName, newBranchName string) (Report, error) {
 		return report, errors.New("worktree is in detached HEAD state, cannot promote")
 	}
 
-	pp := c.NewProtectionPolicy()
+	pp, err := c.NewProtectionPolicy()
+	if err != nil {
+		return report, err
+	}
 	checkWt := Info{Path: targetPath, Branch: oldBranch}
 	if pp.IsProtected(checkWt) {
 		return report, fmt.Errorf("cannot promote protected worktree '%s' (%s)", worktreeName, pp.Reason(checkWt))
@@ -766,21 +772,21 @@ type ProtectionPolicy struct {
 	RootPath   string
 }
 
-func (c *Client) NewProtectionPolicy() ProtectionPolicy {
+func (c *Client) NewProtectionPolicy() (ProtectionPolicy, error) {
 	var p ProtectionPolicy
 	root, err := c.GetWorktreeRoot()
 	if err != nil {
-		return p
+		return p, fmt.Errorf("failed to get worktree root: %w", err)
 	}
 	p.RootPath = root
 	repoDir := repoDirForGit(root)
 	isBareLayout := repoDir != root
 	branch, err := c.resolveBaseBranchWithPolicy(repoDir, "", isBareLayout)
 	if err != nil {
-		return p
+		return p, fmt.Errorf("failed to resolve main branch: %w", err)
 	}
 	p.MainBranch = localBranchName(branch)
-	return p
+	return p, nil
 }
 
 func (p ProtectionPolicy) IsProtected(wt Info) bool {
@@ -806,12 +812,20 @@ func (p ProtectionPolicy) Reason(wt Info) string {
 	return "main branch"
 }
 
-func (c *Client) IsProtectedWorktree(wt Info) bool {
-	return c.NewProtectionPolicy().IsProtected(wt)
+func (c *Client) IsProtectedWorktree(wt Info) (bool, error) {
+	pp, err := c.NewProtectionPolicy()
+	if err != nil {
+		return false, err
+	}
+	return pp.IsProtected(wt), nil
 }
 
-func (c *Client) resolvedMainBranch() string {
-	return c.NewProtectionPolicy().MainBranch
+func (c *Client) resolvedMainBranch() (string, error) {
+	pp, err := c.NewProtectionPolicy()
+	if err != nil {
+		return "", err
+	}
+	return pp.MainBranch, nil
 }
 
 // ListBranches returns all local branch names

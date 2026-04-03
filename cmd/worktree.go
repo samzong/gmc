@@ -385,7 +385,10 @@ func resolveAllRemovableWorktrees(wtClient *worktree.Client) ([]string, error) {
 		return nil, err
 	}
 
-	pp := wtClient.NewProtectionPolicy()
+	pp, err := wtClient.NewProtectionPolicy()
+	if err != nil {
+		return nil, err
+	}
 	root := getDisplayRoot(wtClient)
 	var names []string
 	for _, wt := range all {

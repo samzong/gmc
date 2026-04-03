@@ -615,7 +615,10 @@ func TestIsProtectedWorktree(t *testing.T) {
 	}
 
 	for _, wt := range worktrees {
-		protected := client.IsProtectedWorktree(wt)
+		protected, err := client.IsProtectedWorktree(wt)
+		if err != nil {
+			t.Fatalf("IsProtectedWorktree() error = %v", err)
+		}
 		switch wt.Branch {
 		case "main":
 			if !protected {
