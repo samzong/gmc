@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ var (
 	wtForce        bool
 	wtDeleteBranch bool
 	wtDryRun       bool
+	wtAll          bool
 	wtUpstream     string
 	wtProjectName  string
 	prRemote       string
@@ -69,21 +71,30 @@ var wtListCmd = &cobra.Command{
 }
 
 var wtRemoveCmd = &cobra.Command{
-	Use:     "remove <name> [name...]",
+	Use:     "remove [name...]",
 	Aliases: []string{"rm"},
 	Short:   "Remove worktrees (alias: rm)",
 	Long: `Remove one or more worktrees.
 
 By default, only removes the worktree directory, keeping the branch.
-Use -D to also delete the branch.
+Use -D to also delete the branch. Use --all to remove all non-protected worktrees.
 
 Examples:
   gmc wt remove feature-login           # Remove one worktree
   gmc wt rm feat-a feat-b feat-c        # Remove multiple worktrees
   gmc wt rm feature-login -D            # Remove worktree and delete branch
   gmc wt rm feature-login -f            # Force remove (ignore dirty state)
-  gmc wt rm feature-login --dry-run     # Preview what would be removed`,
-	Args: cobra.MinimumNArgs(1),
+  gmc wt rm feature-login --dry-run     # Preview what would be removed
+  gmc wt rm --all -D                    # Remove all non-protected worktrees and branches`,
+	Args: func(_ *cobra.Command, args []string) error {
+		if wtAll && len(args) > 0 {
+			return errors.New("--all and positional arguments are mutually exclusive")
+		}
+		if !wtAll && len(args) < 1 {
+			return errors.New("requires at least 1 arg(s) or --all flag")
+		}
+		return nil
+	},
 	RunE: func(_ *cobra.Command, args []string) error {
 		wtClient := newWorktreeClient()
 		return runWorktreeRemove(wtClient, args)
@@ -192,6 +203,7 @@ func init() {
 	wtRemoveCmd.Flags().BoolVarP(&wtForce, "force", "f", false, "Force removal even if worktree is dirty")
 	wtRemoveCmd.Flags().BoolVarP(&wtDeleteBranch, "delete-branch", "D", false, "Also delete the branch")
 	wtRemoveCmd.Flags().BoolVar(&wtDryRun, "dry-run", false, "Preview what would be removed without making changes")
+	wtRemoveCmd.Flags().BoolVarP(&wtAll, "all", "a", false, "Remove all non-protected worktrees")
 
 	// Flags for clone command
 	wtCloneCmd.Flags().StringVar(&wtUpstream, "upstream", "", "Upstream repository URL (for fork workflow)")
@@ -335,6 +347,18 @@ func runWorktreeList(wtClient *worktree.Client) error {
 }
 
 func runWorktreeRemove(wtClient *worktree.Client, names []string) error {
+	if wtAll {
+		resolved, err := resolveAllRemovableWorktrees(wtClient)
+		if err != nil {
+			return err
+		}
+		if len(resolved) == 0 {
+			fmt.Fprintln(outWriter(), "No removable worktrees found.")
+			return nil
+		}
+		names = resolved
+	}
+
 	opts := worktree.RemoveOptions{
 		Force:        wtForce,
 		DeleteBranch: wtDeleteBranch,
@@ -353,6 +377,27 @@ func runWorktreeRemove(wtClient *worktree.Client, names []string) error {
 		return fmt.Errorf("failed to remove worktrees: %s", strings.Join(failed, ", "))
 	}
 	return nil
+}
+
+func resolveAllRemovableWorktrees(wtClient *worktree.Client) ([]string, error) {
+	all, err := wtClient.List()
+	if err != nil {
+		return nil, err
+	}
+
+	pp := wtClient.NewProtectionPolicy()
+	root := getDisplayRoot(wtClient)
+	var names []string
+	for _, wt := range all {
+		if pp.IsProtected(wt) {
+			continue
+		}
+		if isExternalWorktree(root, wt.Path) || isAgentWorktree(wt.Path) {
+			continue
+		}
+		names = append(names, displayWorktreeName(root, wt.Path))
+	}
+	return names, nil
 }
 
 func runWorktreeClone(wtClient *worktree.Client, url string) error {

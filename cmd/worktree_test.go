@@ -102,3 +102,88 @@ func runGitCmd(t *testing.T, dir string, args ...string) string {
 var execCommand = func(name string, args ...string) *exec.Cmd {
 	return exec.Command(name, args...)
 }
+
+func TestRemoveAll_SkipsProtected(t *testing.T) {
+	repoDir := initCmdTestRepo(t)
+
+	feat1 := filepath.Join(repoDir, "feat-1")
+	feat2 := filepath.Join(repoDir, "feat-2")
+	runGitCmd(t, repoDir, "worktree", "add", "-b", "feat-1", feat1, "main")
+	runGitCmd(t, repoDir, "worktree", "add", "-b", "feat-2", feat2, "main")
+
+	oldCwd, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() { _ = os.Chdir(oldCwd) }()
+	require.NoError(t, os.Chdir(repoDir))
+
+	var out bytes.Buffer
+	oldOut := outWriterFunc
+	oldErr := errWriterFunc
+	outWriterFunc = func() io.Writer { return &out }
+	errWriterFunc = func() io.Writer { return &out }
+	defer func() {
+		outWriterFunc = oldOut
+		errWriterFunc = oldErr
+	}()
+
+	oldAll := wtAll
+	oldForce := wtForce
+	oldDelete := wtDeleteBranch
+	oldDry := wtDryRun
+	defer func() {
+		wtAll = oldAll
+		wtForce = oldForce
+		wtDeleteBranch = oldDelete
+		wtDryRun = oldDry
+	}()
+
+	wtAll = true
+	wtForce = false
+	wtDeleteBranch = true
+	wtDryRun = false
+
+	client := worktree.NewClient(worktree.Options{})
+	err = runWorktreeRemove(client, nil)
+	require.NoError(t, err)
+
+	_, err = os.Stat(feat1)
+	assert.True(t, os.IsNotExist(err), "feat-1 should be removed")
+	_, err = os.Stat(feat2)
+	assert.True(t, os.IsNotExist(err), "feat-2 should be removed")
+
+	_, err = os.Stat(repoDir)
+	assert.NoError(t, err, "main worktree (repoDir) must survive --all")
+
+	remaining, err := client.List()
+	require.NoError(t, err)
+	var mainFound bool
+	for _, wt := range remaining {
+		if wt.Branch == "feat-1" || wt.Branch == "feat-2" {
+			t.Errorf("branch %s should have been deleted", wt.Branch)
+		}
+		if wt.Branch == "main" {
+			mainFound = true
+		}
+	}
+	assert.True(t, mainFound, "main branch worktree must still exist")
+}
+
+func TestRemoveAllMutuallyExclusiveWithArgs(t *testing.T) {
+	oldAll := wtAll
+	defer func() { wtAll = oldAll }()
+	wtAll = true
+
+	err := wtRemoveCmd.Args(wtRemoveCmd, []string{"some-worktree"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mutually exclusive")
+}
+
+func TestRemoveRequiresArgsOrAll(t *testing.T) {
+	oldAll := wtAll
+	defer func() { wtAll = oldAll }()
+	wtAll = false
+
+	err := wtRemoveCmd.Args(wtRemoveCmd, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires at least 1 arg")
+}

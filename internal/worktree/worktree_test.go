@@ -593,6 +593,96 @@ func TestLocalBranchName(t *testing.T) {
 	}
 }
 
+func TestIsProtectedWorktree(t *testing.T) {
+	repoDir := initTestRepo(t)
+
+	featureDir := filepath.Join(repoDir, "feature-wt")
+	runGit(t, repoDir, "worktree", "add", "-b", "feature", featureDir, "main")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(cwd) }()
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatal(err)
+	}
+
+	client := NewClient(Options{})
+	worktrees, err := client.List()
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	for _, wt := range worktrees {
+		protected := client.IsProtectedWorktree(wt)
+		switch wt.Branch {
+		case "main":
+			if !protected {
+				t.Errorf("main worktree should be protected, path=%s", wt.Path)
+			}
+		case "feature":
+			if protected {
+				t.Errorf("feature worktree should NOT be protected, path=%s", wt.Path)
+			}
+		}
+	}
+}
+
+func TestRemoveProtectedWorktree(t *testing.T) {
+	repoDir := initTestRepo(t)
+
+	featureDir := filepath.Join(filepath.Dir(repoDir), filepath.Base(repoDir)+"--feature")
+	runGit(t, repoDir, "worktree", "add", "-b", "feature", featureDir, "main")
+	defer os.RemoveAll(featureDir)
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(cwd) }()
+	if err := os.Chdir(featureDir); err != nil {
+		t.Fatal(err)
+	}
+
+	repoName := filepath.Base(repoDir)
+	client := NewClient(Options{})
+	_, err = client.Remove(repoName, RemoveOptions{})
+	if err == nil {
+		t.Fatal("expected error when removing protected worktree")
+	}
+	if !strings.Contains(err.Error(), "cannot remove protected worktree") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestPromoteProtectedWorktree(t *testing.T) {
+	repoDir := initTestRepo(t)
+
+	featureDir := filepath.Join(filepath.Dir(repoDir), filepath.Base(repoDir)+"--feature")
+	runGit(t, repoDir, "worktree", "add", "-b", "feature", featureDir, "main")
+	defer os.RemoveAll(featureDir)
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(cwd) }()
+	if err := os.Chdir(featureDir); err != nil {
+		t.Fatal(err)
+	}
+
+	repoName := filepath.Base(repoDir)
+	client := NewClient(Options{})
+	_, err = client.Promote(repoName, "new-name")
+	if err == nil {
+		t.Fatal("expected error when promoting protected worktree")
+	}
+	if !strings.Contains(err.Error(), "cannot promote protected worktree") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 func initTestRepo(t *testing.T) string {
 	return initTestRepoWithBranch(t, "main")
 }
