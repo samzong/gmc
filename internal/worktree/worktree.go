@@ -371,13 +371,13 @@ func (c *Client) Add(name string, opts AddOptions) (Report, error) {
 		return report, gitutil.WrapGitError("failed to create worktree", result, err)
 	}
 
-	c.InvalidateList()
-
-	sharedReport, err := c.SyncSharedResources(filepath.Base(ctx.targetPath))
+	sharedReport, err := c.syncSharedResourcesToPath(ctx.targetPath, true)
 	report.Merge(sharedReport)
 	if err != nil {
 		report.Warn(fmt.Sprintf("Warning: failed to sync shared resources: %v", err))
 	}
+
+	c.InvalidateList()
 
 	c.appendAddSummary(&report, ctx, branchExists)
 	return report, nil
@@ -515,14 +515,21 @@ func (c *Client) RemoveBatch(names []string, opts RemoveOptions) RemoveBatchResu
 		}
 	}
 
-	for _, pb := range branchesToDelete {
-		args := []string{"-C", c.repoDir, "branch", "-D", pb.branch}
+	if len(branchesToDelete) > 0 {
+		args := []string{"-C", c.repoDir, "branch", "-D"}
+		for _, pb := range branchesToDelete {
+			args = append(args, pb.branch)
+		}
 		runResult, err := c.runner.RunLogged(args...)
 		if err != nil {
-			result.Failed[pb.name] = gitutil.WrapGitError("failed to delete branch", runResult, err)
-			continue
+			for _, pb := range branchesToDelete {
+				result.Failed[pb.name] = gitutil.WrapGitError("failed to delete branch", runResult, err)
+			}
+		} else {
+			for _, pb := range branchesToDelete {
+				result.Report.Warn(fmt.Sprintf("Deleted branch '%s'", pb.branch))
+			}
 		}
-		result.Report.Warn(fmt.Sprintf("Deleted branch '%s'", pb.branch))
 	}
 
 	if !opts.DryRun && len(result.Succeeded) > 0 {
@@ -758,9 +765,7 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 			return nil, gitutil.WrapGitError("failed to create worktree "+dirName, runResult, err)
 		}
 
-		c.InvalidateList()
-
-		sharedReport, err := c.SyncSharedResources(dirName)
+		sharedReport, err := c.syncSharedResourcesToPath(targetPath, true)
 		if err != nil {
 			dupResult.Warnings = append(
 				dupResult.Warnings,
@@ -776,6 +781,8 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 		dupResult.Worktrees = append(dupResult.Worktrees, dirName)
 		dupResult.Branches = append(dupResult.Branches, branchName)
 	}
+
+	c.InvalidateList()
 
 	return dupResult, nil
 }

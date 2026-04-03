@@ -113,13 +113,13 @@ func (c *Client) AddPR(prNumber int, remote string) (Report, error) {
 		return report, gitutil.WrapGitError("failed to create worktree", result, err)
 	}
 
-	c.InvalidateList()
-
-	sharedReport, err := c.SyncSharedResources(branchName)
+	sharedReport, err := c.syncSharedResourcesToPath(targetPath, true)
 	report.Merge(sharedReport)
 	if err != nil {
 		report.Warn(fmt.Sprintf("Warning: failed to sync shared resources: %v", err))
 	}
+
+	c.InvalidateList()
 
 	report.Info(fmt.Sprintf("Created PR worktree '%s' at %s", branchName, targetPath))
 	report.Info("Commit: " + commitHash[:7])
