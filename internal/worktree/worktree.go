@@ -623,8 +623,12 @@ func (c *Client) resolveRemoveTarget(name string, worktrees []Info) (removeConte
 	if !found {
 		return removeContext{}, fmt.Errorf("worktree not found: %s\nUse 'gmc wt ls' to see available worktrees", name)
 	}
-	if wtInfo.IsBare {
-		return removeContext{}, errors.New("cannot remove the main bare worktree")
+	pp, err := c.NewProtectionPolicy()
+	if err != nil {
+		return removeContext{}, err
+	}
+	if pp.IsProtected(wtInfo) {
+		return removeContext{}, fmt.Errorf("cannot remove protected worktree '%s' (%s)", name, pp.Reason(wtInfo))
 	}
 
 	rel, err := filepath.Rel(c.searchRoot, wtInfo.Path)
@@ -808,12 +812,10 @@ func (c *Client) Promote(worktreeName, newBranchName string) (Report, error) {
 
 	targetPath := filepath.Join(c.searchRoot, worktreeName)
 
-	// Verify worktree exists
 	if _, err := os.Stat(targetPath); os.IsNotExist(err) {
 		return report, fmt.Errorf("worktree not found: %s", worktreeName)
 	}
 
-	// Get current branch name
 	result, err := c.runner.Run("-C", targetPath, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		return report, fmt.Errorf("failed to get current branch: %w", err)
@@ -822,6 +824,15 @@ func (c *Client) Promote(worktreeName, newBranchName string) (Report, error) {
 	oldBranch := result.StdoutString(true)
 	if oldBranch == "HEAD" {
 		return report, errors.New("worktree is in detached HEAD state, cannot promote")
+	}
+
+	pp, err := c.NewProtectionPolicy()
+	if err != nil {
+		return report, err
+	}
+	checkWt := Info{Path: targetPath, Branch: oldBranch}
+	if pp.IsProtected(checkWt) {
+		return report, fmt.Errorf("cannot promote protected worktree '%s' (%s)", worktreeName, pp.Reason(checkWt))
 	}
 
 	// Rename branch
@@ -874,6 +885,67 @@ func (c *Client) listGitRefs(errLabel string, gitArgs ...string) ([]string, erro
 	}
 
 	return strings.Split(output, "\n"), nil
+}
+
+type ProtectionPolicy struct {
+	MainBranch string
+	RootPath   string
+}
+
+func (c *Client) NewProtectionPolicy() (ProtectionPolicy, error) {
+	var p ProtectionPolicy
+	root, err := c.GetWorktreeRoot()
+	if err != nil {
+		return p, fmt.Errorf("failed to get worktree root: %w", err)
+	}
+	p.RootPath = root
+	repoDir := repoDirForGit(root)
+	isBareLayout := repoDir != root
+	branch, err := c.resolveBaseBranchWithPolicy(repoDir, "", isBareLayout)
+	if err != nil {
+		return p, fmt.Errorf("failed to resolve main branch: %w", err)
+	}
+	p.MainBranch = localBranchName(branch)
+	return p, nil
+}
+
+func (p ProtectionPolicy) IsProtected(wt Info) bool {
+	if wt.IsBare {
+		return true
+	}
+	if p.RootPath != "" && wt.Path == p.RootPath {
+		return true
+	}
+	if p.MainBranch != "" && wt.Branch == p.MainBranch {
+		return true
+	}
+	return false
+}
+
+func (p ProtectionPolicy) Reason(wt Info) string {
+	if wt.IsBare {
+		return "bare repository"
+	}
+	if p.RootPath != "" && wt.Path == p.RootPath {
+		return "main worktree"
+	}
+	return "main branch"
+}
+
+func (c *Client) IsProtectedWorktree(wt Info) (bool, error) {
+	pp, err := c.NewProtectionPolicy()
+	if err != nil {
+		return false, err
+	}
+	return pp.IsProtected(wt), nil
+}
+
+func (c *Client) resolvedMainBranch() (string, error) {
+	pp, err := c.NewProtectionPolicy()
+	if err != nil {
+		return "", err
+	}
+	return pp.MainBranch, nil
 }
 
 // ListBranches returns all local branch names

@@ -129,23 +129,11 @@ func (c *Client) gitConfig(repoDir string, key string, value string) error {
 }
 
 func (c *Client) getDefaultBranch(bareDir string) (string, error) {
-	args := []string{"-C", bareDir, "symbolic-ref", "--short", "HEAD"}
-	result, err := c.runner.Run(args...)
-	if err == nil {
-		branch := result.StdoutString(true)
-		if branch != "" {
-			return branch, nil
-		}
+	branch, err := c.resolveBaseBranchWithPolicy(bareDir, "", true)
+	if err != nil {
+		return "", err
 	}
-
-	for _, branch := range []string{"main", "master"} {
-		args := []string{"-C", bareDir, "rev-parse", "--verify", "refs/heads/" + branch}
-		if _, err := c.runner.Run(args...); err == nil {
-			return branch, nil
-		}
-	}
-
-	return "", errors.New("could not determine default branch")
+	return localBranchName(branch), nil
 }
 
 func extractProjectName(repoURL string) (string, error) {

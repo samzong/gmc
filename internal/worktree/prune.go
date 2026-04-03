@@ -93,9 +93,13 @@ func (c *Client) collectPruneCandidates(root, baseBranch string, report *Report)
 	repoDir := repoDirForGit(root)
 	isBare := repoDir != root
 
+	pp, err := c.NewProtectionPolicy()
+	if err != nil {
+		return nil, "", err
+	}
 	var candidates []pruneCandidate
 	for _, wt := range worktrees {
-		if wt.IsBare || filepath.Base(wt.Path) == ".bare" || wt.Path == root {
+		if pp.IsProtected(wt) {
 			continue
 		}
 		if isBare && isExternalPath(root, wt.Path) {
