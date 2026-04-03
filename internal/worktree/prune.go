@@ -49,7 +49,7 @@ var ghRunFunc = ghRunDefault
 
 func ghRunDefault(repoDir string, args ...string) ([]byte, error) {
 	if _, err := exec.LookPath("gh"); err != nil {
-		return nil, fmt.Errorf("gh CLI not found: install from https://cli.github.com")
+		return nil, errors.New("gh CLI not found: install from https://cli.github.com")
 	}
 	cmd := exec.Command("gh", args...)
 	cmd.Dir = repoDir
@@ -167,7 +167,9 @@ func ghPRStates(repoDir string) (map[string]ghPRInfo, error) {
 	return m, nil
 }
 
-func (c *Client) prunePRAware(opts PruneOptions, candidates []pruneCandidate, repoDir string, result PruneResult) (PruneResult, error) {
+func (c *Client) prunePRAware(
+	opts PruneOptions, candidates []pruneCandidate, repoDir string, result PruneResult,
+) (PruneResult, error) {
 	prMap, err := ghPRStates(repoDir)
 	if err != nil {
 		return result, err
@@ -227,7 +229,9 @@ func (c *Client) prunePRAware(opts PruneOptions, candidates []pruneCandidate, re
 	return result, nil
 }
 
-func (c *Client) pruneClassic(opts PruneOptions, candidates []pruneCandidate, root, baseBranch, repoDir string, result PruneResult) (PruneResult, error) {
+func (c *Client) pruneClassic(
+	opts PruneOptions, candidates []pruneCandidate, root, baseBranch, repoDir string, result PruneResult,
+) (PruneResult, error) {
 	var prunedAny bool
 
 	for _, cand := range candidates {
