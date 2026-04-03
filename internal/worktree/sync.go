@@ -31,23 +31,20 @@ type syncContext struct {
 
 // ResolveSyncBaseBranch resolves the base branch used for syncing.
 func (c *Client) ResolveSyncBaseBranch(override string) (string, error) {
-	root, err := c.GetWorktreeRoot()
-	if err != nil {
+	if err := c.ensureInit(); err != nil {
 		return "", fmt.Errorf("failed to find worktree root: %w", err)
 	}
-	return c.resolveSyncBaseBranch(repoDirForGit(root), override)
+	return c.resolveSyncBaseBranch(c.repoDir, override)
 }
 
-// Sync updates the base branch refs and main worktree using fast-forward only.
 func (c *Client) Sync(opts SyncOptions) (Report, error) {
 	var report Report
 
-	root, err := c.GetWorktreeRoot()
-	if err != nil {
+	if err := c.ensureInit(); err != nil {
 		return report, fmt.Errorf("failed to find worktree root: %w", err)
 	}
 
-	repoDir := repoDirForGit(root)
+	repoDir := c.repoDir
 	remote, err := c.selectSyncRemote(repoDir)
 	if err != nil {
 		return report, err
@@ -63,7 +60,7 @@ func (c *Client) Sync(opts SyncOptions) (Report, error) {
 	remoteFull := "refs/remotes/" + remoteRef
 	localFull := "refs/heads/" + baseName
 
-	worktrees, err := c.List()
+	worktrees, err := c.ListCached()
 	if err != nil {
 		return report, err
 	}

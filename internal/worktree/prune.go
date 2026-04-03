@@ -59,17 +59,19 @@ func ghRunDefault(repoDir string, args ...string) ([]byte, error) {
 func (c *Client) Prune(opts PruneOptions) (PruneResult, error) {
 	var result PruneResult
 
-	root, err := c.GetWorktreeRoot()
-	if err != nil {
+	if err := c.ensureInit(); err != nil {
 		return result, fmt.Errorf("failed to find worktree root: %w", err)
 	}
+	if !opts.DryRun {
+		defer c.InvalidateList()
+	}
 
-	baseBranch, err := c.resolveBaseBranch(root, opts.BaseBranch)
+	baseBranch, err := c.resolveBaseBranch(c.worktreeRoot, opts.BaseBranch)
 	if err != nil {
 		return result, err
 	}
 
-	candidates, repoDir, err := c.collectPruneCandidates(root, baseBranch, &result.Report)
+	candidates, repoDir, err := c.collectPruneCandidates(c.worktreeRoot, baseBranch, &result.Report)
 	if err != nil {
 		return result, err
 	}
@@ -77,13 +79,13 @@ func (c *Client) Prune(opts PruneOptions) (PruneResult, error) {
 	if opts.PRAware {
 		return c.prunePRAware(opts, candidates, repoDir, result)
 	}
-	return c.pruneClassic(opts, candidates, root, baseBranch, repoDir, result)
+	return c.pruneClassic(opts, candidates, c.worktreeRoot, baseBranch, repoDir, result)
 }
 
 func (c *Client) collectPruneCandidates(root, baseBranch string, report *Report) ([]pruneCandidate, string, error) {
 	baseBranchName := localBranchName(baseBranch)
 
-	worktrees, err := c.List()
+	worktrees, err := c.ListCached()
 	if err != nil {
 		return nil, "", err
 	}

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/samzong/gmc/internal/gitcmd"
@@ -20,6 +21,17 @@ type Options struct {
 type Client struct {
 	runner  gitcmd.Runner
 	verbose bool
+
+	once         sync.Once
+	bareRoot     string
+	worktreeRoot string
+	searchRoot   string
+	repoDir      string
+	initErr      error
+
+	listMu    sync.Mutex
+	listCache []Info
+	listValid bool
 }
 
 func NewClient(opts Options) *Client {
@@ -27,6 +39,64 @@ func NewClient(opts Options) *Client {
 		runner:  gitcmd.Runner{Verbose: opts.Verbose},
 		verbose: opts.Verbose,
 	}
+}
+
+func (c *Client) init() {
+	bareRoot, err := FindBareRoot("")
+	if err == nil {
+		c.bareRoot = bareRoot
+		c.worktreeRoot = bareRoot
+	} else {
+		commonDir, cdErr := c.GetGitCommonDir()
+		if cdErr != nil {
+			c.initErr = cdErr
+			return
+		}
+		c.worktreeRoot = filepath.Dir(commonDir)
+	}
+
+	c.repoDir = repoDirForGit(c.worktreeRoot)
+
+	if c.repoDir != c.worktreeRoot {
+		c.searchRoot = c.worktreeRoot
+	} else {
+		c.searchRoot = filepath.Dir(c.worktreeRoot)
+	}
+}
+
+func (c *Client) ensureInit() error {
+	c.once.Do(c.init)
+	return c.initErr
+}
+
+func (c *Client) ListCached() ([]Info, error) {
+	c.listMu.Lock()
+	defer c.listMu.Unlock()
+
+	if c.listValid {
+		out := make([]Info, len(c.listCache))
+		copy(out, c.listCache)
+		return out, nil
+	}
+
+	list, err := c.List()
+	if err != nil {
+		return nil, err
+	}
+
+	c.listCache = list
+	c.listValid = true
+
+	out := make([]Info, len(list))
+	copy(out, list)
+	return out, nil
+}
+
+func (c *Client) InvalidateList() {
+	c.listMu.Lock()
+	c.listCache = nil
+	c.listValid = false
+	c.listMu.Unlock()
 }
 
 // RepoType represents the type of git repository
@@ -198,21 +268,10 @@ func (c *Client) GetGitCommonDir() (string, error) {
 
 // GetRepoRoot returns the main worktree/repository root for the current repository family.
 func (c *Client) GetRepoRoot() (string, error) {
-	// First try bare-root discovery for gmc's preferred layout.
-	root, err := FindBareRoot("")
-	if err == nil {
-		return root, nil
-	}
-
-	commonDir, err := c.GetGitCommonDir()
-	if err != nil {
+	if err := c.ensureInit(); err != nil {
 		return "", err
 	}
-
-	if filepath.Base(commonDir) == ".bare" {
-		return filepath.Dir(commonDir), nil
-	}
-	return filepath.Dir(commonDir), nil
+	return c.worktreeRoot, nil
 }
 
 // GetWorktreeRoot returns the root directory for worktrees (parent of .bare or main repo root).
@@ -222,30 +281,27 @@ func (c *Client) GetWorktreeRoot() (string, error) {
 
 // IsBareWorktree checks if the current repository uses the .bare worktree pattern
 func (c *Client) IsBareWorktree() bool {
-	_, err := FindBareRoot("")
-	return err == nil
+	c.once.Do(c.init)
+	return c.bareRoot != ""
 }
 
 // List returns all worktrees for the current repository
 func (c *Client) List() ([]Info, error) {
-	// Find the bare root to support running from any directory
-	root, err := FindBareRoot("")
-	if err != nil {
-		// Fallback to current directory if not in a bare repo structure
-		result, err := c.runner.RunLogged("worktree", "list", "--porcelain")
+	c.once.Do(c.init)
+
+	if c.bareRoot != "" {
+		bareDir := filepath.Join(c.bareRoot, ".bare")
+		result, err := c.runner.RunLogged("-C", bareDir, "worktree", "list", "--porcelain")
 		if err != nil {
 			return nil, fmt.Errorf("failed to list worktrees: %w", err)
 		}
 		return parseWorktreeList(string(result.Stdout))
 	}
 
-	// Run git command from the .bare directory
-	bareDir := filepath.Join(root, ".bare")
-	result, err := c.runner.RunLogged("-C", bareDir, "worktree", "list", "--porcelain")
+	result, err := c.runner.RunLogged("worktree", "list", "--porcelain")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list worktrees: %w", err)
 	}
-
 	return parseWorktreeList(string(result.Stdout))
 }
 
@@ -315,13 +371,13 @@ func (c *Client) Add(name string, opts AddOptions) (Report, error) {
 		return report, gitutil.WrapGitError("failed to create worktree", result, err)
 	}
 
-	// Pass the directory name (base of targetPath), not the branch name,
-	// since SyncSharedResources resolves by worktree path.
-	sharedReport, err := c.SyncSharedResources(filepath.Base(ctx.targetPath))
+	sharedReport, err := c.syncSharedResourcesToPath(ctx.targetPath, true)
 	report.Merge(sharedReport)
 	if err != nil {
 		report.Warn(fmt.Sprintf("Warning: failed to sync shared resources: %v", err))
 	}
+
+	c.InvalidateList()
 
 	c.appendAddSummary(&report, ctx, branchExists)
 	return report, nil
@@ -373,7 +429,114 @@ func (c *Client) Remove(name string, opts RemoveOptions) (Report, error) {
 		report.Warn(fmt.Sprintf("Deleted branch '%s'", ctx.wtInfo.Branch))
 	}
 
+	c.InvalidateList()
+
 	return report, nil
+}
+
+type RemoveBatchResult struct {
+	Succeeded []string
+	Failed    map[string]error
+	Report    Report
+}
+
+func (c *Client) RemoveBatch(names []string, opts RemoveOptions) RemoveBatchResult {
+	result := RemoveBatchResult{
+		Failed: make(map[string]error),
+	}
+
+	if err := c.ensureInit(); err != nil {
+		for _, n := range names {
+			result.Failed[n] = err
+		}
+		return result
+	}
+
+	worktrees, err := c.ListCached()
+	if err != nil {
+		for _, n := range names {
+			result.Failed[n] = err
+		}
+		return result
+	}
+
+	var targets []removeContext
+	for _, name := range names {
+		ctx, resolveErr := c.resolveRemoveTarget(name, worktrees)
+		if resolveErr != nil {
+			result.Failed[name] = resolveErr
+			continue
+		}
+		targets = append(targets, ctx)
+	}
+
+	if len(result.Failed) > 0 {
+		return result
+	}
+
+	type pendingBranch struct {
+		branch string
+		name   string
+	}
+	var branchesToDelete []pendingBranch
+	for _, t := range targets {
+		if opts.DryRun {
+			status := c.GetWorktreeStatus(t.targetPath)
+			result.Report.Warn("Would remove worktree: " + t.targetPath)
+			result.Report.Warn("  Branch: " + t.wtInfo.Branch)
+			result.Report.Warn("  Status: " + status)
+			if opts.DeleteBranch && t.wtInfo.Branch != "" && t.wtInfo.Branch != "(detached)" {
+				result.Report.Warn("Would delete branch: " + t.wtInfo.Branch)
+			}
+			if status == "modified" && !opts.Force {
+				result.Report.Warn("Note: Worktree has uncommitted changes. Use -f to force removal.")
+			}
+			result.Succeeded = append(result.Succeeded, t.name)
+			continue
+		}
+
+		args := []string{"-C", c.repoDir, "worktree", "remove"}
+		if opts.Force {
+			args = append(args, "--force")
+		}
+		args = append(args, t.targetPath)
+
+		runResult, err := c.runner.RunLogged(args...)
+		if err != nil {
+			result.Failed[t.name] = gitutil.WrapGitError("failed to remove worktree", runResult, err)
+			continue
+		}
+
+		result.Report.Warn(fmt.Sprintf("Removed worktree '%s'", t.name))
+		result.Succeeded = append(result.Succeeded, t.name)
+
+		if opts.DeleteBranch && t.wtInfo.Branch != "" && t.wtInfo.Branch != "(detached)" {
+			branchesToDelete = append(branchesToDelete, pendingBranch{branch: t.wtInfo.Branch, name: t.name})
+		}
+	}
+
+	if len(branchesToDelete) > 0 {
+		args := []string{"-C", c.repoDir, "branch", "-D"}
+		for _, pb := range branchesToDelete {
+			args = append(args, pb.branch)
+		}
+		runResult, err := c.runner.RunLogged(args...)
+		if err != nil {
+			for _, pb := range branchesToDelete {
+				result.Failed[pb.name] = gitutil.WrapGitError("failed to delete branch", runResult, err)
+			}
+		} else {
+			for _, pb := range branchesToDelete {
+				result.Report.Warn(fmt.Sprintf("Deleted branch '%s'", pb.branch))
+			}
+		}
+	}
+
+	if !opts.DryRun && len(result.Succeeded) > 0 {
+		c.InvalidateList()
+	}
+
+	return result
 }
 
 func (c *Client) prepareAdd(name string, opts AddOptions) (addContext, error) {
@@ -384,25 +547,17 @@ func (c *Client) prepareAdd(name string, opts AddOptions) (addContext, error) {
 		return addContext{}, err
 	}
 
-	root, err := c.GetWorktreeRoot()
-	if err != nil {
+	if err := c.ensureInit(); err != nil {
 		return addContext{}, fmt.Errorf("failed to find worktree root: %w", err)
 	}
 
-	// Directory name: replace "/" with "--" so branch names like "feat/login"
-	// become "feat--login" instead of a nested directory.
 	dirName := strings.ReplaceAll(name, "/", "--")
 
-	// Build target path:
-	//   bare layout  → <root>/<dirName>           (sibling of .bare)
-	//   non-bare     → <parent>/<repoName>--<dirName>  (sibling of the repo)
 	var targetPath string
-	repoDir := repoDirForGit(root)
-	if repoDir != root { // bare layout: .bare exists
-		targetPath = filepath.Join(root, dirName)
+	if c.repoDir != c.worktreeRoot {
+		targetPath = filepath.Join(c.worktreeRoot, dirName)
 	} else {
-		// Non-bare: create as a sibling of the repo, prefixed with the repo name.
-		targetPath = filepath.Join(filepath.Dir(root), filepath.Base(root)+"--"+dirName)
+		targetPath = filepath.Join(filepath.Dir(c.worktreeRoot), filepath.Base(c.worktreeRoot)+"--"+dirName)
 	}
 
 	if _, err := os.Stat(targetPath); err == nil {
@@ -416,7 +571,7 @@ func (c *Client) prepareAdd(name string, opts AddOptions) (addContext, error) {
 
 	return addContext{
 		name:       name,
-		repoDir:    repoDir,
+		repoDir:    c.repoDir,
 		targetPath: targetPath,
 		baseBranch: baseBranch,
 	}, nil
@@ -448,32 +603,16 @@ func (c *Client) appendAddSummary(report *Report, ctx addContext, branchExists b
 	report.Info("Next step: cd " + ctx.targetPath)
 }
 
-func (c *Client) prepareRemove(name string) (removeContext, error) {
+func (c *Client) resolveRemoveTarget(name string, worktrees []Info) (removeContext, error) {
 	if name == "" {
 		return removeContext{}, errors.New("worktree name cannot be empty")
 	}
 
-	root, err := c.GetWorktreeRoot()
-	if err != nil {
-		return removeContext{}, fmt.Errorf("failed to find worktree root: %w", err)
-	}
-
-	// searchRoot is where linked worktrees live (parent of repo for non-bare).
-	searchRoot, err := c.worktreeSearchRoot()
-	if err != nil {
-		return removeContext{}, fmt.Errorf("failed to determine worktree search root: %w", err)
-	}
-
-	targetPath := filepath.Join(searchRoot, name)
-	worktrees, err := c.List()
-	if err != nil {
-		return removeContext{}, err
-	}
-
+	targetPath := filepath.Join(c.searchRoot, name)
 	var found bool
 	var wtInfo Info
 	for _, wt := range worktrees {
-		relPath := strings.TrimPrefix(wt.Path, searchRoot+string(filepath.Separator))
+		relPath := strings.TrimPrefix(wt.Path, c.searchRoot+string(filepath.Separator))
 		if wt.Path == targetPath || relPath == name {
 			wtInfo = wt
 			targetPath = wt.Path
@@ -488,18 +627,30 @@ func (c *Client) prepareRemove(name string) (removeContext, error) {
 		return removeContext{}, errors.New("cannot remove the main bare worktree")
 	}
 
-	// Reject agent/external worktrees (outside searchRoot).
-	rel, err := filepath.Rel(searchRoot, wtInfo.Path)
+	rel, err := filepath.Rel(c.searchRoot, wtInfo.Path)
 	if err != nil || strings.HasPrefix(rel, "..") {
 		return removeContext{}, fmt.Errorf("worktree '%s' is external (not managed by gmc wt)", name)
 	}
 
 	return removeContext{
 		name:       name,
-		repoDir:    repoDirForGit(root),
+		repoDir:    c.repoDir,
 		targetPath: targetPath,
 		wtInfo:     wtInfo,
 	}, nil
+}
+
+func (c *Client) prepareRemove(name string) (removeContext, error) {
+	if err := c.ensureInit(); err != nil {
+		return removeContext{}, fmt.Errorf("failed to find worktree root: %w", err)
+	}
+
+	worktrees, err := c.ListCached()
+	if err != nil {
+		return removeContext{}, err
+	}
+
+	return c.resolveRemoveTarget(name, worktrees)
 }
 
 // GetWorktreeStatus returns the git status of a worktree with detailed file counts
@@ -554,24 +705,14 @@ func (c *Client) GetWorktreeStatus(path string) string {
 	return strings.Join(parts, ", ")
 }
 
-// branchExists checks if a branch exists in the repository
 func (c *Client) branchExists(name string) (bool, error) {
-	// Try to find the bare repo root for proper -C path
-	root, _ := c.GetWorktreeRoot()
+	c.once.Do(c.init)
 
 	var args []string
-	if root == "" {
-		// Fallback to current directory
-		args = []string{"rev-parse", "--verify", "refs/heads/" + name}
+	if c.repoDir != "" {
+		args = []string{"-C", c.repoDir, "rev-parse", "--verify", "refs/heads/" + name}
 	} else {
-		// Check if .bare directory exists
-		bareDir := filepath.Join(root, ".bare")
-		if _, statErr := os.Stat(bareDir); statErr == nil {
-			args = []string{"-C", bareDir, "rev-parse", "--verify", "refs/heads/" + name}
-		} else {
-			// Standard repo
-			args = []string{"-C", root, "rev-parse", "--verify", "refs/heads/" + name}
-		}
+		args = []string{"rev-parse", "--verify", "refs/heads/" + name}
 	}
 
 	_, err := c.runner.Run(args...)
@@ -591,7 +732,6 @@ type DupResult struct {
 	Warnings  []string // Non-fatal warnings generated during creation
 }
 
-// Dup creates multiple worktrees with temporary branches for parallel development
 func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 	if opts.BaseBranch == "" {
 		opts.BaseBranch = "HEAD"
@@ -600,11 +740,9 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 		opts.Count = 2
 	}
 
-	root, err := c.GetWorktreeRoot()
-	if err != nil {
+	if err := c.ensureInit(); err != nil {
 		return nil, fmt.Errorf("failed to find worktree root: %w", err)
 	}
-	repoDir := repoDirForGit(root)
 
 	timestamp := strconv.FormatInt(getCurrentTimestamp(), 10)
 	dupResult := &DupResult{
@@ -615,22 +753,19 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 	for i := 1; i <= opts.Count; i++ {
 		dirName := fmt.Sprintf(".dup-%d", i)
 		branchName := fmt.Sprintf("_dup/%s/%s-%d", opts.BaseBranch, timestamp, i)
-		targetPath := filepath.Join(root, dirName)
+		targetPath := filepath.Join(c.worktreeRoot, dirName)
 
-		// Check if directory already exists
 		if _, err := os.Stat(targetPath); err == nil {
 			return nil, fmt.Errorf("directory already exists: %s", targetPath)
 		}
 
-		// Create worktree with new branch
-		args := []string{"-C", repoDir, "worktree", "add", "-b", branchName, targetPath, opts.BaseBranch}
+		args := []string{"-C", c.repoDir, "worktree", "add", "-b", branchName, targetPath, opts.BaseBranch}
 		runResult, err := c.runner.RunLogged(args...)
 		if err != nil {
 			return nil, gitutil.WrapGitError("failed to create worktree "+dirName, runResult, err)
 		}
 
-		// Sync shared resources
-		sharedReport, err := c.SyncSharedResources(dirName)
+		sharedReport, err := c.syncSharedResourcesToPath(targetPath, true)
 		if err != nil {
 			dupResult.Warnings = append(
 				dupResult.Warnings,
@@ -646,6 +781,8 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 		dupResult.Worktrees = append(dupResult.Worktrees, dirName)
 		dupResult.Branches = append(dupResult.Branches, branchName)
 	}
+
+	c.InvalidateList()
 
 	return dupResult, nil
 }
@@ -665,12 +802,11 @@ func (c *Client) Promote(worktreeName, newBranchName string) (Report, error) {
 		return report, err
 	}
 
-	searchRoot, err := c.worktreeSearchRoot()
-	if err != nil {
+	if err := c.ensureInit(); err != nil {
 		return report, fmt.Errorf("failed to determine worktree search root: %w", err)
 	}
 
-	targetPath := filepath.Join(searchRoot, worktreeName)
+	targetPath := filepath.Join(c.searchRoot, worktreeName)
 
 	// Verify worktree exists
 	if _, err := os.Stat(targetPath); os.IsNotExist(err) {
@@ -704,21 +840,6 @@ func getCurrentTimestamp() int64 {
 	return time.Now().Unix()
 }
 
-// worktreeSearchRoot returns the directory in which linked worktrees are expected to live.
-// Bare layout: root (parent of .bare) — managed worktrees are direct children.
-// Non-bare layout: parent of the repo dir — linked worktrees can be siblings of the repo.
-func (c *Client) worktreeSearchRoot() (string, error) {
-	root, err := c.GetWorktreeRoot()
-	if err != nil {
-		return "", err
-	}
-	repoDir := repoDirForGit(root)
-	if repoDir != root { // bare layout: .bare exists
-		return root, nil
-	}
-	return filepath.Dir(root), nil
-}
-
 // isExternalPath reports whether wtPath is outside the managed root directory.
 func isExternalPath(root, wtPath string) bool {
 	if root == "" {
@@ -733,12 +854,11 @@ func isExternalPath(root, wtPath string) bool {
 
 // listGitRefs runs a git command in the repo dir and splits output by newline.
 func (c *Client) listGitRefs(errLabel string, gitArgs ...string) ([]string, error) {
-	root, _ := c.GetWorktreeRoot()
-	repoDir := repoDirForGit(root)
+	c.once.Do(c.init)
 
 	var args []string
-	if repoDir != "" {
-		args = append([]string{"-C", repoDir}, gitArgs...)
+	if c.repoDir != "" {
+		args = append([]string{"-C", c.repoDir}, gitArgs...)
 	} else {
 		args = gitArgs
 	}

@@ -119,7 +119,7 @@ func (c *Client) AddDiscoveredResources(results []DiscoverResult) (Report, error
 }
 
 func (c *Client) findMainWorktreePath() (string, error) {
-	worktrees, err := c.List()
+	worktrees, err := c.ListCached()
 	if err != nil {
 		return "", fmt.Errorf("failed to list worktrees: %w", err)
 	}

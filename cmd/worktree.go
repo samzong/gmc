@@ -340,15 +340,18 @@ func runWorktreeRemove(wtClient *worktree.Client, names []string) error {
 		DeleteBranch: wtDeleteBranch,
 		DryRun:       wtDryRun,
 	}
+
+	result := wtClient.RemoveBatch(names, opts)
+	printWorktreeReport(result.Report)
+
 	var failed []string
 	for _, name := range names {
-		report, err := wtClient.Remove(name, opts)
-		printWorktreeReport(report)
-		if err != nil {
+		if err, ok := result.Failed[name]; ok {
 			fmt.Fprintf(errWriter(), "Error removing '%s': %v\n", name, err)
 			failed = append(failed, name)
 		}
 	}
+
 	if len(failed) > 0 {
 		return fmt.Errorf("failed to remove worktrees: %s", strings.Join(failed, ", "))
 	}
