@@ -49,7 +49,8 @@ func TestRunWorktreeDefault_ShowsWorktreesInNonBareRepo(t *testing.T) {
 
 func TestWtHookRemoveCmd_RejectsTrailingCharactersInIndex(t *testing.T) {
 	repoDir := initCmdTestRepo(t)
-	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".git", "gmc-share.yml"), []byte("hooks:\n  - cmd: echo ok\n"), 0o644))
+	cfgPath := filepath.Join(repoDir, ".git", "gmc-share.yml")
+	require.NoError(t, os.WriteFile(cfgPath, []byte("hooks:\n  - cmd: echo ok\n"), 0o644))
 
 	oldCwd, err := os.Getwd()
 	require.NoError(t, err)
@@ -99,9 +100,7 @@ func runGitCmd(t *testing.T, dir string, args ...string) string {
 	return string(output)
 }
 
-var execCommand = func(name string, args ...string) *exec.Cmd {
-	return exec.Command(name, args...)
-}
+var execCommand = exec.Command
 
 func TestRemoveAll_SkipsProtected(t *testing.T) {
 	repoDir := initCmdTestRepo(t)

@@ -15,6 +15,7 @@ import (
 
 var (
 	wtBaseBranch   string
+	wtDupBase      string
 	wtForce        bool
 	wtDeleteBranch bool
 	wtDryRun       bool
@@ -40,20 +41,31 @@ bare repository (.bare) + worktree pattern.
 }
 
 var wtAddCmd = &cobra.Command{
-	Use:   "add <name> [name...]",
+	Use:   "add [name...]",
 	Short: "Create new worktrees with new branches",
 	Long: `Create one or more worktrees with new branches.
 
 The branch name will be the same as the worktree directory name.
+When no name is given but -b is set, the worktree name is derived from
+the base branch (useful for checking out an existing branch).
 
 Examples:
   gmc wt add feature-login                    # Create one worktree
   gmc wt add feat-a feat-b feat-c             # Create multiple worktrees
   gmc wt add feature-login -b main            # Create based on main branch
   gmc wt add feature-login --sync             # Sync base branch before add
-  gmc wt add hotfix-bug123 -b release`,
-	Args: cobra.MinimumNArgs(1),
+  gmc wt add hotfix-bug123 -b release
+  gmc wt add -b feat/existing-branch          # Name derived from -b`,
+	Args: func(_ *cobra.Command, args []string) error {
+		if len(args) == 0 && strings.TrimSpace(wtBaseBranch) == "" {
+			return errors.New("requires at least 1 arg or -b/--base flag")
+		}
+		return nil
+	},
 	RunE: func(_ *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			args = []string{wtBaseBranch}
+		}
 		wtClient := newWorktreeClient()
 		return runWorktreeAdd(wtClient, args)
 	},
@@ -210,13 +222,14 @@ func init() {
 	wtCloneCmd.Flags().StringVar(&wtProjectName, "name", "", "Custom project directory name")
 
 	// Flags for dup command
-	wtDupCmd.Flags().StringVarP(&wtBaseBranch, "base", "b", "main", "Base branch to create from")
+	wtDupCmd.Flags().StringVarP(&wtDupBase, "base", "b", "main", "Base branch to create from")
 
 	// Flags for prune command
 	wtPruneCmd.Flags().StringVarP(&wtPruneBase, "base", "b", "", "Base branch to check merge status against")
 	wtPruneCmd.Flags().BoolVarP(&wtPruneForce, "force", "f", false, "Force removal even if worktree is dirty")
 	wtPruneCmd.Flags().BoolVar(&wtPruneDryRun, "dry-run", false, "Preview what would be removed without making changes")
-	wtPruneCmd.Flags().BoolVar(&wtPrunePRAware, "pr-aware", false, "Check GitHub PR state before pruning (requires gh CLI)")
+	wtPruneCmd.Flags().BoolVar(&wtPrunePRAware, "pr-aware", false,
+		"Check GitHub PR state before pruning (requires gh CLI)")
 
 	// Flags for pr-review command
 	wtPrReviewCmd.Flags().StringVarP(&prRemote, "remote", "r", "",
@@ -541,7 +554,7 @@ func printWorktreeJSON(wtClient *worktree.Client, worktrees []worktree.Info) err
 
 func runWorktreeDup(wtClient *worktree.Client, args []string) error {
 	opts := worktree.DupOptions{
-		BaseBranch: wtBaseBranch,
+		BaseBranch: wtDupBase,
 		Count:      2,
 	}
 

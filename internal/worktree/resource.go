@@ -473,7 +473,9 @@ func (c *Client) NormalizeSharedResourcePath(path string) (string, error) {
 	return trimmed, nil
 }
 
-func (c *Client) resolveSharedPaths(repoRoot, targetRoot string, res SharedResource) (srcPath string, targetPath string, skip bool, err error) {
+func (c *Client) resolveSharedPaths(
+	repoRoot, targetRoot string, res SharedResource,
+) (srcPath string, targetPath string, skip bool, err error) {
 	targetPath, err = sanitizeTargetRelativePath(res.Path)
 	if err != nil {
 		return "", "", false, err
