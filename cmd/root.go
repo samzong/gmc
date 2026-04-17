@@ -35,9 +35,13 @@ var (
 	debug          bool
 	rootCmd        = &cobra.Command{
 		Use:   "gmc",
-		Short: "gmc - Git Message Assistant",
-		Long: `gmc is a CLI tool that accelerates Git commit efficiency by generating ` +
-			`high-quality commit messages using LLM.`,
+		Short: "Parallel git worktrees for AI agents, plus AI commit messages.",
+		Long: `gmc runs parallel git worktrees for parallel AI coding agents, built on the ` +
+			`bare-repo (.bare) + worktree pattern with helpers like 'gmc wt dup' and ` +
+			`'gmc wt share' for conflict-free multi-agent development.
+
+As a secondary workflow, gmc also generates Conventional Commits messages from staged ` +
+			`diffs via an LLM, so the same tool that isolates your agents also ships their work.`,
 		Version:       fmt.Sprintf("%s (built at %s)", Version, BuildTime),
 		Args:          cobra.ArbitraryArgs,
 		RunE:          runRoot,
@@ -56,6 +60,19 @@ func Execute() error {
 
 func init() {
 	cobra.OnInitialize(initConfig)
+
+	rootCmd.AddGroup(
+		&cobra.Group{ID: "worktree", Title: "Worktree (parallel AI development):"},
+		&cobra.Group{ID: "other", Title: "Other:"},
+	)
+
+	wtCmd.GroupID = "worktree"
+	tagCmd.GroupID = "other"
+	configCmd.GroupID = "other"
+	initCmd.GroupID = "other"
+	versionCmd.GroupID = "other"
+	completionCmd.GroupID = "other"
+	rootCmd.SetHelpCommandGroupID("other")
 
 	rootCmd.PersistentFlags().StringVar(
 		&cfgFile, "config", "", "Config file (default: $XDG_CONFIG_HOME/gmc/config.yaml)")

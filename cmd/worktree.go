@@ -28,11 +28,14 @@ var (
 var wtCmd = &cobra.Command{
 	Use:     "wt",
 	Aliases: []string{"worktree"},
-	Short:   "Manage git worktrees with bare repository support",
-	Long: `Manage git worktrees with bare repository support.
+	Short:   "Manage worktrees for parallel AI agents",
+	Long: `Manage git worktrees for running AI coding agents in parallel.
 
-This command simplifies multi-branch parallel development using the
-bare repository (.bare) + worktree pattern.
+Uses a bare repository (.bare) + sibling worktree layout so each agent
+(Claude Code, Codex, Copilot, ...) gets its own isolated working tree.
+Use 'dup' to fan out N worktrees for parallel agents, 'share' to keep
+.env / node_modules consistent across them, 'sync' to refresh against
+the base branch, and 'promote' to keep the winning solution.
 `,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		wtClient := newWorktreeClient()
@@ -115,18 +118,29 @@ Examples:
 
 var wtCloneCmd = &cobra.Command{
 	Use:   "clone <url>",
-	Short: "Clone a repository as bare + worktree structure",
-	Long: `Clone a repository as a bare + worktree structure.
+	Short: "Clone a repo into bare + worktree layout",
+	Long: `Clone a repository into the bare (.bare) + worktree layout that the rest
+of 'gmc wt' expects. This is the starting point for running parallel AI
+agents: clone once, then 'gmc wt dup' to fan out.
 
 Creates a .bare directory containing the bare repository and a worktree
-for the default branch.
-
-For fork workflows, use --upstream to specify the upstream repository.
+for the default branch. For fork workflows, use --upstream to register
+the original upstream repo alongside your fork.
 
 Examples:
+  # Basic clone into bare + worktree layout
   gmc wt clone https://github.com/user/repo.git
+
+  # Custom project directory name
   gmc wt clone https://github.com/user/repo.git --name my-project
-  gmc wt clone https://github.com/me/fork.git --upstream https://github.com/org/repo.git`,
+
+  # Fork workflow: clone your fork, register upstream, work in main/
+  gmc wt clone https://github.com/me/fork.git \
+    --upstream https://github.com/org/repo.git \
+    --name upstream-repo
+
+  # Typical next step: fan out worktrees for parallel AI agents
+  cd upstream-repo && gmc wt dup 3`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		wtClient := newWorktreeClient()
@@ -136,17 +150,29 @@ Examples:
 
 var wtDupCmd = &cobra.Command{
 	Use:   "dup [count]",
-	Short: "Create multiple worktrees for parallel development",
-	Long: `Create multiple worktrees with temporary branches for parallel AI development.
+	Short: "Fan out worktrees for parallel AI agents",
+	Long: `Fan out N sibling worktrees so multiple AI coding agents can work in parallel.
 
-Each worktree gets a temporary branch (_dup/<base>/<timestamp>-<n>) that can
-be promoted to a permanent name later using 'gmc wt promote'.
+Each worktree gets a temporary branch (_dup/<base>/<timestamp>-<n>). Point a
+different agent (Claude Code, Codex, Copilot, ...) at each one, compare the
+results, then promote the winner with 'gmc wt promote'.
 
 Examples:
-  gmc wt dup           # Create 2 worktrees based on main
-  gmc wt dup 3         # Create 3 worktrees based on main
-  gmc wt dup -b dev    # Create 2 worktrees based on dev
-  gmc wt dup 3 -b dev  # Create 3 worktrees based on dev`,
+  # Fan out 3 sibling worktrees based on main
+  gmc wt dup 3 -b main
+
+  # Typical parallel workflow with Claude Code / Codex / Copilot
+  gmc wt dup 3
+  cd ../.dup-1 && claude    # agent 1
+  cd ../.dup-2 && codex     # agent 2
+  cd ../.dup-3 && copilot   # agent 3
+
+  # When one agent's solution wins, promote it to a real branch:
+  gmc wt promote .dup-1 feature/auth
+
+  # Defaults: count=2, base=main
+  gmc wt dup
+  gmc wt dup -b dev`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		wtClient := newWorktreeClient()

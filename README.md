@@ -1,4 +1,4 @@
-# gmc - Git Message Commit
+# gmc
 
 <div align="center">
   <img src="./logo.png" alt="gmc logo" width="200" />

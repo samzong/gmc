@@ -50,7 +50,12 @@ func runInitWizard(in io.Reader, out io.Writer, current *config.Config) error {
 		return err
 	}
 	readLine := newTrimmedLineReader(in)
-	fmt.Fprintln(out, "gmc init - configure your LLM settings")
+	fmt.Fprintln(out, "gmc init")
+	fmt.Fprintln(out, "  Configure gmc for parallel AI agent development.")
+	fmt.Fprintln(out, "  Primary: manage parallel git worktrees for parallel AI agents (gmc wt ...).")
+	fmt.Fprintln(out, "  This wizard sets up LLM credentials (for AI commit messages) and")
+	fmt.Fprintln(out, "  optional shell integration (for seamless `gmc wt switch`).")
+	fmt.Fprintln(out)
 
 	apiKey, err := promptAPIKey(out, cfg, readLine)
 	if err != nil {
@@ -69,7 +74,11 @@ func runInitWizard(in io.Reader, out io.Writer, current *config.Config) error {
 		return fmt.Errorf("failed to save configuration: %w", err)
 	}
 
-	return maybeTestConnection(out, model, readLine)
+	if err := maybeTestConnection(out, model, readLine); err != nil {
+		return err
+	}
+
+	return maybeShellIntegration(out, readLine, os.Getenv("SHELL"))
 }
 
 func initWizardConfig(current *config.Config) (*config.Config, error) {
@@ -175,6 +184,90 @@ func maybeTestConnection(out io.Writer, model string, readLine func() (string, e
 	}
 }
 
+func detectShell(shellEnv string) string {
+	shell := strings.ToLower(strings.TrimSpace(shellEnv))
+	switch {
+	case strings.HasSuffix(shell, "/zsh") || shell == "zsh":
+		return "zsh"
+	case strings.HasSuffix(shell, "/bash") || shell == "bash":
+		return "bash"
+	case strings.HasSuffix(shell, "/fish") || shell == "fish":
+		return "fish"
+	default:
+		return ""
+	}
+}
+
+func shellRCPath(shell string) string {
+	switch shell {
+	case "bash":
+		return "~/.bashrc"
+	case "zsh":
+		return "~/.zshrc"
+	case "fish":
+		return "~/.config/fish/config.fish"
+	default:
+		return ""
+	}
+}
+
+func shellInitSnippet(shell string) string {
+	if shell == "fish" {
+		return "gmc wt init fish | source"
+	}
+	return fmt.Sprintf("eval \"$(gmc wt init %s)\"", shell)
+}
+
+func maybeShellIntegration(out io.Writer, readLine func() (string, error), shellEnv string) error {
+	shell := detectShell(shellEnv)
+
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Shell integration (optional, recommended)")
+	fmt.Fprintln(out, "  Lets `gmc wt switch <name>` change your current shell's directory")
+	fmt.Fprintln(out, "  into the target worktree. Without it, gmc can only print the path.")
+
+	for {
+		if shell != "" {
+			fmt.Fprintf(out, "Set up shell integration for %s now? [Y/n]: ", shell)
+		} else {
+			fmt.Fprint(out, "Set up shell integration now? [y/N]: ")
+		}
+		answer, err := readLine()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				fmt.Fprintln(out, "You can set up shell integration later with: gmc wt init --help")
+				return nil
+			}
+			return err
+		}
+
+		lower := strings.ToLower(answer)
+		accept := lower == "y" || lower == "yes"
+		decline := lower == "n" || lower == "no"
+		if answer == "" {
+			accept = shell != ""
+			decline = shell == ""
+		}
+
+		if accept {
+			target := shell
+			if target == "" {
+				target = "zsh"
+				fmt.Fprintln(out, "Could not detect your shell from $SHELL; defaulting to zsh.")
+			}
+			fmt.Fprintf(out, "Add this to your %s:\n", shellRCPath(target))
+			fmt.Fprintf(out, "    %s\n", shellInitSnippet(target))
+			fmt.Fprintln(out, "Then restart your shell or `source` the file.")
+			return nil
+		}
+		if decline {
+			fmt.Fprintln(out, "You can set up shell integration later with: gmc wt init --help")
+			return nil
+		}
+		fmt.Fprintln(out, "Please enter y or n.")
+	}
+}
+
 func ensureLLMConfigured(
 	cfg *config.Config, in io.Reader, out io.Writer,
 	initRunner func(io.Reader, io.Writer, *config.Config) error,
@@ -192,7 +285,7 @@ func ensureLLMConfigured(
 	}
 
 	fmt.Fprintln(out, "API key is not configured.")
-	fmt.Fprintln(out, "An API key is required to generate commit messages.")
+	fmt.Fprintln(out, "An API key is required for AI commit message generation.")
 
 	reader := bufio.NewReader(in)
 	for {

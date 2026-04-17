@@ -1,8 +1,8 @@
-# gmc - Git Message Commit CLI Tool
+# gmc CLI Tool
 
 Always reference these instructions first and fallback to search or bash commands only when you encounter unexpected information that does not match the info here.
 
-gmc is a Go-based CLI tool that generates high-quality commit messages using LLM (Large Language Models) like OpenAI GPT. It automates the git add and commit workflow by analyzing staged changes and generating conventional commit messages.
+gmc is a Go-based CLI built for the AI coding era: **parallel worktrees for parallel AI agents — plus AI-generated commits**. It manages a `.bare` clone plus multiple git worktrees so several AI agents (Claude Code, Codex, Copilot) can work in parallel, with `gmc wt dup` to fan out branches and `gmc wt share` to share `.env` and `node_modules`. Secondarily, it uses an LLM to generate Conventional Commits messages from staged diffs.
 
 ## Working Effectively
 

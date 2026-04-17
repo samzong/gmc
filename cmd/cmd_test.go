@@ -29,8 +29,8 @@ func TestVersion(t *testing.T) {
 func TestRootCommand(t *testing.T) {
 	assert.NotNil(t, rootCmd)
 	assert.Equal(t, "gmc", rootCmd.Use)
-	assert.Equal(t, "gmc - Git Message Assistant", rootCmd.Short)
-	assert.Contains(t, rootCmd.Long, "gmc is a CLI tool")
+	assert.Contains(t, rootCmd.Short, "Parallel git worktrees")
+	assert.Contains(t, rootCmd.Long, "parallel AI coding agents")
 	assert.False(t, rootCmd.SilenceErrors)
 	assert.True(t, rootCmd.SilenceUsage)
 }
