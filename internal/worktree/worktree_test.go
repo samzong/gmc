@@ -871,6 +871,35 @@ func TestAddDoesNotRequireWorktreeConfig(t *testing.T) {
 	}
 }
 
+func TestAddIgnoresGlobalWorktreeConfig(t *testing.T) {
+	repoDir := initBareLayoutRepo(t)
+	mainDir := filepath.Join(repoDir, "main")
+
+	globalConfig := filepath.Join(t.TempDir(), "global.gitconfig")
+	writeFile(t, globalConfig, "[extensions]\n\tworktreeConfig = true\n")
+	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(cwd) }()
+	if err := os.Chdir(mainDir); err != nil {
+		t.Fatal(err)
+	}
+
+	client := NewClient(Options{})
+	if _, err := client.Add("feature-global-config", AddOptions{BaseBranch: "main"}); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	featureDir := filepath.Join(repoDir, "feature-global-config")
+	status := runGit(t, featureDir, "status", "--short", "--branch")
+	if !strings.Contains(status, "## feature-global-config") {
+		t.Fatalf("new worktree status = %q, want feature-global-config branch", status)
+	}
+}
+
 func TestDupConfiguresBareLayoutWorktreeConfig(t *testing.T) {
 	repoDir := initBareLayoutRepoWithWorktreeConfig(t)
 	mainDir := filepath.Join(repoDir, "main")

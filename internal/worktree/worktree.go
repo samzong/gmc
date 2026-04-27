@@ -597,7 +597,7 @@ func (c *Client) addArgs(ctx addContext) ([]string, bool) {
 }
 
 func (c *Client) ensureAddedWorktreeConfig(targetPath string) error {
-	if c.getGitOutput(c.repoDir, "config", "--bool", "extensions.worktreeConfig") != "true" {
+	if c.getGitOutput(c.repoDir, "config", "--local", "--bool", "extensions.worktreeConfig") != "true" {
 		return nil
 	}
 
