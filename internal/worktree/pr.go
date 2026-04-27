@@ -112,6 +112,9 @@ func (c *Client) AddPR(prNumber int, remote string) (Report, error) {
 	if err != nil {
 		return report, gitutil.WrapGitError("failed to create worktree", result, err)
 	}
+	if err := c.ensureAddedWorktreeConfig(targetPath); err != nil {
+		return report, err
+	}
 
 	sharedReport, err := c.syncSharedResourcesToPath(targetPath, true)
 	report.Merge(sharedReport)

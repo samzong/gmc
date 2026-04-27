@@ -370,6 +370,9 @@ func (c *Client) Add(name string, opts AddOptions) (Report, error) {
 	if err != nil {
 		return report, gitutil.WrapGitError("failed to create worktree", result, err)
 	}
+	if err := c.ensureAddedWorktreeConfig(ctx.targetPath); err != nil {
+		return report, err
+	}
 
 	sharedReport, err := c.syncSharedResourcesToPath(ctx.targetPath, true)
 	report.Merge(sharedReport)
@@ -593,6 +596,18 @@ func (c *Client) addArgs(ctx addContext) ([]string, bool) {
 	return []string{"-C", ctx.repoDir, "worktree", "add", "-b", ctx.name, ctx.targetPath, ctx.baseBranch}, false
 }
 
+func (c *Client) ensureAddedWorktreeConfig(targetPath string) error {
+	if c.getGitOutput(c.repoDir, "config", "--local", "--bool", "extensions.worktreeConfig") != "true" {
+		return nil
+	}
+
+	result, err := c.runner.RunLogged("-C", targetPath, "config", "--worktree", "core.bare", "false")
+	if err != nil {
+		return gitutil.WrapGitError("failed to configure worktree", result, err)
+	}
+	return nil
+}
+
 func (c *Client) appendAddSummary(report *Report, ctx addContext, branchExists bool) {
 	report.Info(fmt.Sprintf("Created worktree '%s' at %s", ctx.name, ctx.targetPath))
 	if branchExists {
@@ -767,6 +782,9 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 		runResult, err := c.runner.RunLogged(args...)
 		if err != nil {
 			return nil, gitutil.WrapGitError("failed to create worktree "+dirName, runResult, err)
+		}
+		if err := c.ensureAddedWorktreeConfig(targetPath); err != nil {
+			return nil, err
 		}
 
 		sharedReport, err := c.syncSharedResourcesToPath(targetPath, true)
