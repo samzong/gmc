@@ -748,6 +748,26 @@ func initBareLayoutRepo(t *testing.T) string {
 	return tmpDir
 }
 
+func initBareLayoutRepoWithWorktreeConfig(t *testing.T) string {
+	t.Helper()
+	tmpDir := t.TempDir()
+
+	bareDir := filepath.Join(tmpDir, ".bare")
+	runGit(t, tmpDir, "init", "--bare", bareDir)
+	runGit(t, bareDir, "config", "extensions.worktreeConfig", "true")
+	runGit(t, bareDir, "config", "user.name", "Test User")
+	runGit(t, bareDir, "config", "user.email", "test@example.com")
+
+	mainDir := filepath.Join(tmpDir, "main")
+	runGit(t, bareDir, "worktree", "add", mainDir, "-b", "main")
+	runGit(t, mainDir, "config", "--worktree", "core.bare", "false")
+	writeFile(t, filepath.Join(mainDir, "README.md"), "init")
+	runGit(t, mainDir, "add", ".")
+	runGit(t, mainDir, "commit", "-m", "init")
+
+	return tmpDir
+}
+
 func TestClientCacheInitialization(t *testing.T) {
 	repoDir := initBareLayoutRepo(t)
 	repoDir, _ = filepath.EvalSymlinks(repoDir)
@@ -793,6 +813,95 @@ func TestClientCacheInitialization(t *testing.T) {
 	root2, _ := client.GetWorktreeRoot()
 	if root2 != root {
 		t.Errorf("second GetWorktreeRoot() = %q, want %q (should be cached)", root2, root)
+	}
+}
+
+func TestAddConfiguresBareLayoutWorktreeConfig(t *testing.T) {
+	repoDir := initBareLayoutRepoWithWorktreeConfig(t)
+	mainDir := filepath.Join(repoDir, "main")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(cwd) }()
+	if err := os.Chdir(mainDir); err != nil {
+		t.Fatal(err)
+	}
+
+	client := NewClient(Options{})
+	if _, err := client.Add("feature-config", AddOptions{BaseBranch: "main"}); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	featureDir := filepath.Join(repoDir, "feature-config")
+	status := runGit(t, featureDir, "status", "--short", "--branch")
+	if !strings.Contains(status, "## feature-config") {
+		t.Fatalf("new worktree status = %q, want feature-config branch", status)
+	}
+
+	got := strings.TrimSpace(runGit(t, featureDir, "config", "--worktree", "--bool", "core.bare"))
+	if got != "false" {
+		t.Fatalf("worktree core.bare = %q, want false", got)
+	}
+}
+
+func TestAddDoesNotRequireWorktreeConfig(t *testing.T) {
+	repoDir := initBareLayoutRepo(t)
+	mainDir := filepath.Join(repoDir, "main")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(cwd) }()
+	if err := os.Chdir(mainDir); err != nil {
+		t.Fatal(err)
+	}
+
+	client := NewClient(Options{})
+	if _, err := client.Add("feature-no-config", AddOptions{BaseBranch: "main"}); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	featureDir := filepath.Join(repoDir, "feature-no-config")
+	status := runGit(t, featureDir, "status", "--short", "--branch")
+	if !strings.Contains(status, "## feature-no-config") {
+		t.Fatalf("new worktree status = %q, want feature-no-config branch", status)
+	}
+}
+
+func TestDupConfiguresBareLayoutWorktreeConfig(t *testing.T) {
+	repoDir := initBareLayoutRepoWithWorktreeConfig(t)
+	mainDir := filepath.Join(repoDir, "main")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(cwd) }()
+	if err := os.Chdir(mainDir); err != nil {
+		t.Fatal(err)
+	}
+
+	client := NewClient(Options{})
+	result, err := client.Dup(DupOptions{BaseBranch: "main", Count: 1})
+	if err != nil {
+		t.Fatalf("Dup() error = %v", err)
+	}
+	if len(result.Worktrees) != 1 {
+		t.Fatalf("Dup() worktrees = %d, want 1", len(result.Worktrees))
+	}
+
+	dupDir := filepath.Join(repoDir, result.Worktrees[0])
+	status := runGit(t, dupDir, "status", "--short", "--branch")
+	if !strings.Contains(status, "## "+result.Branches[0]) {
+		t.Fatalf("new worktree status = %q, want %s branch", status, result.Branches[0])
+	}
+
+	got := strings.TrimSpace(runGit(t, dupDir, "config", "--worktree", "--bool", "core.bare"))
+	if got != "false" {
+		t.Fatalf("worktree core.bare = %q, want false", got)
 	}
 }
 
