@@ -8,7 +8,7 @@ description: >
   `gmc wt sync`, `gmc tag`, or asks to use gmc for commit or worktree
   automation. Do not use for generic git or generic worktree requests unless
   the user specifically wants `gmc`.
-argument-hint: [commit|wt add <name>|wt prune|wt share|wt sync|tag] [--dry-run] [--sync] [-b branch] [--force] [--auto] [-a] [-y]
+argument-hint: "[commit|wt add <name>|wt prune|wt share|wt sync|tag] [--dry-run] [--sync] [-b branch] [--force] [--auto] [-a] [-y]"
 ---
 
 IRON LAW: ALL WORKTREE OPERATIONS MUST USE `gmc wt <subcommand>`. NEVER INVENT `gmc add`, `gmc rm`, `gmc prune`, `gmc clone`, OR OTHER TOP-LEVEL WORKTREE COMMANDS.
