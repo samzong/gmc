@@ -79,7 +79,7 @@ func runWorktreePrune(wtClient *worktree.Client) error {
 
 func printPruneTable(entries []worktree.PruneEntry) {
 	w := tabwriter.NewWriter(outWriter(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tBRANCH\tPR\tPR STATE\tACTION\tREASON")
+	fmt.Fprintln(w, "NAME\tBRANCH\tPR\tSTATE\tACTION\tREASON")
 	for _, e := range entries {
 		pr := "-"
 		if e.PRNum > 0 {

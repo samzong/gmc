@@ -17,7 +17,8 @@ var wtHookCmd = &cobra.Command{
 Hooks run in the target worktree directory and are useful for running
 package installation commands like 'pnpm install'.
 
-Config file is stored at the repository's shared git common dir (for example .git/gmc-share.yml or .bare/gmc-share.yml).`,
+Config file is stored at the repository's shared git common dir
+(for example .git/gmc-share.yml or .bare/gmc-share.yml).`,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		wtClient := newWorktreeClient()
 		return runHookList(wtClient)

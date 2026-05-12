@@ -37,7 +37,8 @@ func TestSyncAllSharedResources_WorksFromNonBareWorktreeRepo(t *testing.T) {
 	runGit(t, repoDir, "worktree", "add", "-b", "feature/test-sync-share", linkedWt, "main")
 
 	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".env"), []byte("SECRET=123"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".git", "gmc-share.yml"), []byte("shared:\n  - path: .env\n    strategy: copy\n"), 0o644))
+	config := []byte("shared:\n  - path: .env\n    strategy: copy\n")
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".git", "gmc-share.yml"), config, 0o644))
 
 	client := NewClient(Options{})
 	oldCwd, err := os.Getwd()
@@ -59,7 +60,8 @@ func TestSyncAllSharedResources_DoesNotRunHooks(t *testing.T) {
 	runGit(t, repoDir, "worktree", "add", "-b", "feature/test-sync-hooks", linkedWt, "main")
 
 	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".env"), []byte("SECRET=123"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".git", "gmc-share.yml"), []byte("shared:\n  - path: .env\n    strategy: copy\nhooks:\n  - cmd: printf 'hook-ran' > hook.txt\n"), 0o644))
+	config := []byte("shared:\n  - path: .env\n    strategy: copy\nhooks:\n  - cmd: printf 'hook-ran' > hook.txt\n")
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".git", "gmc-share.yml"), config, 0o644))
 
 	client := NewClient(Options{})
 	oldCwd, err := os.Getwd()
@@ -80,7 +82,8 @@ func TestSyncAllSharedResources_DoesNotRunHooks(t *testing.T) {
 
 func TestLoadSharedConfig_FallsBackToLegacyRepoRootConfig(t *testing.T) {
 	repoDir := initTestRepo(t)
-	require.NoError(t, os.WriteFile(filepath.Join(repoDir, legacySharedConfigYML), []byte("shared:\n  - path: .env\n    strategy: copy\n"), 0o644))
+	config := []byte("shared:\n  - path: .env\n    strategy: copy\n")
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, legacySharedConfigYML), config, 0o644))
 
 	client := NewClient(Options{})
 	oldCwd, err := os.Getwd()
@@ -118,7 +121,8 @@ func TestRemoveSharedResource_NormalizesPath(t *testing.T) {
 	defer func() { _ = os.Chdir(oldCwd) }()
 	require.NoError(t, os.Chdir(repoDir))
 
-	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".git", "gmc-share.yml"), []byte("shared:\n  - path: config/.env\n    strategy: copy\n"), 0o644))
+	config := []byte("shared:\n  - path: config/.env\n    strategy: copy\n")
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".git", "gmc-share.yml"), config, 0o644))
 
 	_, err = client.RemoveSharedResource("config/../config/.env")
 	require.NoError(t, err)

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/charmbracelet/huh"
@@ -32,7 +33,7 @@ func runWorktreeSwitch(wtClient *worktree.Client) error {
 
 	filtered := filterBareWorktrees(worktrees)
 	if len(filtered) == 0 {
-		return fmt.Errorf("no worktrees found")
+		return errors.New("no worktrees found")
 	}
 
 	root := getDisplayRoot(wtClient)

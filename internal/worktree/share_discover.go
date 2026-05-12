@@ -1,6 +1,7 @@
 package worktree
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -140,5 +141,5 @@ func (c *Client) findMainWorktreePath() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("no worktree found to scan")
+	return "", errors.New("no worktree found to scan")
 }
