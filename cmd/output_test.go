@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/samzong/gmc/internal/worktree"
@@ -167,6 +168,81 @@ func TestRunWorktreeList_TextUnchanged(t *testing.T) {
 	assert.Contains(t, output, "BRANCH")
 	assert.Contains(t, output, "feature/text-check")
 	assert.NotContains(t, output, `"name"`)
+}
+
+func TestBuildWorktreeJSON_WithReviewStates(t *testing.T) {
+	repoDir := initCmdTestRepo(t)
+	oldCwd, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() { _ = os.Chdir(oldCwd) }()
+	require.NoError(t, os.Chdir(repoDir))
+
+	client := worktree.NewClient(worktree.Options{})
+	items := buildWorktreeJSON(client, []worktree.Info{{
+		Path:   repoDir,
+		Branch: "feature/pr-json",
+		Commit: strings.Repeat("a", 40),
+	}}, map[string]worktree.ReviewInfo{
+		"feature/pr-json": {
+			Provider:   "github",
+			Number:     42,
+			State:      "OPEN",
+			HeadBranch: "feature/pr-json",
+			URL:        "https://github.com/example/repo/pull/42",
+		},
+	})
+
+	require.Len(t, items, 1)
+	assert.Equal(t, "github", items[0].ReviewProvider)
+	assert.Equal(t, 42, items[0].ReviewNumber)
+	assert.Equal(t, "OPEN", items[0].ReviewState)
+	assert.Equal(t, "https://github.com/example/repo/pull/42", items[0].ReviewURL)
+}
+
+func TestPrintWorktreeTable_WithReviewStates(t *testing.T) {
+	repoDir := initCmdTestRepo(t)
+	oldCwd, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() { _ = os.Chdir(oldCwd) }()
+	require.NoError(t, os.Chdir(repoDir))
+
+	var out bytes.Buffer
+	withWriters(t, &out, io.Discard)
+
+	client := worktree.NewClient(worktree.Options{})
+	printWorktreeTable(client, []worktree.Info{{
+		Path:   repoDir,
+		Branch: "feature/pr-text",
+		Commit: strings.Repeat("b", 40),
+	}}, map[string]worktree.ReviewInfo{
+		"feature/pr-text": {
+			Provider:   "github",
+			Number:     42,
+			State:      "OPEN",
+			HeadBranch: "feature/pr-text",
+			URL:        "https://github.com/example/repo/pull/42",
+		},
+	})
+
+	output := out.String()
+	assert.Contains(t, output, "PR")
+	assert.Contains(t, output, "#42 OPEN")
+	assert.NotContains(t, output, "https://github.com/example/repo/pull/42")
+}
+
+func TestFormatWorktreeReviewDisplay_LinksNumber(t *testing.T) {
+	text := formatWorktreeReviewDisplay(map[string]worktree.ReviewInfo{
+		"feature/pr-link": {
+			Provider:   "gitlab",
+			Number:     42,
+			State:      "OPEN",
+			HeadBranch: "feature/pr-link",
+			URL:        "https://gitlab.com/example/repo/-/merge_requests/42",
+		},
+	}, "feature/pr-link", true)
+
+	assert.Contains(t, text, "\x1b]8;;https://gitlab.com/example/repo/-/merge_requests/42\x1b\\#42\x1b]8;;\x1b\\")
+	assert.Contains(t, text, " OPEN")
 }
 
 func TestResolveWorktreeStatus(t *testing.T) {

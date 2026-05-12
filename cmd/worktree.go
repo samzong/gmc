@@ -3,11 +3,13 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/mattn/go-isatty"
 	"github.com/samzong/gmc/internal/stringsutil"
 	"github.com/samzong/gmc/internal/worktree"
 	"github.com/spf13/cobra"
@@ -23,6 +25,7 @@ var (
 	wtUpstream     string
 	wtProjectName  string
 	prRemote       string
+	wtShowPR       bool
 )
 
 var wtCmd = &cobra.Command{
@@ -260,6 +263,10 @@ func init() {
 	// Flags for pr-review command
 	wtPrReviewCmd.Flags().StringVarP(&prRemote, "remote", "r", "",
 		"Remote to fetch PR from (auto-detect if not specified)")
+	wtCmd.Flags().BoolVar(&wtShowPR, "pr", false,
+		"Show review request status for each branch (requires gh or glab CLI)")
+	wtListCmd.Flags().BoolVar(&wtShowPR, "pr", false,
+		"Show review request status for each branch (requires gh or glab CLI)")
 
 	// Shell completions for arguments
 	wtRemoveCmd.ValidArgsFunction = completeWorktreeNames
@@ -276,11 +283,15 @@ func init() {
 }
 
 type WorktreeJSON struct {
-	Name   string `json:"name"`
-	Path   string `json:"path"`
-	Branch string `json:"branch"`
-	Commit string `json:"commit"`
-	Status string `json:"status"`
+	Name           string `json:"name"`
+	Path           string `json:"path"`
+	Branch         string `json:"branch"`
+	Commit         string `json:"commit"`
+	Status         string `json:"status"`
+	ReviewProvider string `json:"review_provider,omitempty"`
+	ReviewNumber   int    `json:"review_number,omitempty"`
+	ReviewState    string `json:"review_state,omitempty"`
+	ReviewURL      string `json:"review_url,omitempty"`
 }
 
 func runWorktreeDefault(wtClient *worktree.Client, _ *cobra.Command) error {
@@ -290,13 +301,18 @@ func runWorktreeDefault(wtClient *worktree.Client, _ *cobra.Command) error {
 	}
 
 	filtered := filterBareWorktrees(worktrees)
+	reviews := loadWorktreeReviews(wtClient, filtered)
 
 	if outputFormat() == "json" {
-		return printWorktreeJSON(wtClient, filtered)
+		if err := printWorktreeJSON(wtClient, filtered, reviews.Reviews); err != nil {
+			return err
+		}
+		printReviewWarning(errWriter(), reviews)
+		return nil
 	}
 
 	fmt.Fprintln(outWriter(), "Current Worktrees:")
-	printWorktreeTable(wtClient, filtered)
+	printWorktreeTable(wtClient, filtered, reviews.Reviews)
 
 	cwd, err := os.Getwd()
 	if err == nil {
@@ -308,6 +324,7 @@ func runWorktreeDefault(wtClient *worktree.Client, _ *cobra.Command) error {
 			}
 		}
 	}
+	printReviewWarning(outWriter(), reviews)
 
 	return nil
 }
@@ -371,9 +388,14 @@ func runWorktreeList(wtClient *worktree.Client) error {
 	}
 
 	filtered := filterBareWorktrees(worktrees)
+	reviews := loadWorktreeReviews(wtClient, filtered)
 
 	if outputFormat() == "json" {
-		return printWorktreeJSON(wtClient, filtered)
+		if err := printWorktreeJSON(wtClient, filtered, reviews.Reviews); err != nil {
+			return err
+		}
+		printReviewWarning(errWriter(), reviews)
+		return nil
 	}
 
 	if len(filtered) == 0 {
@@ -381,7 +403,8 @@ func runWorktreeList(wtClient *worktree.Client) error {
 		return nil
 	}
 
-	printWorktreeTable(wtClient, filtered)
+	printWorktreeTable(wtClient, filtered, reviews.Reviews)
+	printReviewWarning(outWriter(), reviews)
 	return nil
 }
 
@@ -527,15 +550,75 @@ func resolveWorktreeStatus(wtClient *worktree.Client, root string, wt worktree.I
 	}
 }
 
-func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Info) {
+func loadWorktreeReviews(wtClient *worktree.Client, worktrees []worktree.Info) worktree.ReviewLookup {
+	if !wtShowPR || len(worktrees) == 0 {
+		return worktree.ReviewLookup{}
+	}
+	return wtClient.ReviewStates()
+}
+
+func printReviewWarning(w io.Writer, reviews worktree.ReviewLookup) {
+	if reviews.Warning == "" {
+		return
+	}
+	fmt.Fprintln(w, "Warning: "+reviews.Warning)
+}
+
+func formatWorktreeReview(reviews map[string]worktree.ReviewInfo, branch string) string {
+	if reviews == nil {
+		return ""
+	}
+	review, ok := reviews[branch]
+	if !ok {
+		return "-"
+	}
+	if review.State == "" {
+		return fmt.Sprintf("#%d", review.Number)
+	}
+	return fmt.Sprintf("#%d %s", review.Number, review.State)
+}
+
+func formatWorktreeReviewDisplay(reviews map[string]worktree.ReviewInfo, branch string, links bool) string {
+	text := formatWorktreeReview(reviews, branch)
+	if text == "" || text == "-" || !links {
+		return text
+	}
+	review, ok := reviews[branch]
+	if !ok || review.URL == "" || review.Number == 0 {
+		return text
+	}
+	number := fmt.Sprintf("#%d", review.Number)
+	linked := fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", review.URL, number)
+	return strings.Replace(text, number, linked, 1)
+}
+
+func terminalLinksEnabled(w io.Writer) bool {
+	file, ok := w.(*os.File)
+	if !ok || os.Getenv("TERM") == "dumb" {
+		return false
+	}
+	return isatty.IsTerminal(file.Fd()) || isatty.IsCygwinTerminal(file.Fd())
+}
+
+func padVisibleRight(text string, visibleLen int, width int) string {
+	if visibleLen >= width {
+		return text
+	}
+	return text + strings.Repeat(" ", width-visibleLen)
+}
+
+func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Info, reviews map[string]worktree.ReviewInfo) {
 	if len(worktrees) == 0 {
 		return
 	}
 
 	root := getDisplayRoot(wtClient)
+	writer := outWriter()
+	links := terminalLinksEnabled(writer)
 
 	maxName := len("Name")
 	maxBranch := len("Branch")
+	maxPR := len("PR")
 	for _, wt := range worktrees {
 		name := displayWorktreeName(root, wt.Path)
 		if len(name) > maxName {
@@ -544,38 +627,88 @@ func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Info) {
 		if len(wt.Branch) > maxBranch {
 			maxBranch = len(wt.Branch)
 		}
+		prText := formatWorktreeReview(reviews, wt.Branch)
+		if len(prText) > maxPR {
+			maxPR = len(prText)
+		}
 	}
 
 	maxName += 2
 	maxBranch += 2
+	maxPR += 2
 
-	fmt.Fprintf(outWriter(), "%-*s %-*s %-8s %s\n", maxName, "NAME", maxBranch, "BRANCH", "COMMIT", "STATUS")
+	if reviews != nil {
+		fmt.Fprintf(
+			writer,
+			"%-*s %-*s %-8s %-*s %s\n",
+			maxName, "NAME",
+			maxBranch, "BRANCH",
+			"COMMIT",
+			maxPR, "PR",
+			"STATUS",
+		)
+	} else {
+		fmt.Fprintf(writer, "%-*s %-*s %-8s %s\n", maxName, "NAME", maxBranch, "BRANCH", "COMMIT", "STATUS")
+	}
 
 	for _, wt := range worktrees {
 		name := displayWorktreeName(root, wt.Path)
 		shortCommit := stringsutil.ShortHash(wt.Commit, 7, "")
 		status := resolveWorktreeStatus(wtClient, root, wt)
-		fmt.Fprintf(outWriter(), "%-*s %-*s %-8s %s\n", maxName, name, maxBranch, wt.Branch, shortCommit, status)
+		if reviews != nil {
+			prText := formatWorktreeReview(reviews, wt.Branch)
+			prDisplay := formatWorktreeReviewDisplay(reviews, wt.Branch, links)
+			fmt.Fprintf(
+				writer,
+				"%-*s %-*s %-8s %s %s\n",
+				maxName, name,
+				maxBranch, wt.Branch,
+				shortCommit,
+				padVisibleRight(prDisplay, len(prText), maxPR),
+				status,
+			)
+		} else {
+			fmt.Fprintf(writer, "%-*s %-*s %-8s %s\n", maxName, name, maxBranch, wt.Branch, shortCommit, status)
+		}
 	}
 }
 
-func buildWorktreeJSON(wtClient *worktree.Client, worktrees []worktree.Info) []WorktreeJSON {
+func buildWorktreeJSON(
+	wtClient *worktree.Client,
+	worktrees []worktree.Info,
+	reviews map[string]worktree.ReviewInfo,
+) []WorktreeJSON {
 	root := getDisplayRoot(wtClient)
 	result := make([]WorktreeJSON, 0, len(worktrees))
 	for _, wt := range worktrees {
-		result = append(result, WorktreeJSON{
+		item := WorktreeJSON{
 			Name:   displayWorktreeName(root, wt.Path),
 			Path:   wt.Path,
 			Branch: wt.Branch,
 			Commit: wt.Commit,
 			Status: resolveWorktreeStatus(wtClient, root, wt),
-		})
+		}
+		if reviews != nil {
+			if review, ok := reviews[wt.Branch]; ok {
+				item.ReviewProvider = review.Provider
+				item.ReviewNumber = review.Number
+				item.ReviewState = review.State
+				item.ReviewURL = review.URL
+			} else {
+				item.ReviewState = "none"
+			}
+		}
+		result = append(result, item)
 	}
 	return result
 }
 
-func printWorktreeJSON(wtClient *worktree.Client, worktrees []worktree.Info) error {
-	return printJSON(outWriter(), buildWorktreeJSON(wtClient, worktrees))
+func printWorktreeJSON(
+	wtClient *worktree.Client,
+	worktrees []worktree.Info,
+	reviews map[string]worktree.ReviewInfo,
+) error {
+	return printJSON(outWriter(), buildWorktreeJSON(wtClient, worktrees, reviews))
 }
 
 func runWorktreeDup(wtClient *worktree.Client, args []string) error {
