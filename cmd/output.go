@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"io"
 	"os"
 )
@@ -32,7 +32,7 @@ type outputFormatFlag struct {
 func (f *outputFormatFlag) String() string { return f.value }
 func (f *outputFormatFlag) Set(s string) error {
 	if s != "text" && s != "json" {
-		return fmt.Errorf("must be text or json")
+		return errors.New("must be text or json")
 	}
 	f.value = s
 	return nil

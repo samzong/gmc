@@ -2,7 +2,7 @@ package worktree
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -173,7 +173,7 @@ func TestPrunePRAware_GhFailure(t *testing.T) {
 	orig := ghRunFunc
 	defer func() { ghRunFunc = orig }()
 	ghRunFunc = func(dir string, args ...string) ([]byte, error) {
-		return nil, fmt.Errorf("auth required")
+		return nil, errors.New("auth required")
 	}
 
 	cwd, _ := os.Getwd()

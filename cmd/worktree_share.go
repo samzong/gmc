@@ -23,7 +23,8 @@ var wtShareCmd = &cobra.Command{
 
 If run without arguments, it opens an interactive mode to manage resources.
 
-Config file is stored at the repository's shared git common dir (for example .git/gmc-share.yml or .bare/gmc-share.yml).`,
+Config file is stored at the repository's shared git common dir
+(for example .git/gmc-share.yml or .bare/gmc-share.yml).`,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		wtClient := newWorktreeClient()
 		return runWorktreeShareInteractive(wtClient)
