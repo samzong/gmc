@@ -554,7 +554,7 @@ func loadWorktreeReviews(wtClient *worktree.Client, worktrees []worktree.Info) w
 	if !wtShowPR || len(worktrees) == 0 {
 		return worktree.ReviewLookup{}
 	}
-	return wtClient.ReviewStates()
+	return wtClient.ReviewStates(worktrees)
 }
 
 func printReviewWarning(w io.Writer, reviews worktree.ReviewLookup) {
