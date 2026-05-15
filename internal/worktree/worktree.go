@@ -753,12 +753,10 @@ type DupResult struct {
 	Branches      []string
 	TaskFiles     []string
 	Warnings      []string
+	BaseBranch    string
 }
 
 func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
-	if opts.BaseBranch == "" {
-		opts.BaseBranch = "HEAD"
-	}
 	if opts.Count < 1 {
 		opts.Count = 2
 	}
@@ -767,7 +765,10 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 		return nil, fmt.Errorf("failed to find worktree root: %w", err)
 	}
 
-	relativeBase := c.worktreeRoot
+	opts.BaseBranch = c.resolveDupBaseBranch(opts.BaseBranch)
+	targetRoot := c.dupTargetRoot()
+
+	relativeBase := targetRoot
 	if cwd, cwdErr := os.Getwd(); cwdErr == nil {
 		relativeBase = cwd
 	}
@@ -795,12 +796,13 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 		RelativePaths: make([]string, 0, opts.Count),
 		Branches:      make([]string, 0, opts.Count),
 		TaskFiles:     taskPaths,
+		BaseBranch:    opts.BaseBranch,
 	}
 
 	for i := 1; i <= opts.Count; i++ {
 		dirName := fmt.Sprintf(".dup-%d", i)
 		branchName := fmt.Sprintf("_dup/%s/%s-%d", opts.BaseBranch, timestamp, i)
-		targetPath := filepath.Join(c.worktreeRoot, dirName)
+		targetPath := filepath.Join(targetRoot, dirName)
 
 		if _, err := os.Stat(targetPath); err == nil {
 			return nil, fmt.Errorf("directory already exists: %s", targetPath)
@@ -840,6 +842,31 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 	c.InvalidateList()
 
 	return dupResult, nil
+}
+
+func (c *Client) resolveDupBaseBranch(override string) string {
+	if override != "" {
+		return override
+	}
+	if currentRoot := c.currentTopLevel(); currentRoot != "" {
+		if branch := c.gitSymbolicRef(currentRoot, "HEAD"); branch != "" {
+			return branch
+		}
+		return "HEAD"
+	}
+	if c.repoDir != "" {
+		if branch := c.gitSymbolicRef(c.repoDir, "HEAD"); branch != "" {
+			return branch
+		}
+	}
+	return "HEAD"
+}
+
+func (c *Client) dupTargetRoot() string {
+	if currentRoot := c.currentTopLevel(); currentRoot != "" {
+		return filepath.Dir(currentRoot)
+	}
+	return c.worktreeRoot
 }
 
 // getCurrentTimestamp returns current unix timestamp

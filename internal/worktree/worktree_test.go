@@ -716,6 +716,44 @@ func TestDupWithoutTaskWorksFromBareLayoutRoot(t *testing.T) {
 	}
 }
 
+func TestDupDefaultsToCurrentWorktreeBranchAndSiblingPath(t *testing.T) {
+	repoDir := initTestRepo(t)
+	featureDir := filepath.Join(filepath.Dir(repoDir), filepath.Base(repoDir)+"--feature-current")
+	runGit(t, repoDir, "worktree", "add", "-b", "feature/current", featureDir, "main")
+	var err error
+	featureDir, err = filepath.EvalSymlinks(featureDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(featureDir) })
+
+	writeFile(t, filepath.Join(featureDir, "feature.txt"), "feature")
+	runGit(t, featureDir, "add", "feature.txt")
+	runGit(t, featureDir, "commit", "-m", "feature")
+	chdir(t, featureDir)
+
+	client := NewClient(Options{})
+	result, err := client.Dup(DupOptions{Count: 1})
+	if err != nil {
+		t.Fatalf("Dup() error = %v", err)
+	}
+
+	dupDir := filepath.Join(filepath.Dir(featureDir), ".dup-1")
+	t.Cleanup(func() { _ = os.RemoveAll(dupDir) })
+	if got, want := result.BaseBranch, "feature/current"; got != want {
+		t.Fatalf("BaseBranch = %q, want %q", got, want)
+	}
+	if got, want := result.WorktreePaths[0], dupDir; !sameCleanPath(got, want) {
+		t.Fatalf("WorktreePaths[0] = %q, want %q", got, want)
+	}
+	if got, want := result.RelativePaths[0], "../.dup-1"; got != want {
+		t.Fatalf("RelativePaths[0] = %q, want %q", got, want)
+	}
+	if got, want := readFile(t, filepath.Join(dupDir, "feature.txt")), "feature"; got != want {
+		t.Fatalf("feature.txt = %q, want %q", got, want)
+	}
+}
+
 func TestDupRejectsTaskDirectory(t *testing.T) {
 	repoDir := initBareLayoutRepo(t)
 	mainDir := filepath.Join(repoDir, "main")
@@ -865,7 +903,7 @@ func TestPromoteWorksInNormalRepositoryWithNestedCandidate(t *testing.T) {
 		t.Fatalf("Dup() error = %v", err)
 	}
 
-	dupDir := filepath.Join(repoDir, ".dup-1")
+	dupDir := filepath.Join(filepath.Dir(repoDir), ".dup-1")
 	writeFile(t, filepath.Join(dupDir, "candidate.txt"), "candidate")
 	runGit(t, dupDir, "add", "candidate.txt")
 	runGit(t, dupDir, "commit", "-m", "candidate")
