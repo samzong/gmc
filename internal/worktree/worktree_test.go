@@ -660,31 +660,298 @@ func TestRemoveProtectedWorktree(t *testing.T) {
 	}
 }
 
-func TestPromoteProtectedWorktree(t *testing.T) {
+func TestPromoteRejectsSameWorktreeCandidate(t *testing.T) {
 	repoDir := initTestRepo(t)
+	chdir(t, repoDir)
 
-	featureDir := filepath.Join(filepath.Dir(repoDir), filepath.Base(repoDir)+"--feature")
-	runGit(t, repoDir, "worktree", "add", "-b", "feature", featureDir, "main")
-	defer os.RemoveAll(featureDir)
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(cwd) }()
-	if err := os.Chdir(featureDir); err != nil {
-		t.Fatal(err)
-	}
-
-	repoName := filepath.Base(repoDir)
 	client := NewClient(Options{})
-	_, err = client.Promote(repoName, "new-name")
+	_, err := client.Promote(repoDir, PromoteOptions{})
 	if err == nil {
-		t.Fatal("expected error when promoting protected worktree")
+		t.Fatal("expected error when promoting the current worktree")
 	}
-	if !strings.Contains(err.Error(), "cannot promote protected worktree") {
+	if !strings.Contains(err.Error(), "must be different from the parent") {
 		t.Errorf("unexpected error: %v", err)
 	}
+}
+
+func TestDupCopiesTaskFilesAndKeepsBareLayoutPath(t *testing.T) {
+	repoDir := initBareLayoutRepo(t)
+	mainDir := filepath.Join(repoDir, "main")
+	chdir(t, mainDir)
+
+	writeFile(t, filepath.Join(mainDir, "todo.md"), "task")
+
+	client := NewClient(Options{})
+	result, err := client.Dup(DupOptions{BaseBranch: "main", Count: 1, TaskFiles: []string{"todo.md"}})
+	if err != nil {
+		t.Fatalf("Dup() error = %v", err)
+	}
+	if got, want := result.Worktrees[0], ".dup-1"; got != want {
+		t.Fatalf("Worktrees[0] = %q, want %q", got, want)
+	}
+	dupDir := filepath.Join(repoDir, ".dup-1")
+	if got, want := result.WorktreePaths[0], dupDir; !sameCleanPath(got, want) {
+		t.Fatalf("WorktreePaths[0] = %q, want %q", got, want)
+	}
+	if got, want := readFile(t, filepath.Join(dupDir, "todo.md")), "task"; got != want {
+		t.Fatalf("copied task = %q, want %q", got, want)
+	}
+}
+
+func TestDupWithoutTaskWorksFromBareLayoutRoot(t *testing.T) {
+	repoDir := initBareLayoutRepo(t)
+	chdir(t, repoDir)
+
+	client := NewClient(Options{})
+	result, err := client.Dup(DupOptions{BaseBranch: "main", Count: 1})
+	if err != nil {
+		t.Fatalf("Dup() error = %v", err)
+	}
+	dupDir := filepath.Join(repoDir, ".dup-1")
+	if got, want := result.WorktreePaths[0], dupDir; !sameCleanPath(got, want) {
+		t.Fatalf("WorktreePaths[0] = %q, want %q", got, want)
+	}
+	if got, want := result.RelativePaths[0], ".dup-1"; got != want {
+		t.Fatalf("RelativePaths[0] = %q, want %q", got, want)
+	}
+}
+
+func TestDupRejectsTaskDirectory(t *testing.T) {
+	repoDir := initBareLayoutRepo(t)
+	mainDir := filepath.Join(repoDir, "main")
+	chdir(t, mainDir)
+	if err := os.Mkdir(filepath.Join(mainDir, "tasks"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	client := NewClient(Options{})
+	_, err := client.Dup(DupOptions{BaseBranch: "main", Count: 1, TaskFiles: []string{"tasks"}})
+	if err == nil {
+		t.Fatal("expected directory task error")
+	}
+	if !strings.Contains(err.Error(), "must be a file") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDupAcceptsCanonicalTaskPath(t *testing.T) {
+	repoDir := initBareLayoutRepo(t)
+	mainDir := filepath.Join(repoDir, "main")
+	writeFile(t, filepath.Join(mainDir, "todo.md"), "task")
+
+	linkDir := filepath.Join(t.TempDir(), "main-link")
+	if err := os.Symlink(mainDir, linkDir); err != nil {
+		t.Fatalf("Symlink() error = %v", err)
+	}
+	chdir(t, mainDir)
+
+	client := NewClient(Options{})
+	if _, err := client.Dup(DupOptions{
+		BaseBranch: "main",
+		Count:      1,
+		TaskFiles:  []string{filepath.Join(linkDir, "todo.md")},
+	}); err != nil {
+		t.Fatalf("Dup() error = %v", err)
+	}
+	assertFileContent(t, filepath.Join(repoDir, ".dup-1", "todo.md"), "task")
+}
+
+func TestPromoteAppliesCandidateChangesToCurrentParent(t *testing.T) {
+	repoDir, mainDir, dupDir := createPromoteCandidate(t)
+
+	writeFile(t, filepath.Join(dupDir, "committed.txt"), "committed")
+	runGit(t, dupDir, "add", "committed.txt")
+	runGit(t, dupDir, "commit", "-m", "candidate commit")
+	writeFile(t, filepath.Join(dupDir, "staged.txt"), "staged")
+	runGit(t, dupDir, "add", "staged.txt")
+	writeFile(t, filepath.Join(dupDir, "README.md"), "candidate readme")
+	writeFile(t, filepath.Join(dupDir, "untracked.txt"), "untracked")
+	chdir(t, mainDir)
+
+	client := NewClient(Options{})
+	report, err := client.Promote(".dup-1", PromoteOptions{})
+	if err != nil {
+		t.Fatalf("Promote() error = %v", err)
+	}
+	if len(report.Events) == 0 {
+		t.Fatal("expected report events")
+	}
+
+	assertFileContent(t, filepath.Join(mainDir, "committed.txt"), "committed")
+	assertFileContent(t, filepath.Join(mainDir, "staged.txt"), "staged")
+	assertFileContent(t, filepath.Join(mainDir, "README.md"), "candidate readme")
+	assertFileContent(t, filepath.Join(mainDir, "untracked.txt"), "untracked")
+	status := runGit(t, mainDir, "status", "--short")
+	for _, file := range []string{"committed.txt", "staged.txt", "README.md", "untracked.txt"} {
+		if !strings.Contains(status, file) {
+			t.Fatalf("status %q does not contain %s in repo %s", status, file, repoDir)
+		}
+	}
+}
+
+func TestPromoteDryRunLeavesParentUnchanged(t *testing.T) {
+	_, mainDir, dupDir := createPromoteCandidate(t)
+	writeFile(t, filepath.Join(dupDir, "candidate.txt"), "candidate")
+	runGit(t, dupDir, "add", "candidate.txt")
+	runGit(t, dupDir, "commit", "-m", "candidate")
+	chdir(t, mainDir)
+
+	client := NewClient(Options{})
+	if _, err := client.Promote(".dup-1", PromoteOptions{DryRun: true}); err != nil {
+		t.Fatalf("Promote(DryRun) error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(mainDir, "candidate.txt")); !os.IsNotExist(err) {
+		t.Fatalf("dry-run created candidate.txt, stat err = %v", err)
+	}
+}
+
+func TestPromoteRejectsDirtyParent(t *testing.T) {
+	_, mainDir, dupDir := createPromoteCandidate(t)
+	writeFile(t, filepath.Join(dupDir, "candidate.txt"), "candidate")
+	runGit(t, dupDir, "add", "candidate.txt")
+	runGit(t, dupDir, "commit", "-m", "candidate")
+	writeFile(t, filepath.Join(mainDir, "local.txt"), "local")
+	chdir(t, mainDir)
+
+	client := NewClient(Options{})
+	if _, err := client.Promote(".dup-1", PromoteOptions{}); err == nil {
+		t.Fatal("expected dirty parent error")
+	} else if !strings.Contains(err.Error(), "clean it before promoting") {
+		t.Fatalf("Promote() error = %v, want clean parent guidance", err)
+	}
+	if _, err := os.Stat(filepath.Join(mainDir, "candidate.txt")); !os.IsNotExist(err) {
+		t.Fatalf("dirty parent promote created candidate.txt, stat err = %v", err)
+	}
+	assertFileContent(t, filepath.Join(mainDir, "local.txt"), "local")
+}
+
+func TestPromoteSkipsUnchangedCopiedTaskFile(t *testing.T) {
+	repoDir := initBareLayoutRepo(t)
+	mainDir := filepath.Join(repoDir, "main")
+	chdir(t, mainDir)
+
+	writeFile(t, filepath.Join(mainDir, "task.txt"), "task")
+
+	client := NewClient(Options{})
+	if _, err := client.Dup(DupOptions{BaseBranch: "main", Count: 1, TaskFiles: []string{"task.txt"}}); err != nil {
+		t.Fatalf("Dup() error = %v", err)
+	}
+
+	dupDir := filepath.Join(repoDir, ".dup-1")
+	writeFile(t, filepath.Join(dupDir, "candidate.txt"), "candidate")
+	runGit(t, dupDir, "add", "candidate.txt")
+	runGit(t, dupDir, "commit", "-m", "candidate")
+
+	report, err := client.Promote(".dup-1", PromoteOptions{})
+	if err != nil {
+		t.Fatalf("Promote() error = %v", err)
+	}
+
+	assertFileContent(t, filepath.Join(mainDir, "task.txt"), "task")
+	assertFileContent(t, filepath.Join(mainDir, "candidate.txt"), "candidate")
+	for _, event := range report.Events {
+		if strings.Contains(event.Message, "task.txt") {
+			t.Fatalf("report unexpectedly included unchanged task file: %q", event.Message)
+		}
+	}
+}
+
+func TestPromoteWorksInNormalRepositoryWithNestedCandidate(t *testing.T) {
+	repoDir := initTestRepo(t)
+	chdir(t, repoDir)
+
+	client := NewClient(Options{})
+	if _, err := client.Dup(DupOptions{BaseBranch: "main", Count: 1}); err != nil {
+		t.Fatalf("Dup() error = %v", err)
+	}
+
+	dupDir := filepath.Join(repoDir, ".dup-1")
+	writeFile(t, filepath.Join(dupDir, "candidate.txt"), "candidate")
+	runGit(t, dupDir, "add", "candidate.txt")
+	runGit(t, dupDir, "commit", "-m", "candidate")
+
+	if _, err := client.Promote(".dup-1", PromoteOptions{}); err != nil {
+		t.Fatalf("Promote() error = %v", err)
+	}
+	assertFileContent(t, filepath.Join(repoDir, "candidate.txt"), "candidate")
+}
+
+func TestPromoteAppliesOntoAdvancedParent(t *testing.T) {
+	_, mainDir, dupDir := createPromoteCandidate(t)
+	writeFile(t, filepath.Join(dupDir, "candidate.txt"), "candidate")
+	runGit(t, dupDir, "add", "candidate.txt")
+	runGit(t, dupDir, "commit", "-m", "candidate")
+	writeFile(t, filepath.Join(mainDir, "parent.txt"), "parent")
+	runGit(t, mainDir, "add", "parent.txt")
+	runGit(t, mainDir, "commit", "-m", "parent")
+	chdir(t, mainDir)
+
+	client := NewClient(Options{})
+	if _, err := client.Promote(".dup-1", PromoteOptions{}); err != nil {
+		t.Fatalf("Promote() error = %v", err)
+	}
+	assertFileContent(t, filepath.Join(mainDir, "candidate.txt"), "candidate")
+	assertFileContent(t, filepath.Join(mainDir, "parent.txt"), "parent")
+}
+
+func TestPromoteTreatsAlreadyAppliedCandidateChangeAsNoop(t *testing.T) {
+	_, mainDir, dupDir := createPromoteCandidate(t)
+	writeFile(t, filepath.Join(dupDir, "same.txt"), "same")
+	writeFile(t, filepath.Join(dupDir, "new.txt"), "new")
+	runGit(t, dupDir, "add", "same.txt", "new.txt")
+	runGit(t, dupDir, "commit", "-m", "candidate")
+
+	writeFile(t, filepath.Join(mainDir, "same.txt"), "same")
+	runGit(t, mainDir, "add", "same.txt")
+	runGit(t, mainDir, "commit", "-m", "parent already has same")
+	chdir(t, mainDir)
+
+	client := NewClient(Options{})
+	if _, err := client.Promote(".dup-1", PromoteOptions{}); err != nil {
+		t.Fatalf("Promote() error = %v", err)
+	}
+	assertFileContent(t, filepath.Join(mainDir, "same.txt"), "same")
+	assertFileContent(t, filepath.Join(mainDir, "new.txt"), "new")
+}
+
+func TestPromotePreservesUntrackedSymlink(t *testing.T) {
+	_, mainDir, dupDir := createPromoteCandidate(t)
+	writeFile(t, filepath.Join(dupDir, "target.txt"), "target")
+	if err := os.Symlink("target.txt", filepath.Join(dupDir, "link.txt")); err != nil {
+		t.Fatalf("Symlink() error = %v", err)
+	}
+	chdir(t, mainDir)
+
+	client := NewClient(Options{})
+	if _, err := client.Promote(".dup-1", PromoteOptions{}); err != nil {
+		t.Fatalf("Promote() error = %v", err)
+	}
+
+	target, err := os.Readlink(filepath.Join(mainDir, "link.txt"))
+	if err != nil {
+		t.Fatalf("Readlink() error = %v", err)
+	}
+	if target != "target.txt" {
+		t.Fatalf("link target = %q, want target.txt", target)
+	}
+	assertFileContent(t, filepath.Join(mainDir, "target.txt"), "target")
+}
+
+func TestPromoteConflictLeavesParentUnchanged(t *testing.T) {
+	_, mainDir, dupDir := createPromoteCandidate(t)
+	writeFile(t, filepath.Join(dupDir, "README.md"), "candidate")
+	runGit(t, dupDir, "add", "README.md")
+	runGit(t, dupDir, "commit", "-m", "candidate readme")
+	writeFile(t, filepath.Join(mainDir, "README.md"), "parent")
+	runGit(t, mainDir, "add", "README.md")
+	runGit(t, mainDir, "commit", "-m", "parent readme")
+	chdir(t, mainDir)
+
+	client := NewClient(Options{})
+	if _, err := client.Promote(".dup-1", PromoteOptions{}); err == nil {
+		t.Fatal("expected conflict error")
+	}
+	assertFileContent(t, filepath.Join(mainDir, "README.md"), "parent")
 }
 
 func initTestRepo(t *testing.T) string {
@@ -728,6 +995,47 @@ func writeFile(t *testing.T, path string, content string) {
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatalf("writeFile(%s) failed: %v", path, err)
 	}
+}
+
+func chdir(t *testing.T, dir string) {
+	t.Helper()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("readFile(%s) failed: %v", path, err)
+	}
+	return string(data)
+}
+
+func assertFileContent(t *testing.T, path, want string) {
+	t.Helper()
+	if got := readFile(t, path); got != want {
+		t.Fatalf("%s = %q, want %q", path, got, want)
+	}
+}
+
+func createPromoteCandidate(t *testing.T) (string, string, string) {
+	t.Helper()
+	repoDir := initBareLayoutRepo(t)
+	mainDir := filepath.Join(repoDir, "main")
+	chdir(t, mainDir)
+
+	client := NewClient(Options{})
+	if _, err := client.Dup(DupOptions{BaseBranch: "main", Count: 1}); err != nil {
+		t.Fatalf("Dup() error = %v", err)
+	}
+	return repoDir, mainDir, filepath.Join(repoDir, ".dup-1")
 }
 
 func initBareLayoutRepo(t *testing.T) string {

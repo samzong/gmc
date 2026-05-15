@@ -18,6 +18,7 @@ import (
 var (
 	wtBaseBranch   string
 	wtDupBase      string
+	wtDupTasks     []string
 	wtForce        bool
 	wtDeleteBranch bool
 	wtDryRun       bool
@@ -158,11 +159,18 @@ var wtDupCmd = &cobra.Command{
 
 Each worktree gets a temporary branch (_dup/<base>/<timestamp>-<n>). Point a
 different agent (Claude Code, Codex, Copilot, ...) at each one, compare the
-results, then promote the winner with 'gmc wt promote'.
+results, then promote the winner back into the current parent worktree with
+'gmc wt promote'.
+
+Use --task to copy task context files from the parent worktree into each
+candidate. Task files are ordinary files after they are copied.
 
 Examples:
   # Fan out 3 sibling worktrees based on main
   gmc wt dup 3 -b main
+
+  # Fan out candidates with a copied task file
+  gmc wt dup 3 --task todo.md
 
   # Typical parallel workflow with Claude Code / Codex / Copilot
   gmc wt dup 3
@@ -170,8 +178,8 @@ Examples:
   cd ../.dup-2 && codex     # agent 2
   cd ../.dup-3 && copilot   # agent 3
 
-  # When one agent's solution wins, promote it to a real branch:
-  gmc wt promote .dup-1 feature/auth
+  # When one agent's solution wins, promote it into the current worktree:
+  gmc wt promote .dup-1
 
   # Defaults: count=2, base=main
   gmc wt dup
@@ -184,19 +192,33 @@ Examples:
 }
 
 var wtPromoteCmd = &cobra.Command{
-	Use:   "promote <worktree> <branch-name>",
-	Short: "Rename temporary branch to permanent name",
-	Long: `Rename the temporary branch of a worktree to a permanent branch name.
+	Use:   "promote <candidate>",
+	Short: "Apply a candidate back into the current worktree",
+	Long: `Apply a candidate worktree's changes back into the current parent worktree.
 
-Use this after evaluating parallel development results to keep the best solution.
+Run this from the parent worktree that should receive the winning candidate.
+The result is left as uncommitted working tree changes. This command never
+commits, pushes, opens PRs, or deletes candidate worktrees.
 
 Examples:
-  gmc wt promote .dup-2 feature/add-auth
-  gmc wt promote .dup-1 fix/login-bug`,
-	Args: cobra.ExactArgs(2),
+  gmc wt promote .dup-2 --dry-run
+  gmc wt promote .dup-2
+  gmc wt promote ../.dup-1`,
+	Args: func(_ *cobra.Command, args []string) error {
+		if len(args) == 2 {
+			return errors.New(
+				"gmc wt promote now accepts only <candidate>; " +
+					"to rename a branch, cd into the worktree and run 'git branch -m <branch-name>'",
+			)
+		}
+		if len(args) != 1 {
+			return errors.New("requires exactly 1 arg(s)")
+		}
+		return nil
+	},
 	RunE: func(_ *cobra.Command, args []string) error {
 		wtClient := newWorktreeClient()
-		return runWorktreePromote(wtClient, args[0], args[1])
+		return runWorktreePromote(wtClient, args[0])
 	},
 }
 
@@ -252,6 +274,10 @@ func init() {
 
 	// Flags for dup command
 	wtDupCmd.Flags().StringVarP(&wtDupBase, "base", "b", "main", "Base branch to create from")
+	wtDupCmd.Flags().StringArrayVar(&wtDupTasks, "task", nil, "Task context file to copy into each candidate (repeatable)")
+
+	wtPromoteCmd.Flags().BoolVar(&wtDryRun, "dry-run", false,
+		"Check whether the candidate can be promoted without changing files")
 
 	// Flags for prune command
 	wtPruneCmd.Flags().StringVarP(&wtPruneBase, "base", "b", "", "Base branch to check merge status against")
@@ -715,6 +741,7 @@ func runWorktreeDup(wtClient *worktree.Client, args []string) error {
 	opts := worktree.DupOptions{
 		BaseBranch: wtDupBase,
 		Count:      2,
+		TaskFiles:  wtDupTasks,
 	}
 
 	if len(args) > 0 {
@@ -735,20 +762,41 @@ func runWorktreeDup(wtClient *worktree.Client, args []string) error {
 
 	fmt.Fprintf(outWriter(), "Created %d worktrees based on '%s':\n", len(result.Worktrees), opts.BaseBranch)
 	for i, wt := range result.Worktrees {
-		fmt.Fprintf(outWriter(), "  %s -> %s\n", wt, result.Branches[i])
+		relPath := wt
+		if i < len(result.RelativePaths) && result.RelativePaths[i] != "" {
+			relPath = result.RelativePaths[i]
+		}
+		absPath := ""
+		if i < len(result.WorktreePaths) {
+			absPath = result.WorktreePaths[i]
+		}
+		if absPath == "" {
+			fmt.Fprintf(outWriter(), "  %s -> %s\n", relPath, result.Branches[i])
+		} else {
+			fmt.Fprintf(outWriter(), "  %s (%s) -> %s\n", relPath, absPath, result.Branches[i])
+		}
+	}
+	if len(result.TaskFiles) > 0 {
+		fmt.Fprintln(outWriter(), "Copied task files:")
+		for _, task := range result.TaskFiles {
+			fmt.Fprintf(outWriter(), "  %s\n", task)
+		}
 	}
 	fmt.Fprintln(outWriter())
 	fmt.Fprintln(outWriter(), "Next steps:")
 	fmt.Fprintln(outWriter(), "  1. Work in each directory with different AI tools")
 	fmt.Fprintln(outWriter(), "  2. Evaluate and pick the best solution")
-	fmt.Fprintf(outWriter(), "  3. Run: gmc wt promote <worktree> <branch-name>\n")
-	fmt.Fprintln(outWriter(), "  4. Clean up: gmc wt rm <other-worktrees> -D")
+	fmt.Fprintf(outWriter(), "  3. Dry-run promote: gmc wt promote <candidate> --dry-run\n")
+	fmt.Fprintf(outWriter(), "  4. Promote winner: gmc wt promote <candidate>\n")
+	fmt.Fprintln(outWriter(), "  5. Clean up: gmc wt rm <other-worktrees> -D")
 
 	return nil
 }
 
-func runWorktreePromote(wtClient *worktree.Client, worktreeName, branchName string) error {
-	report, err := wtClient.Promote(worktreeName, branchName)
+func runWorktreePromote(wtClient *worktree.Client, candidate string) error {
+	report, err := wtClient.Promote(candidate, worktree.PromoteOptions{
+		DryRun: wtDryRun,
+	})
 	printWorktreeReport(report)
 	return err
 }

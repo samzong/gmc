@@ -742,13 +742,17 @@ func (c *Client) branchExists(name string) (bool, error) {
 type DupOptions struct {
 	BaseBranch string // Base branch to create from
 	Count      int    // Number of worktrees to create
+	TaskFiles  []string
 }
 
 // DupResult result of a dup operation
 type DupResult struct {
-	Worktrees []string // Created worktree directories
-	Branches  []string // Created branch names
-	Warnings  []string // Non-fatal warnings generated during creation
+	Worktrees     []string
+	WorktreePaths []string
+	RelativePaths []string
+	Branches      []string
+	TaskFiles     []string
+	Warnings      []string
 }
 
 func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
@@ -763,10 +767,34 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 		return nil, fmt.Errorf("failed to find worktree root: %w", err)
 	}
 
+	relativeBase := c.worktreeRoot
+	if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+		relativeBase = cwd
+	}
+	var taskFiles []dupTaskFile
+	var taskPaths []string
+	if len(opts.TaskFiles) > 0 {
+		parentRoot, err := c.currentTopLevelRequired()
+		if err != nil {
+			return nil, err
+		}
+		taskFiles, err = c.resolveDupTaskFiles(parentRoot, opts.TaskFiles)
+		if err != nil {
+			return nil, err
+		}
+		taskPaths = make([]string, 0, len(taskFiles))
+		for _, file := range taskFiles {
+			taskPaths = append(taskPaths, file.rel)
+		}
+	}
+
 	timestamp := strconv.FormatInt(getCurrentTimestamp(), 10)
 	dupResult := &DupResult{
-		Worktrees: make([]string, 0, opts.Count),
-		Branches:  make([]string, 0, opts.Count),
+		Worktrees:     make([]string, 0, opts.Count),
+		WorktreePaths: make([]string, 0, opts.Count),
+		RelativePaths: make([]string, 0, opts.Count),
+		Branches:      make([]string, 0, opts.Count),
+		TaskFiles:     taskPaths,
 	}
 
 	for i := 1; i <= opts.Count; i++ {
@@ -799,69 +827,19 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 				dupResult.Warnings = append(dupResult.Warnings, event.Message)
 			}
 		}
+		if err := c.copyDupTaskFiles(taskFiles, targetPath); err != nil {
+			return nil, err
+		}
 
 		dupResult.Worktrees = append(dupResult.Worktrees, dirName)
+		dupResult.WorktreePaths = append(dupResult.WorktreePaths, targetPath)
+		dupResult.RelativePaths = append(dupResult.RelativePaths, relativePathFrom(relativeBase, targetPath))
 		dupResult.Branches = append(dupResult.Branches, branchName)
 	}
 
 	c.InvalidateList()
 
 	return dupResult, nil
-}
-
-// Promote renames the branch of a worktree to a permanent name
-func (c *Client) Promote(worktreeName, newBranchName string) (Report, error) {
-	var report Report
-
-	if worktreeName == "" {
-		return report, errors.New("worktree name cannot be empty")
-	}
-	if newBranchName == "" {
-		return report, errors.New("branch name cannot be empty")
-	}
-
-	if err := gitutil.ValidateBranchName(newBranchName); err != nil {
-		return report, err
-	}
-
-	if err := c.ensureInit(); err != nil {
-		return report, fmt.Errorf("failed to determine worktree search root: %w", err)
-	}
-
-	targetPath := filepath.Join(c.searchRoot, worktreeName)
-
-	if _, err := os.Stat(targetPath); os.IsNotExist(err) {
-		return report, fmt.Errorf("worktree not found: %s", worktreeName)
-	}
-
-	result, err := c.runner.Run("-C", targetPath, "rev-parse", "--abbrev-ref", "HEAD")
-	if err != nil {
-		return report, fmt.Errorf("failed to get current branch: %w", err)
-	}
-
-	oldBranch := result.StdoutString(true)
-	if oldBranch == "HEAD" {
-		return report, errors.New("worktree is in detached HEAD state, cannot promote")
-	}
-
-	pp, err := c.NewProtectionPolicy()
-	if err != nil {
-		return report, err
-	}
-	checkWt := Info{Path: targetPath, Branch: oldBranch}
-	if pp.IsProtected(checkWt) {
-		return report, fmt.Errorf("cannot promote protected worktree '%s' (%s)", worktreeName, pp.Reason(checkWt))
-	}
-
-	// Rename branch
-	args := []string{"-C", targetPath, "branch", "-m", newBranchName}
-	result, err = c.runner.RunLogged(args...)
-	if err != nil {
-		return report, gitutil.WrapGitError("failed to rename branch", result, err)
-	}
-
-	report.Info(fmt.Sprintf("Promoted '%s' -> '%s'", oldBranch, newBranchName))
-	return report, nil
 }
 
 // getCurrentTimestamp returns current unix timestamp
