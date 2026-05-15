@@ -181,7 +181,7 @@ Examples:
   # When one agent's solution wins, promote it into the current worktree:
   gmc wt promote .dup-1
 
-  # Defaults: count=2, base=main
+  # Defaults: count=2, base=current branch
   gmc wt dup
   gmc wt dup -b dev`,
 	Args: cobra.MaximumNArgs(1),
@@ -273,7 +273,7 @@ func init() {
 	wtCloneCmd.Flags().StringVar(&wtProjectName, "name", "", "Custom project directory name")
 
 	// Flags for dup command
-	wtDupCmd.Flags().StringVarP(&wtDupBase, "base", "b", "main", "Base branch to create from")
+	wtDupCmd.Flags().StringVarP(&wtDupBase, "base", "b", "", "Base branch to create from")
 	wtDupCmd.Flags().StringArrayVar(&wtDupTasks, "task", nil, "Task context file to copy into each candidate (repeatable)")
 
 	wtPromoteCmd.Flags().BoolVar(&wtDryRun, "dry-run", false,
@@ -760,7 +760,7 @@ func runWorktreeDup(wtClient *worktree.Client, args []string) error {
 		fmt.Fprintln(errWriter(), warning)
 	}
 
-	fmt.Fprintf(outWriter(), "Created %d worktrees based on '%s':\n", len(result.Worktrees), opts.BaseBranch)
+	fmt.Fprintf(outWriter(), "Created %d worktrees based on '%s':\n", len(result.Worktrees), result.BaseBranch)
 	for i, wt := range result.Worktrees {
 		relPath := wt
 		if i < len(result.RelativePaths) && result.RelativePaths[i] != "" {

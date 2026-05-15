@@ -87,15 +87,18 @@ func (c *Client) copyDupTaskFiles(files []dupTaskFile, targetRoot string) error 
 }
 
 func relativePathFrom(base, target string) string {
+	if evalBase, err := filepath.EvalSymlinks(base); err == nil {
+		base = evalBase
+	}
+	if evalTarget, err := filepath.EvalSymlinks(target); err == nil {
+		target = evalTarget
+	}
 	rel, err := filepath.Rel(base, target)
 	if err != nil {
 		return target
 	}
 	if rel == "." {
 		return "."
-	}
-	if strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
-		return target
 	}
 	return rel
 }
