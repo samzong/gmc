@@ -2,18 +2,19 @@
 .TH "GMC" "1" "May 2026" "gmc" "GMC Manual"
 
 .SH NAME
-gmc-wt-share - Manage shared resources for worktrees
+gmc-wt-hook - Manage hooks executed after worktree creation
 
 
 .SH SYNOPSIS
-\fBgmc wt share [flags]\fP
+\fBgmc wt hook [flags]\fP
 
 
 .SH DESCRIPTION
-Manage shared resources that are automatically synced to all worktrees.
+Manage hooks that are executed after shared resources are synced to a new worktree.
 
 .PP
-If run without arguments, it opens an interactive mode to manage resources.
+Hooks run in the target worktree directory and are useful for running
+package installation commands like 'pnpm install'.
 
 .PP
 Config file is stored at the repository's shared git common dir
@@ -22,7 +23,7 @@ Config file is stored at the repository's shared git common dir
 
 .SH OPTIONS
 \fB-h\fP, \fB--help\fP[=false]
-	help for share
+	help for hook
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -39,7 +40,7 @@ Config file is stored at the repository's shared git common dir
 
 
 .SH SEE ALSO
-\fBgmc-wt(1)\fP, \fBgmc-wt-share-add(1)\fP, \fBgmc-wt-share-discover(1)\fP, \fBgmc-wt-share-list(1)\fP, \fBgmc-wt-share-remove(1)\fP, \fBgmc-wt-share-sync(1)\fP
+\fBgmc-wt(1)\fP, \fBgmc-wt-hook-add(1)\fP, \fBgmc-wt-hook-remove(1)\fP
 
 
 .SH HISTORY

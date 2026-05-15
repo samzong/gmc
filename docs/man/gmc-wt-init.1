@@ -2,32 +2,38 @@
 .TH "GMC" "1" "May 2026" "gmc" "GMC Manual"
 
 .SH NAME
-gmc-wt-sync - Sync the base branch used for worktrees
+gmc-wt-init - Generate shell integration script
 
 
 .SH SYNOPSIS
-\fBgmc wt sync [flags]\fP
+\fBgmc wt init  [flags]\fP
 
 
 .SH DESCRIPTION
-Sync the base branch used for worktrees.
+Generate a shell integration script for gmc.
 
 .PP
-This updates the base branch using fast-forward only and optionally
-updates the base worktree when it's clean.
+Add the following to your shell's rc file:
+
+.PP
+# For bash (~/.bashrc)
+  eval "$(gmc wt init bash)"
+
+.PP
+# For zsh (~/.zshrc)
+  eval "$(gmc wt init zsh)"
+
+.PP
+# For fish (~/.config/fish/config.fish)
+  gmc wt init fish | source
+
+.PP
+After this, 'gmc wt switch' will be able to change your working directory.
 
 
 .SH OPTIONS
-\fB-b\fP, \fB--base\fP=""
-	Base branch to sync
-
-.PP
-\fB--dry-run\fP[=false]
-	Preview what would be updated without making changes
-
-.PP
 \fB-h\fP, \fB--help\fP[=false]
-	help for sync
+	help for init
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS

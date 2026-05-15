@@ -2,24 +2,27 @@
 .TH "GMC" "1" "May 2026" "gmc" "GMC Manual"
 
 .SH NAME
-gmc-wt-list - List all worktrees (alias: ls)
+gmc-wt-switch - Interactively switch to another worktree
 
 
 .SH SYNOPSIS
-\fBgmc wt list [flags]\fP
+\fBgmc wt switch [flags]\fP
 
 
 .SH DESCRIPTION
-List all worktrees in the current repository.
+Interactively select a worktree and switch to it.
+
+.PP
+Requires shell integration. If not set up, run:
+  eval "$(gmc wt init zsh)"  # or bash/fish
+
+.PP
+Without shell integration, this command will only print the path.
 
 
 .SH OPTIONS
 \fB-h\fP, \fB--help\fP[=false]
-	help for list
-
-.PP
-\fB--pr\fP[=false]
-	Show review request status for each branch (requires gh or glab CLI)
+	help for switch
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS

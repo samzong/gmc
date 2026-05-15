@@ -2,20 +2,32 @@
 .TH "GMC" "1" "May 2026" "gmc" "GMC Manual"
 
 .SH NAME
-gmc-wt-share-remove - Remove a shared resource from config
+gmc-wt-share-discover - Discover files that should be shared across worktrees
 
 
 .SH SYNOPSIS
-\fBgmc wt share remove  [flags]\fP
+\fBgmc wt share discover [flags]\fP
 
 
 .SH DESCRIPTION
-Remove a shared resource from config
+Scan the main worktree for files that should be shared across worktrees.
+
+.PP
+By default, shows a preview of discovered files (dry-run mode).
+Use --auto to actually add discovered files and sync them.
 
 
 .SH OPTIONS
+\fB--auto\fP[=false]
+	Actually add discovered items and sync
+
+.PP
+\fB--dry-run\fP[=true]
+	Preview mode (default behavior)
+
+.PP
 \fB-h\fP, \fB--help\fP[=false]
-	help for remove
+	help for discover
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
