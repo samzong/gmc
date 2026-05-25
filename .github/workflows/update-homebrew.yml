@@ -30,4 +30,4 @@ jobs:
     - name: Update Homebrew Formula
       env:
         GH_PAT: ${{ secrets.GH_PAT }}
-      run: make update-homebrew 
+      run: make update-homebrew VERSION="${VERSION}"

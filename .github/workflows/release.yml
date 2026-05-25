@@ -43,10 +43,10 @@ jobs:
           echo "${HOME}/go/bin" >> $GITHUB_PATH
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v5
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
-          version: v1
+          version: "~> v2"
           args: release --clean
 
       - name: Trigger Homebrew Update
