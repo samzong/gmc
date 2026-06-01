@@ -170,6 +170,42 @@ func TestRunWorktreeList_TextUnchanged(t *testing.T) {
 	assert.NotContains(t, output, `"name"`)
 }
 
+func TestRunWorktreeList_AppendsDiffStatToStatus(t *testing.T) {
+	repoDir := initCmdTestRepo(t)
+	linkedWt := filepath.Join(t.TempDir(), "feature-wt")
+	runGitCmd(t, repoDir, "worktree", "add", "-b", "feature/diff-check", linkedWt, "main")
+	require.NoError(t, os.WriteFile(filepath.Join(linkedWt, "feature.txt"), []byte("one\ntwo\n"), 0o644))
+	runGitCmd(t, linkedWt, "add", "feature.txt")
+	runGitCmd(t, linkedWt, "commit", "-m", "add feature")
+
+	oldCwd, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() { _ = os.Chdir(oldCwd) }()
+	require.NoError(t, os.Chdir(repoDir))
+
+	var out bytes.Buffer
+	withWriters(t, &out, io.Discard)
+	withOutputFormat(t, "text")
+
+	client := worktree.NewClient(worktree.Options{})
+	err = runWorktreeList(client)
+	require.NoError(t, err)
+
+	output := out.String()
+	assert.Contains(t, output, "feature/diff-check")
+	assert.Contains(t, output, "1 file (+2 -0)")
+	assert.NotContains(t, output, "clean, 1 file (+2 -0)")
+}
+
+func TestFormatWorktreeStatus(t *testing.T) {
+	stat := worktree.DiffStat{Files: 1, Insertions: 2}
+
+	assert.Equal(t, "clean", formatWorktreeStatus("clean", worktree.DiffStat{}, false))
+	assert.Equal(t, "1 file (+2 -0)", formatWorktreeStatus("clean", stat, true))
+	assert.Equal(t, "1 file changed, 1 file (+2 -0)", formatWorktreeStatus("1 file changed", stat, true))
+	assert.Equal(t, "agent", formatWorktreeStatus("agent", worktree.DiffStat{}, true))
+}
+
 func TestBuildWorktreeJSON_WithReviewStates(t *testing.T) {
 	repoDir := initCmdTestRepo(t)
 	oldCwd, err := os.Getwd()
@@ -178,11 +214,12 @@ func TestBuildWorktreeJSON_WithReviewStates(t *testing.T) {
 	require.NoError(t, os.Chdir(repoDir))
 
 	client := worktree.NewClient(worktree.Options{})
-	items := buildWorktreeJSON(client, []worktree.Info{{
+	wt := worktree.Info{
 		Path:   repoDir,
 		Branch: "feature/pr-json",
 		Commit: strings.Repeat("a", 40),
-	}}, map[string]worktree.ReviewInfo{
+	}
+	items := buildWorktreeJSON(client, []worktree.Info{wt}, map[string]worktree.ReviewInfo{
 		"feature/pr-json": {
 			Provider:   "github",
 			Number:     42,
@@ -190,9 +227,27 @@ func TestBuildWorktreeJSON_WithReviewStates(t *testing.T) {
 			HeadBranch: "feature/pr-json",
 			URL:        "https://github.com/example/repo/pull/42",
 		},
-	})
+	}, worktreeDiffStats{Stats: map[string]worktree.DiffStat{
+		repoDir: {
+			Base:       "main",
+			Files:      2,
+			Insertions: 4,
+		},
+	}})
 
 	require.Len(t, items, 1)
+	assert.Equal(t, "main", items[0].DiffBase)
+	require.NotNil(t, items[0].ChangedFiles)
+	require.NotNil(t, items[0].Insertions)
+	require.NotNil(t, items[0].Deletions)
+	assert.Equal(t, 2, *items[0].ChangedFiles)
+	assert.Equal(t, 4, *items[0].Insertions)
+	assert.Equal(t, 0, *items[0].Deletions)
+	assert.Equal(t, resolveWorktreeStatus(client, getDisplayRoot(client), wt), items[0].Status)
+	assert.NotEqual(t, "2 files (+4 -0)", items[0].Status)
+	data, err := json.Marshal(items[0])
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"deletions":0`)
 	assert.Equal(t, "github", items[0].ReviewProvider)
 	assert.Equal(t, 42, items[0].ReviewNumber)
 	assert.Equal(t, "OPEN", items[0].ReviewState)
@@ -222,7 +277,7 @@ func TestPrintWorktreeTable_WithReviewStates(t *testing.T) {
 			HeadBranch: "feature/pr-text",
 			URL:        "https://github.com/example/repo/pull/42",
 		},
-	})
+	}, worktreeDiffStats{})
 
 	output := out.String()
 	assert.Contains(t, output, "PR")
