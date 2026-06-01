@@ -255,6 +255,47 @@ func TestGetWorktreeStatus(t *testing.T) {
 	}
 }
 
+func TestWorktreeDiffStat(t *testing.T) {
+	repoDir := initTestRepo(t)
+	runGit(t, repoDir, "checkout", "-b", "feature/diff-stat")
+	writeFile(t, filepath.Join(repoDir, "feature.txt"), "one\ntwo\n")
+	runGit(t, repoDir, "add", "feature.txt")
+	runGit(t, repoDir, "commit", "-m", "add feature")
+
+	writeFile(t, filepath.Join(repoDir, "README.md"), "initial\nupdated\n")
+
+	client := NewClient(Options{})
+	stat, err := client.WorktreeDiffStat(repoDir, "main")
+	if err != nil {
+		t.Fatalf("WorktreeDiffStat() error = %v", err)
+	}
+
+	if stat.Files != 2 {
+		t.Errorf("Files = %d, want 2", stat.Files)
+	}
+	if stat.Insertions != 4 {
+		t.Errorf("Insertions = %d, want 4", stat.Insertions)
+	}
+	if stat.Deletions != 1 {
+		t.Errorf("Deletions = %d, want 1", stat.Deletions)
+	}
+}
+
+func TestParseDiffNumstatHandlesRename(t *testing.T) {
+	output := []byte("1\t0\t\x00old.txt\x00new.txt\x00")
+	stat := parseDiffNumstat(output)
+
+	if stat.Files != 1 {
+		t.Errorf("Files = %d, want 1", stat.Files)
+	}
+	if stat.Insertions != 1 {
+		t.Errorf("Insertions = %d, want 1", stat.Insertions)
+	}
+	if stat.Deletions != 0 {
+		t.Errorf("Deletions = %d, want 0", stat.Deletions)
+	}
+}
+
 func TestAddOptions(t *testing.T) {
 	opts := AddOptions{
 		BaseBranch: "main",

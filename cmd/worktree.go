@@ -27,6 +27,7 @@ var (
 	wtProjectName  string
 	prRemote       string
 	wtShowPR       bool
+	wtDiffBase     string
 )
 
 var wtCmd = &cobra.Command{
@@ -293,6 +294,10 @@ func init() {
 		"Show review request status for each branch (requires gh or glab CLI)")
 	wtListCmd.Flags().BoolVar(&wtShowPR, "pr", false,
 		"Show review request status for each branch (requires gh or glab CLI)")
+	wtCmd.Flags().StringVar(&wtDiffBase, "diff-base", "",
+		"Base branch/ref for worktree diff stats")
+	wtListCmd.Flags().StringVar(&wtDiffBase, "diff-base", "",
+		"Base branch/ref for worktree diff stats")
 
 	// Shell completions for arguments
 	wtRemoveCmd.ValidArgsFunction = completeWorktreeNames
@@ -303,6 +308,8 @@ func init() {
 	_ = wtDupCmd.RegisterFlagCompletionFunc("base", completeBranchNames)
 	_ = wtPruneCmd.RegisterFlagCompletionFunc("base", completeBranchNames)
 	_ = wtPrReviewCmd.RegisterFlagCompletionFunc("remote", completeRemoteNames)
+	_ = wtCmd.RegisterFlagCompletionFunc("diff-base", completeBranchNames)
+	_ = wtListCmd.RegisterFlagCompletionFunc("diff-base", completeBranchNames)
 
 	// Add to root command
 	rootCmd.AddCommand(wtCmd)
@@ -314,6 +321,10 @@ type WorktreeJSON struct {
 	Branch         string `json:"branch"`
 	Commit         string `json:"commit"`
 	Status         string `json:"status"`
+	DiffBase       string `json:"diff_base,omitempty"`
+	ChangedFiles   *int   `json:"changed_files,omitempty"`
+	Insertions     *int   `json:"insertions,omitempty"`
+	Deletions      *int   `json:"deletions,omitempty"`
 	ReviewProvider string `json:"review_provider,omitempty"`
 	ReviewNumber   int    `json:"review_number,omitempty"`
 	ReviewState    string `json:"review_state,omitempty"`
@@ -328,9 +339,13 @@ func runWorktreeDefault(wtClient *worktree.Client, _ *cobra.Command) error {
 
 	filtered := filterBareWorktrees(worktrees)
 	reviews := loadWorktreeReviews(wtClient, filtered)
+	diffStats, err := loadWorktreeDiffStats(wtClient, filtered)
+	if err != nil {
+		return err
+	}
 
 	if outputFormat() == "json" {
-		if err := printWorktreeJSON(wtClient, filtered, reviews.Reviews); err != nil {
+		if err := printWorktreeJSON(wtClient, filtered, reviews.Reviews, diffStats); err != nil {
 			return err
 		}
 		printReviewWarning(errWriter(), reviews)
@@ -338,7 +353,7 @@ func runWorktreeDefault(wtClient *worktree.Client, _ *cobra.Command) error {
 	}
 
 	fmt.Fprintln(outWriter(), "Current Worktrees:")
-	printWorktreeTable(wtClient, filtered, reviews.Reviews)
+	printWorktreeTable(wtClient, filtered, reviews.Reviews, diffStats)
 
 	cwd, err := os.Getwd()
 	if err == nil {
@@ -415,9 +430,13 @@ func runWorktreeList(wtClient *worktree.Client) error {
 
 	filtered := filterBareWorktrees(worktrees)
 	reviews := loadWorktreeReviews(wtClient, filtered)
+	diffStats, err := loadWorktreeDiffStats(wtClient, filtered)
+	if err != nil {
+		return err
+	}
 
 	if outputFormat() == "json" {
-		if err := printWorktreeJSON(wtClient, filtered, reviews.Reviews); err != nil {
+		if err := printWorktreeJSON(wtClient, filtered, reviews.Reviews, diffStats); err != nil {
 			return err
 		}
 		printReviewWarning(errWriter(), reviews)
@@ -429,7 +448,7 @@ func runWorktreeList(wtClient *worktree.Client) error {
 		return nil
 	}
 
-	printWorktreeTable(wtClient, filtered, reviews.Reviews)
+	printWorktreeTable(wtClient, filtered, reviews.Reviews, diffStats)
 	printReviewWarning(outWriter(), reviews)
 	return nil
 }
@@ -576,6 +595,56 @@ func resolveWorktreeStatus(wtClient *worktree.Client, root string, wt worktree.I
 	}
 }
 
+type worktreeDiffStats struct {
+	Stats map[string]worktree.DiffStat
+}
+
+func loadWorktreeDiffStats(wtClient *worktree.Client, worktrees []worktree.Info) (worktreeDiffStats, error) {
+	lookup := worktreeDiffStats{Stats: make(map[string]worktree.DiffStat)}
+	if len(worktrees) == 0 {
+		return lookup, nil
+	}
+
+	base, err := wtClient.ResolveDiffBase(wtDiffBase)
+	if err != nil {
+		if strings.TrimSpace(wtDiffBase) != "" {
+			return lookup, err
+		}
+		return lookup, nil
+	}
+
+	for _, wt := range worktrees {
+		stat, statErr := wtClient.WorktreeDiffStat(wt.Path, base)
+		if statErr != nil {
+			if strings.TrimSpace(wtDiffBase) != "" {
+				return lookup, statErr
+			}
+			continue
+		}
+		lookup.Stats[wt.Path] = stat
+	}
+	return lookup, nil
+}
+
+func formatWorktreeStatus(status string, stat worktree.DiffStat, ok bool) string {
+	if !ok || !stat.HasChanges() {
+		return status
+	}
+	diffStat := formatDiffStat(stat)
+	if status == "" || status == "clean" {
+		return diffStat
+	}
+	return status + ", " + diffStat
+}
+
+func formatDiffStat(stat worktree.DiffStat) string {
+	fileLabel := "files"
+	if stat.Files == 1 {
+		fileLabel = "file"
+	}
+	return fmt.Sprintf("%d %s (+%d -%d)", stat.Files, fileLabel, stat.Insertions, stat.Deletions)
+}
+
 func loadWorktreeReviews(wtClient *worktree.Client, worktrees []worktree.Info) worktree.ReviewLookup {
 	if !wtShowPR || len(worktrees) == 0 {
 		return worktree.ReviewLookup{}
@@ -633,7 +702,12 @@ func padVisibleRight(text string, visibleLen int, width int) string {
 	return text + strings.Repeat(" ", width-visibleLen)
 }
 
-func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Info, reviews map[string]worktree.ReviewInfo) {
+func printWorktreeTable(
+	wtClient *worktree.Client,
+	worktrees []worktree.Info,
+	reviews map[string]worktree.ReviewInfo,
+	diffStats worktreeDiffStats,
+) {
 	if len(worktrees) == 0 {
 		return
 	}
@@ -680,7 +754,8 @@ func printWorktreeTable(wtClient *worktree.Client, worktrees []worktree.Info, re
 	for _, wt := range worktrees {
 		name := displayWorktreeName(root, wt.Path)
 		shortCommit := stringsutil.ShortHash(wt.Commit, 7, "")
-		status := resolveWorktreeStatus(wtClient, root, wt)
+		stat, hasStat := diffStats.Stats[wt.Path]
+		status := formatWorktreeStatus(resolveWorktreeStatus(wtClient, root, wt), stat, hasStat)
 		if reviews != nil {
 			prText := formatWorktreeReview(reviews, wt.Branch)
 			prDisplay := formatWorktreeReviewDisplay(reviews, wt.Branch, links)
@@ -703,16 +778,27 @@ func buildWorktreeJSON(
 	wtClient *worktree.Client,
 	worktrees []worktree.Info,
 	reviews map[string]worktree.ReviewInfo,
+	diffStats worktreeDiffStats,
 ) []WorktreeJSON {
 	root := getDisplayRoot(wtClient)
 	result := make([]WorktreeJSON, 0, len(worktrees))
 	for _, wt := range worktrees {
+		stat, hasStat := diffStats.Stats[wt.Path]
 		item := WorktreeJSON{
 			Name:   displayWorktreeName(root, wt.Path),
 			Path:   wt.Path,
 			Branch: wt.Branch,
 			Commit: wt.Commit,
 			Status: resolveWorktreeStatus(wtClient, root, wt),
+		}
+		if hasStat && stat.HasChanges() {
+			changedFiles := stat.Files
+			insertions := stat.Insertions
+			deletions := stat.Deletions
+			item.DiffBase = stat.Base
+			item.ChangedFiles = &changedFiles
+			item.Insertions = &insertions
+			item.Deletions = &deletions
 		}
 		if reviews != nil {
 			if review, ok := reviews[wt.Branch]; ok {
@@ -733,8 +819,9 @@ func printWorktreeJSON(
 	wtClient *worktree.Client,
 	worktrees []worktree.Info,
 	reviews map[string]worktree.ReviewInfo,
+	diffStats worktreeDiffStats,
 ) error {
-	return printJSON(outWriter(), buildWorktreeJSON(wtClient, worktrees, reviews))
+	return printJSON(outWriter(), buildWorktreeJSON(wtClient, worktrees, reviews, diffStats))
 }
 
 func runWorktreeDup(wtClient *worktree.Client, args []string) error {
