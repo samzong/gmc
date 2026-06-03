@@ -8,6 +8,17 @@ This document defines the technical architecture for evolving gmc from a
 worktree helper into a local-first control plane for human-supervised parallel
 AI coding tasks.
 
+Terminology delta from [#76](https://github.com/samzong/gmc/issues/76):
+
+- Issue **Todo** → this doc **Task** (durable unit of work, not a session).
+- Issue **Workflow / Stage** → **hardcoded workflow knobs in v1**; individual
+  steps are **Runs** with types such as `agent-session` and `command-check`.
+- Issue sketch `.gmc/tasks/*.yaml` → repo-family ledger under
+  `<git-common-dir>/gmc-tasks/` (see Storage); optional mirrored task files in
+  a worktree are not the source of truth.
+
+This is an intentional refinement of the RFC, not an undocumented drift.
+
 ## Problem
 
 gmc already solves the low-level container problem for parallel AI coding:
@@ -204,6 +215,7 @@ State meanings:
 created
 running
 waiting-human
+human-attached
 done
 failed
 lost
@@ -213,6 +225,9 @@ archived
 
 Attempt state describes the health of one solution path. A failed attempt does
 not necessarily fail the whole task if other attempts remain viable.
+
+- `human-attached`: an operator is attached to the attempt session; GC and
+  automatic stage advancement pause until detach.
 
 ### Run States
 
@@ -272,6 +287,22 @@ Rule of thumb:
 - a dead tmux pane is a runtime event, not by itself a task conclusion.
 - a task is only `done` after the intended external outcome is reached.
 
+### Multi-attempt task aggregation
+
+Phase 1 assumes one active attempt per task. Phase 2 adds explicit rules:
+
+- Task stays `running` while any attempt is `created`, `running`, or
+  `human-attached`.
+- Task moves to `needs-human` when every active attempt is `waiting-human` or
+  `human-attached` and no headless verification run is in progress.
+- A single `failed` or `lost` attempt does not change the task if another
+  attempt remains `running` or `created`.
+- Task moves to `reviewing` when all non-archived attempts are terminal (`done`,
+  `failed`, `lost`, or `promoted`) or ready for comparison, and at least one
+  attempt has reviewable artifacts.
+- Task is `done` only after the chosen attempt reaches the external outcome (PR
+  merged, issue closed, or explicit archive reason).
+
 ## Storage
 
 gmc should own a durable local ledger. The ledger is the source of truth. tmux,
@@ -298,6 +329,11 @@ Proposed repo-family storage:
 
 Using the git common dir follows the existing `gmc-share.yml` direction: task
 state belongs to the repository/worktree family, not to one linked worktree.
+
+See also:
+[worktree discovery + shared config design](2026-03-14-worktree-discovery-share-common-dir-design.md)
+for how `<git-common-dir>` paths, share config, and worktree discovery fit
+together in the same repo-family model.
 
 Open question: whether selected task metadata should optionally be copied into
 the visible worktree as a human-readable task file. That is useful for agents,
@@ -451,8 +487,10 @@ gmc task resume <task-id> --attempt <attempt-id>
 
 Attach should:
 
-- mark the attempt as human-attached or waiting-human-attached;
-- prevent automatic GC and automatic stage advancement;
+- mark the attempt as `human-attached`;
+- set the task to `needs-human` when automated progression must pause until
+  detach;
+- prevent automatic GC and automatic stage advancement while attached;
 - change into the attempt worktree when shell integration is active;
 - attach to the runtime session when possible;
 - show task source, attempt id, run id, last event, diff summary, and blocking
@@ -483,7 +521,7 @@ Rules:
 
 - Default GC output is a dry run.
 - Never delete a session with an attached human.
-- Never delete a running or waiting-human session.
+- Never delete a running, `waiting-human`, or `human-attached` session.
 - Never delete a dirty worktree by default.
 - Never delete an unpushed branch by default.
 - Never delete an attempt with an open PR by default.
