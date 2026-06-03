@@ -605,18 +605,20 @@ func loadWorktreeDiffStats(wtClient *worktree.Client, worktrees []worktree.Info)
 		return lookup, nil
 	}
 
-	base, err := wtClient.ResolveDiffBase(wtDiffBase)
-	if err != nil {
-		if strings.TrimSpace(wtDiffBase) != "" {
-			return lookup, err
-		}
-		return lookup, nil
-	}
+	override := strings.TrimSpace(wtDiffBase)
 
 	for _, wt := range worktrees {
+		base, baseErr := wtClient.ResolveDiffBaseForWorktree(wt.Path, wtDiffBase)
+		if baseErr != nil {
+			if override != "" {
+				return lookup, baseErr
+			}
+			continue
+		}
+
 		stat, statErr := wtClient.WorktreeDiffStat(wt.Path, base)
 		if statErr != nil {
-			if strings.TrimSpace(wtDiffBase) != "" {
+			if override != "" {
 				return lookup, statErr
 			}
 			continue

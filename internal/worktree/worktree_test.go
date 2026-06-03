@@ -296,6 +296,62 @@ func TestParseDiffNumstatHandlesRename(t *testing.T) {
 	}
 }
 
+func TestResolveDiffBaseForWorktree_UsesBranchUpstream(t *testing.T) {
+	repoDir := initTestRepo(t)
+
+	runGit(t, repoDir, "checkout", "-b", "feature/upstream-tracked")
+	runGit(t, repoDir, "update-ref", "refs/remotes/origin/main", "HEAD")
+	runGit(t, repoDir, "update-ref", "refs/heads/tracked-base", "HEAD")
+	runGit(t, repoDir, "branch", "--set-upstream-to=tracked-base")
+
+	client := NewClient(Options{})
+	base, err := client.ResolveDiffBaseForWorktree(repoDir, "")
+	if err != nil {
+		t.Fatalf("ResolveDiffBaseForWorktree() error = %v", err)
+	}
+	if base != "tracked-base" {
+		t.Errorf("ResolveDiffBaseForWorktree() = %q, want %q", base, "tracked-base")
+	}
+}
+
+func TestResolveDiffBaseForWorktree_FallsBackToRemoteRef(t *testing.T) {
+	repoDir := initTestRepo(t)
+
+	runGit(t, repoDir, "checkout", "-b", "feature/no-upstream")
+	runGit(t, repoDir, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	client := NewClient(Options{})
+	base, err := client.ResolveDiffBaseForWorktree(repoDir, "")
+	if err != nil {
+		t.Fatalf("ResolveDiffBaseForWorktree() error = %v", err)
+	}
+	if base != "origin/main" {
+		t.Errorf("ResolveDiffBaseForWorktree() = %q, want %q", base, "origin/main")
+	}
+}
+
+// Regression: in CI the client singleton's repoDir (the gmc checkout) is
+// often on a detached PR ref with no `refs/heads/main`. The per-worktree
+// resolver must derive the base from the worktree path itself, not the
+// caller's repoDir.
+func TestResolveDiffBaseForWorktree_DoesNotDependOnClientRepoDir(t *testing.T) {
+	repoDir := initTestRepo(t)
+
+	runGit(t, repoDir, "checkout", "-b", "feature/no-upstream")
+	runGit(t, repoDir, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	client := NewClient(Options{})
+	client.repoDir = t.TempDir()
+
+	base, err := client.ResolveDiffBaseForWorktree(repoDir, "")
+	if err != nil {
+		t.Fatalf("ResolveDiffBaseForWorktree() error = %v", err)
+	}
+	if base != "origin/main" {
+		t.Errorf("ResolveDiffBaseForWorktree() = %q, want %q", base, "origin/main")
+	}
+}
+
 func TestAddOptions(t *testing.T) {
 	opts := AddOptions{
 		BaseBranch: "main",

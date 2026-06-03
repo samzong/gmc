@@ -25,6 +25,49 @@ func (c *Client) ResolveDiffBase(override string) (string, error) {
 	return c.resolveSyncBaseBranch(c.repoDir, override)
 }
 
+func (c *Client) ResolveDiffBaseForWorktree(path, override string) (string, error) {
+	if s := strings.TrimSpace(override); s != "" {
+		return s, nil
+	}
+	if strings.TrimSpace(path) == "" {
+		return "", errors.New("worktree path cannot be empty")
+	}
+	if up := c.branchUpstream(path); up != "" {
+		return up, nil
+	}
+	short, err := c.resolveSyncBaseBranch(path, "")
+	if err != nil {
+		return "", err
+	}
+	var candidates []string
+	if !strings.Contains(short, "/") {
+		candidates = append(candidates, "upstream/"+short, "origin/"+short, short)
+	} else {
+		parts := strings.SplitN(short, "/", 2)
+		for _, r := range []string{"upstream", "origin"} {
+			if r == parts[0] {
+				continue
+			}
+			candidates = append(candidates, r+"/"+parts[1])
+		}
+		candidates = append(candidates, short)
+	}
+	for _, ref := range candidates {
+		if c.gitRefExists(path, "refs/remotes/"+ref) {
+			return ref, nil
+		}
+	}
+	return short, nil
+}
+
+func (c *Client) branchUpstream(path string) string {
+	result, err := c.runner.Run("-C", path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+	if err != nil {
+		return ""
+	}
+	return result.StdoutString(true)
+}
+
 func (c *Client) WorktreeDiffStat(path, base string) (DiffStat, error) {
 	base = strings.TrimSpace(base)
 	if base == "" {
