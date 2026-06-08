@@ -3,8 +3,6 @@ package worktree
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/samzong/gmc/internal/gitutil"
@@ -88,35 +86,30 @@ func (c *Client) AddPR(prNumber int, remote string) (Report, error) {
 		return report, fmt.Errorf("PR #%d not found on remote '%s'", prNumber, remote)
 	}
 
-	// Prepare worktree paths
-	branchName := fmt.Sprintf("pr-%d", prNumber)
-	targetPath := filepath.Join(c.worktreeRoot, branchName)
-
-	if _, err := os.Stat(targetPath); err == nil {
-		return report, fmt.Errorf("directory already exists: %s", targetPath)
+	branchName := fmt.Sprintf("pr/%d", prNumber)
+	ctx, err := c.prepareAdd(branchName, AddOptions{})
+	if err != nil {
+		return report, err
 	}
 
-	// Fetch PR from remote
 	refSpec := fmt.Sprintf("pull/%d/head:%s", prNumber, branchName)
 	report.Info(fmt.Sprintf("Fetching PR #%d from %s...", prNumber, remote))
 
-	fetchArgs := []string{"-C", repoDir, "fetch", remote, refSpec}
-	result, err := c.runner.RunLogged(fetchArgs...)
+	result, err := c.runner.RunLogged("-C", ctx.repoDir, "fetch", remote, refSpec)
 	if err != nil {
 		return report, gitutil.WrapGitError("failed to fetch PR", result, err)
 	}
 
-	// Create worktree
-	addArgs := []string{"-C", repoDir, "worktree", "add", targetPath, branchName}
+	addArgs, _ := c.addArgs(ctx)
 	result, err = c.runner.RunLogged(addArgs...)
 	if err != nil {
 		return report, gitutil.WrapGitError("failed to create worktree", result, err)
 	}
-	if err := c.ensureAddedWorktreeConfig(targetPath); err != nil {
+	if err := c.ensureAddedWorktreeConfig(ctx.targetPath); err != nil {
 		return report, err
 	}
 
-	sharedReport, err := c.syncSharedResourcesToPath(targetPath, true)
+	sharedReport, err := c.syncSharedResourcesToPath(ctx.targetPath, true)
 	report.Merge(sharedReport)
 	if err != nil {
 		report.Warn(fmt.Sprintf("Warning: failed to sync shared resources: %v", err))
@@ -124,9 +117,9 @@ func (c *Client) AddPR(prNumber int, remote string) (Report, error) {
 
 	c.InvalidateList()
 
-	report.Info(fmt.Sprintf("Created PR worktree '%s' at %s", branchName, targetPath))
+	report.Info(fmt.Sprintf("Created PR worktree '%s' at %s", branchName, ctx.targetPath))
 	report.Info("Commit: " + commitHash[:7])
-	report.Info("Next step: cd " + targetPath)
+	report.Info("Next step: cd " + ctx.targetPath)
 
 	return report, nil
 }

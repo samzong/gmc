@@ -213,7 +213,7 @@ func TestConnection(model string) error {
 func buildVersionPrompt(baseVersion string, commits []string) string {
 	var builder strings.Builder
 	for i, commit := range commits {
-		builder.WriteString(fmt.Sprintf("%d. %s\n", i+1, strings.TrimSpace(commit)))
+		fmt.Fprintf(&builder, "%d. %s\n", i+1, strings.TrimSpace(commit))
 	}
 
 	return fmt.Sprintf(`Current version: %s

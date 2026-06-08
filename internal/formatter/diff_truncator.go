@@ -229,31 +229,31 @@ func splitRenamePath(path string) (string, string, bool) {
 	}
 
 	if strings.Contains(path, "{") && strings.Contains(path, "}") {
-		oldPath := ""
-		newPath := ""
+		var oldPath strings.Builder
+		var newPath strings.Builder
 		rest := path
 		for {
 			start := strings.Index(rest, "{")
 			end := strings.Index(rest, "}")
 			if start == -1 || end == -1 || end < start {
-				oldPath += rest
-				newPath += rest
+				oldPath.WriteString(rest)
+				newPath.WriteString(rest)
 				break
 			}
-			oldPath += rest[:start]
-			newPath += rest[:start]
+			oldPath.WriteString(rest[:start])
+			newPath.WriteString(rest[:start])
 			segment := rest[start+1 : end]
 			parts := strings.SplitN(segment, "=>", 2)
 			if len(parts) != 2 {
-				oldPath += "{" + segment + "}"
-				newPath += "{" + segment + "}"
+				oldPath.WriteString("{" + segment + "}")
+				newPath.WriteString("{" + segment + "}")
 			} else {
-				oldPath += strings.TrimSpace(parts[0])
-				newPath += strings.TrimSpace(parts[1])
+				oldPath.WriteString(strings.TrimSpace(parts[0]))
+				newPath.WriteString(strings.TrimSpace(parts[1]))
 			}
 			rest = rest[end+1:]
 		}
-		return strings.TrimSpace(oldPath), strings.TrimSpace(newPath), true
+		return strings.TrimSpace(oldPath.String()), strings.TrimSpace(newPath.String()), true
 	}
 
 	parts := strings.SplitN(path, "=>", 2)
