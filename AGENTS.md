@@ -1,191 +1,181 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Instructions for AI coding agents working in this repository.
 
-## Project Overview
+## What this repo is
 
-gmc is a Go CLI for the AI coding era: **parallel worktrees for parallel AI agents — plus AI-generated commits**. The primary surface is worktree management built on a `.bare` clone (`gmc wt add/dup/share/...`), letting you run multiple Claude Code / Codex / Copilot agents side by side with shared `.env` and `node_modules`. Secondary, it uses an LLM to generate Conventional Commits messages from staged diffs.
+gmc is a Go CLI for parallel AI-agent development: **worktree management is the primary surface**, AI-generated Conventional Commits are secondary.
 
-## Key Components
+- **Primary**: `.bare` clone + sibling worktrees (`gmc wt add/dup/share/sync/promote/...`)
+- **Secondary**: LLM commit messages from staged diffs (root `gmc` command)
 
-### Architecture
+User-facing command reference: [README.md](README.md). Runtime usage patterns: [skills/gmc/SKILL.md](skills/gmc/SKILL.md).
 
-**三层模型**（详见 [`docs/COBRA_GUIDE.md`](docs/COBRA_GUIDE.md)）：
+## Architecture invariants
+
+Three layers — do not blur boundaries:
 
 ```
 Layer 1: Command Definition (cmd/*.go)
-    │   cobra.Command + Flag 绑定 + Args 验证
-    ▼
+    cobra.Command + flag binding + Args validation
+         │
 Layer 2: Runner Function
-    │   构建 Options → 调用 Layer 3 → 格式化输出
-    ▼
+    build Options → call Layer 3 → format output
+         │
 Layer 3: Business Logic (internal/*)
-        无 CLI 依赖，可独立测试
+    no CLI dependencies; testable in isolation
 ```
 
-- **Entry Point**: `main.go` - 调用 `cmd.Execute()`，统一处理错误输出
-- **CLI Framework**: Cobra (`cmd/` package)
-  - `cmd/root.go` - 根命令 + commit 工作流
-  - `cmd/config.go` - 配置管理命令组
-  - `cmd/worktree.go` - worktree 命令组
-  - `cmd/output.go` - 输出流抽象
-- **Core Modules** (`internal/`):
-  - `config/` - 配置管理 (Viper)
-  - `git/` - Git 操作封装
-  - `gitcmd/` - Git 命令执行抽象
-  - `gitutil/` - Git 工具函数
-  - `llm/` - LLM API 集成
-  - `formatter/` - Prompt 构建 + 消息格式化
-  - `workflow/` - 提交工作流编排
-  - `worktree/` - Worktree 操作
-  - `branch/` - 分支命名生成
-  - `emoji/` - Gitmoji 支持
-  - `exitcode/` - 结构化退出码
-  - `shell/` - Shell 集成
-  - `ui/` - 终端交互
-  - `stringsutil/` - 字符串工具
-  - `version/` - 版本信息
+**Rules agents must follow:**
 
-### Command Structure
-- Root command: `gmc` - Main commit functionality
-  - Flags: `-a/--all`, `--issue`, `-y/--yes`, `--no-verify`, `--no-signoff`, `--dry-run`, `--branch`, `--prompt`, `--verbose`, `--output`, `--config`
-- Subcommand: `gmc init` - Interactive setup wizard
-- Subcommand: `gmc config` - Configuration management with subcommands:
-  - `set role/model/apikey/apibase/prompt_template/enable_emoji`
-  - `get` - Show current configuration
-- Subcommand: `gmc tag` - Semantic version tag suggestion
-- Subcommand: `gmc wt` - Worktree management (add, remove, list, clone, dup, promote, prune, sync, share, pr-review, switch)
-- Subcommand: `gmc version` - Display version and build information
+| Rule | Detail |
+|------|--------|
+| **Dependency direction** | `cmd/` imports `internal/`; `internal/` must not import `cmd/` or Cobra |
+| **Command handlers** | Use `RunE`, not `Run`; always set an `Args` validator |
+| **Output streams** | stdout = data; stderr = progress/errors; use `cmd.OutOrStdout()` / `errWriter()` |
+| **Errors** | Return `error`; `main.go` prints it. Use `exitcode` for structured exit codes; `userFacingError` in `cmd/root.go` for generic wrapping |
+| **Worktree CLI** | All worktree operations go through `gmc wt <subcommand>`. Never invent top-level `gmc add`, `gmc clone`, etc. |
+| **Generated docs** | Never hand-edit `docs/man/*.1`. Man pages are generated from Cobra definitions in `cmd/*.go` via `make man` (`cmd/gendoc/main.go`). |
 
-## Development Commands
+Entry point: `main.go` → `cmd.Execute()`.
 
-### Build and Development
-```bash
-# Build the binary
-make build
+## Where to change what
 
-# Format code and tidy modules
-make fmt
+| Area | Location | Notes |
+|------|----------|-------|
+| Root commit workflow | `cmd/root.go`, `internal/workflow/` | Staging, prompt, interactive confirm, commit |
+| Worktree commands | `cmd/worktree*.go`, `internal/worktree/` | Split across `worktree.go`, `worktree_share.go`, `worktree_hook.go`, `worktree_sync.go`, `worktree_init.go`, `worktree_prune.go` |
+| Worktree client wiring | `cmd/worktree_client.go` | Thin factory over `worktree.NewClient` |
+| Config | `cmd/config.go`, `internal/config/` | Viper-based; XDG paths |
+| LLM integration | `internal/llm/` | OpenAI-compatible client |
+| Prompt / formatting | `internal/formatter/` | Templates, diff truncation (`diff_truncator.go`) |
+| Git operations | `internal/git/`, `internal/gitcmd/`, `internal/gitutil/` | |
+| Branch naming | `internal/branch/` | `--branch` flag on root command |
+| Shell integration | `internal/shell/`, `cmd/worktree_init.go` | `gmc wt init bash\|zsh\|fish` |
+| Tests for CLI | `cmd/*_test.go` | Use isolated command instances; swap `outWriterFunc` / `errWriterFunc` |
+| Man pages (generated) | `docs/man/*.1` | **Do not edit.** Source of truth is `Use`/`Short`/`Long`/`Example` on commands in `cmd/*.go`. Regenerate: `make man` |
 
-# Run linter
-make lint
+When adding a worktree feature: implement logic in `internal/worktree/`, wire it in the matching `cmd/worktree_*.go` file, add tests in both packages.
 
-# Run tests
-make test
+## CLI conventions
 
-# Run all quality checks (fmt, lint, test)
-make check
+Mandatory for any new or changed command:
 
-# Build and install to GOPATH/bin
-make install
+- **Flag naming**: long flags use hyphens (`--dry-run`), not camelCase or underscores
+- **`Use` syntax**: POSIX style — `command <required> [optional]`
+- **`Short`**: under 50 characters; include an `Example` field for non-trivial commands
+- **Flag relationships**: declare mutual exclusion / required-together with Cobra helpers
+- **Completion**: configure `ValidArgsFunction` or `ValidArgs` for new commands
+- **Tests**: add `cmd/*_test.go` coverage; avoid relying on global `rootCmd` state when possible — use `RootCmd()` or local command trees
 
-# Clean build artifacts
-make clean
+PR checklist for new commands:
 
-# Generate man pages
-make man
+- [ ] `RunE` + `Args` validator
+- [ ] Flag naming and relationships declared
+- [ ] Shell completion configured
+- [ ] Tests added
+- [ ] CLI help text updated in `cmd/*.go`, then `make man` run (never patch `docs/man/` by hand)
 
-# Update Homebrew formula (requires GH_PAT env var)
-make update-homebrew
+## Generated files — do not edit
+
+`docs/man/*.1` are **build artifacts**, not source. They are produced by `cobra/doc` from the live command tree:
+
+```
+cmd/*.go  (Cobra Use / Short / Long / Example / flags)
+    → make man  (runs cmd/gendoc/main.go)
+    → docs/man/*.1
 ```
 
-### Testing a Single Component
+When CLI help or flags change:
+
+1. Edit the Cobra command definition in `cmd/*.go`
+2. Run `make man`
+3. Commit both the `cmd/` changes and the regenerated `docs/man/` output
+
+Hand-editing man pages will be overwritten on the next `make man` and creates drift from the actual CLI.
+
+## Config and runtime facts
+
+Do not assume legacy paths or removed config keys.
+
+**Config file resolution** (first match wins):
+
+1. `--config` flag
+2. `GMC_CONFIG` env var
+3. `$XDG_CONFIG_HOME/gmc/config.yaml` (default: `~/.config/gmc/config.yaml`)
+4. `~/.gmc.yaml` (legacy fallback)
+5. Project-level `.gmc.yaml` overrides global when present
+
+**Config keys** (`internal/config/config.go`): `role`, `model`, `api_key`, `api_base`, `prompt_template`, `enable_emoji`.
+
+- `prompt_template` is a **file path** to a YAML template (or `"default"` for built-in). There is no `prompts_dir` key.
+- Template variables: `{{.Role}}`, `{{.Files}}`, `{{.Diff}}`
+
+**Root command flags** agents often miss: `--timeout`, `--debug`, `-o/--output json`, stdin mode (`gmc -`).
+
+**Diff truncation**: prompt diff is capped at 4000 bytes via smart file-priority truncation in `internal/formatter/`, not a naive string cut.
+
+## Verification
+
+Before claiming work is done:
+
 ```bash
-# Run tests for a specific package
-go test ./internal/formatter -v
+make check          # fmt + lint + test — required before submission
+make build          # produces ./build/gmc
+make man            # after CLI surface changes
+```
 
-# Run tests with coverage
-go test -cover ./...
+Targeted testing:
 
-# Run tests for branch functionality specifically
-go test ./internal/branch -v
-
-# Test with race detection
+```bash
+go test ./internal/worktree -v
+go test ./cmd -v -run TestWorktree
 go test -race ./...
 ```
 
-### Configuration
-The tool stores configuration in `~/.gmc.yaml` and supports:
-- OpenAI API credentials (`apikey`, `apibase`)
-- LLM model selection (`model`)
-- Developer role for prompt context (`role`)
-- Custom prompt templates (`prompt_template`, `prompts_dir`)
+Manual smoke (when changing CLI behavior):
 
-### Core Workflow
-1. Optionally adds all changes with `git add --all` (when `-a` flag is used)
-2. Retrieves staged diff using `git diff --cached` 
-3. Parses staged files list
-4. Builds prompt using role, changed files, and diff content (max 4000 chars)
-5. Calls OpenAI API to generate commit message
-6. Formats message to follow Conventional Commits specification
-7. Provides interactive confirmation with options:
-   - `y` - Confirm and commit
-   - `n` - Cancel
-   - `r` - Regenerate message
-   - `e` - Edit in external editor ($EDITOR or $VISUAL, defaults to vi)
-8. Commits with `git commit -m` (adds `--no-verify` if flag is set)
+```bash
+./build/gmc --help
+./build/gmc wt --help
+./build/gmc version
+```
 
-### Important Implementation Details
-- **Diff Truncation**: Diff content is truncated to 4000 characters in `formatter.BuildPrompt()` to avoid token limits
-- **Template System**: 
-  - Templates stored in `~/.gmc/prompts/` directory
-  - YAML format with `name`, `description`, and `template` fields
-  - Template variables: `{{.Role}}`, `{{.Files}}`, `{{.Diff}}`
-  - Fallback to built-in "default" template if custom template fails
-- **Message Formatting**: 
-  - Automatic removal of issue numbers from LLM output (handled separately)
-  - Type detection based on keywords if not in conventional format
-  - Issue number appended as ` (#123)` when `--issue` flag is used
-- **Editor Integration**: Creates temp file, opens with system editor, reads edited content
-- **Error Handling**: 使用 `userFacingError` 包装用户可见错误，保留原始错误链供 `errors.Is()` 检查
+## Known pitfalls
 
-### Dependencies
-- Cobra v1.10.2 + Viper v1.21.0 for CLI and configuration
-- `github.com/sashabaranov/go-openai` v1.41.2 for OpenAI API
-- Standard library for Git operations via `os/exec`
-- Go 1.24+ required
+Stale assumptions that cause bad patches:
 
-### Critical Development Notes
+| Wrong | Correct |
+|-------|---------|
+| `gmc add <name>` | `gmc wt add <name>` |
+| `gmc analyze` | removed; no `internal/analyzer/` |
+| `docs/COBRA_GUIDE.md` | does not exist; conventions are in this file |
+| Config at `~/.gmc.yaml` only | XDG `~/.config/gmc/config.yaml` is primary |
+| `prompts_dir` config key | removed; `prompt_template` is a file path |
+| `gmc wt promote <temp> <name>` | `promote` accepts only `<candidate>`; rename branch with `git branch -m` inside the worktree |
+| Templates in `~/.gmc/prompts/` | `prompt_template` points to any YAML file path |
+| Business logic in `cmd/` | move to `internal/`; keep `cmd/` as thin wiring |
+| Edit `docs/man/gmc-wt-add.1` (or any `docs/man/*.1`) | edit `Short`/`Long`/`Example` in `cmd/*.go`, then `make man` |
 
-**Production Impact**: GMC is a widely-used Git commit tool with 1M+ daily users. Any modifications must be thoroughly tested and backward-compatible.
+## Development commands
 
-### Release Process
-- Releases are managed via GoReleaser with automated GitHub releases
-- Homebrew formula updates via `make update-homebrew` (requires `GH_PAT` env var)
-- Version info is injected at build time using Git tags and build timestamp
-- Supports multiple architectures: Darwin (x86_64, arm64), Linux (x86_64, arm64)
+```bash
+make build          # ./build/gmc
+make install        # copy to GOPATH/bin
+make fmt            # go fmt + go mod tidy
+make lint           # golangci-lint
+make test           # go test ./...
+make check          # fmt + lint + test
+make man            # regenerate docs/man/
+make clean          # remove ./build/
+```
 
-### Code Quality Standards
-- All changes must pass: `make check` before submission
-- Follow Go conventions and existing code patterns
-- Maintain compatibility with Go 1.24+
-- Test with real Git repositories to ensure proper diff handling
+Go **1.24+**. Key deps: Cobra, Viper, `go-openai` (OpenAI-compatible API).
 
-### Cobra CLI Development Standards
+## Release (only when doing release work)
 
-**MANDATORY**: All CLI code changes MUST follow [`docs/COBRA_GUIDE.md`](docs/COBRA_GUIDE.md).
+- Tags `v*` trigger GoReleaser ([`.goreleaser.yaml`](.goreleaser.yaml))
+- Homebrew formula update: `make update-homebrew` (requires `GH_PAT`)
+- Validate locally: `goreleaser check` and `goreleaser release --snapshot --clean`
 
-核心规范摘要：
-
-| 规范 | 要求 |
-|------|------|
-| **命令定义** | 使用 `RunE` 而非 `Run`；必须设置 `Args` 验证器 |
-| **Flag 命名** | 长名用连字符 `--dry-run`，禁止驼峰或下划线 |
-| **输出流** | stdout = 数据，stderr = 进度/错误；使用 `cmd.OutOrStdout()` |
-| **错误处理** | 返回 `error`，由 `main.go` 统一输出 |
-| **测试** | 避免全局状态；使用工厂函数创建隔离命令实例 |
-| **补全** | 新命令必须配置 `ValidArgsFunction` 或 `ValidArgs` |
-
-**新命令 PR 检查项**：
-- [ ] `Use` 字段遵循 POSIX 语法：`command <required> [optional]`
-- [ ] `Short` < 50 字符，有 `Example` 字段
-- [ ] Flag 关系已声明（互斥/共存/必选其一）
-- [ ] 有对应测试用例
-- [ ] Shell 补全已配置
-
-### Branch Creation Feature
-- New `--branch` flag creates feature branches with generated names based on description
-- Uses `internal/branch/` package for branch name generation and Git operations
-- Integrates with existing commit workflow for seamless development experience
-
-@AGENTS.md
+Changes must stay backward-compatible unless an explicit migration path is documented.

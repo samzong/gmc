@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -185,4 +186,89 @@ func TestRemoveRequiresArgsOrAll(t *testing.T) {
 	err := wtRemoveCmd.Args(wtRemoveCmd, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "requires at least 1 arg")
+}
+
+func TestWtAddPRArgs(t *testing.T) {
+	tests := []struct {
+		name    string
+		pr      string
+		args    []string
+		base    string
+		sync    bool
+		wantErr string
+	}{
+		{name: "accepts pr", pr: "42"},
+		{name: "rejects zero", pr: "0", wantErr: "greater than 0"},
+		{name: "rejects names", pr: "42", args: []string{"feature"}, wantErr: "mutually exclusive with worktree names"},
+		{name: "rejects base", pr: "42", base: "main", wantErr: "mutually exclusive with -b/--base"},
+		{name: "rejects sync", pr: "42", sync: true, wantErr: "mutually exclusive with --sync"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetWtAddState(t)
+			cmd := &cobra.Command{Use: "add"}
+			cmd.Flags().IntVar(&wtAddPR, "pr", 0, "")
+			require.NoError(t, cmd.Flags().Set("pr", tt.pr))
+			wtBaseBranch = tt.base
+			wtAddSync = tt.sync
+
+			err := wtAddCmd.Args(cmd, tt.args)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
+func TestPrReviewHasNoRemoteFlag(t *testing.T) {
+	assert.Nil(t, wtPrReviewCmd.Flags().Lookup("remote"))
+}
+
+func TestRunWorktreeAddPRCreatesPRWorktree(t *testing.T) {
+	resetWtAddState(t)
+	repoDir := initCmdTestRepo(t)
+	runGitCmd(t, repoDir, "remote", "add", "origin", initCmdPRRemote(t, 42))
+
+	oldCwd, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() { _ = os.Chdir(oldCwd) }()
+	require.NoError(t, os.Chdir(repoDir))
+
+	wtAddPR = 42
+	client := worktree.NewClient(worktree.Options{})
+	require.NoError(t, runWorktreeAdd(client, nil))
+
+	prDir := filepath.Join(filepath.Dir(repoDir), filepath.Base(repoDir)+"--pr--42")
+	status := runGitCmd(t, prDir, "status", "--short", "--branch")
+	assert.Contains(t, status, "## pr/42")
+}
+
+func resetWtAddState(t *testing.T) {
+	t.Helper()
+	oldBase := wtBaseBranch
+	oldSync := wtAddSync
+	oldPR := wtAddPR
+	wtBaseBranch = ""
+	wtAddSync = false
+	wtAddPR = 0
+	t.Cleanup(func() {
+		wtBaseBranch = oldBase
+		wtAddSync = oldSync
+		wtAddPR = oldPR
+	})
+}
+
+func initCmdPRRemote(t *testing.T, prNumber int) string {
+	t.Helper()
+	remoteDir := initCmdTestRepo(t)
+	runGitCmd(t, remoteDir, "checkout", "-b", "feature/review")
+	require.NoError(t, os.WriteFile(filepath.Join(remoteDir, "review.txt"), []byte("review"), 0o644))
+	runGitCmd(t, remoteDir, "add", ".")
+	runGitCmd(t, remoteDir, "commit", "-m", "review")
+	runGitCmd(t, remoteDir, "update-ref", fmt.Sprintf("refs/pull/%d/head", prNumber), "HEAD")
+	return remoteDir
 }
