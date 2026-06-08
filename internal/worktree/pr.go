@@ -33,7 +33,7 @@ func (c *Client) DetectPRRemote(repoDir string) (string, error) {
 	if len(remotes) == 1 {
 		return remotes[0], nil
 	}
-	return "", fmt.Errorf("multiple remotes found (%v) but no 'upstream' or 'origin'. Use --remote to specify", remotes)
+	return "", fmt.Errorf("multiple remotes found (%v) but no 'upstream' or 'origin'", remotes)
 }
 
 // PRExists checks if a PR exists on the remote

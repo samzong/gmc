@@ -25,7 +25,7 @@ var (
 	wtAll          bool
 	wtUpstream     string
 	wtProjectName  string
-	prRemote       string
+	wtAddPR        int
 	wtShowPR       bool
 	wtDiffBase     string
 )
@@ -62,9 +62,25 @@ Examples:
   gmc wt add feat-a feat-b feat-c             # Create multiple worktrees
   gmc wt add feature-login -b main            # Create based on main branch
   gmc wt add feature-login --sync             # Sync base branch before add
+  gmc wt add --pr 1065                        # Create a worktree from a pull request
   gmc wt add hotfix-bug123 -b release
   gmc wt add -b feat/existing-branch          # Name derived from -b`,
-	Args: func(_ *cobra.Command, args []string) error {
+	Args: func(cmd *cobra.Command, args []string) error {
+		if addPRMode(cmd) {
+			if wtAddPR <= 0 {
+				return errors.New("--pr must be greater than 0")
+			}
+			if len(args) > 0 {
+				return errors.New("--pr is mutually exclusive with worktree names")
+			}
+			if strings.TrimSpace(wtBaseBranch) != "" {
+				return errors.New("--pr is mutually exclusive with -b/--base")
+			}
+			if wtAddSync {
+				return errors.New("--pr is mutually exclusive with --sync")
+			}
+			return nil
+		}
 		if len(args) == 0 && strings.TrimSpace(wtBaseBranch) == "" {
 			return errors.New("requires at least 1 arg or -b/--base flag")
 		}
@@ -231,8 +247,7 @@ var wtPrReviewCmd = &cobra.Command{
 Automatically detects remote (upstream > origin > single remote).
 
 Examples:
-  gmc wt pr-review 1065                 # Auto-detect remote
-  gmc wt pr-review 1065 --remote fork   # Use specific remote`,
+  gmc wt pr-review 1065`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		prNumber, err := strconv.Atoi(args[0])
@@ -241,9 +256,7 @@ Examples:
 		}
 
 		wtClient := newWorktreeClient()
-		report, err := wtClient.AddPR(prNumber, prRemote)
-		printWorktreeReport(report)
-		return err
+		return runWorktreeAddPR(wtClient, prNumber)
 	},
 }
 
@@ -262,6 +275,7 @@ func init() {
 
 	// Flags for add command
 	wtAddCmd.Flags().StringVarP(&wtBaseBranch, "base", "b", "", "Base branch to create from")
+	wtAddCmd.Flags().IntVar(&wtAddPR, "pr", 0, "Create a worktree from a pull request")
 
 	// Flags for remove command
 	wtRemoveCmd.Flags().BoolVarP(&wtForce, "force", "f", false, "Force removal even if worktree is dirty")
@@ -287,9 +301,6 @@ func init() {
 	wtPruneCmd.Flags().BoolVar(&wtPrunePRAware, "pr-aware", false,
 		"Check GitHub PR state before pruning (requires gh CLI)")
 
-	// Flags for pr-review command
-	wtPrReviewCmd.Flags().StringVarP(&prRemote, "remote", "r", "",
-		"Remote to fetch PR from (auto-detect if not specified)")
 	wtCmd.Flags().BoolVar(&wtShowPR, "pr", false,
 		"Show review request status for each branch (requires gh or glab CLI)")
 	wtListCmd.Flags().BoolVar(&wtShowPR, "pr", false,
@@ -307,7 +318,6 @@ func init() {
 	_ = wtAddCmd.RegisterFlagCompletionFunc("base", completeBranchNames)
 	_ = wtDupCmd.RegisterFlagCompletionFunc("base", completeBranchNames)
 	_ = wtPruneCmd.RegisterFlagCompletionFunc("base", completeBranchNames)
-	_ = wtPrReviewCmd.RegisterFlagCompletionFunc("remote", completeRemoteNames)
 	_ = wtCmd.RegisterFlagCompletionFunc("diff-base", completeBranchNames)
 	_ = wtListCmd.RegisterFlagCompletionFunc("diff-base", completeBranchNames)
 
@@ -384,6 +394,10 @@ func filterBareWorktrees(worktrees []worktree.Info) []worktree.Info {
 }
 
 func runWorktreeAdd(wtClient *worktree.Client, names []string) error {
+	if wtAddPR > 0 {
+		return runWorktreeAddPR(wtClient, wtAddPR)
+	}
+
 	baseBranch := wtBaseBranch
 	if wtAddSync {
 		if baseBranch == "" {
@@ -420,6 +434,19 @@ func runWorktreeAdd(wtClient *worktree.Client, names []string) error {
 		return fmt.Errorf("failed to add worktrees: %s", strings.Join(failed, ", "))
 	}
 	return nil
+}
+
+func addPRMode(cmd *cobra.Command) bool {
+	if wtAddPR > 0 {
+		return true
+	}
+	return cmd != nil && cmd.Flags().Changed("pr")
+}
+
+func runWorktreeAddPR(wtClient *worktree.Client, prNumber int) error {
+	report, err := wtClient.AddPR(prNumber, "")
+	printWorktreeReport(report)
+	return err
 }
 
 func runWorktreeList(wtClient *worktree.Client) error {
@@ -920,15 +947,6 @@ func completeBranchNames(_ *cobra.Command, _ []string, _ string) ([]string, cobr
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 	return branches, cobra.ShellCompDirectiveNoFileComp
-}
-
-func completeRemoteNames(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-	wtClient := newWorktreeClient()
-	remotes, err := wtClient.ListRemotes()
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-	return remotes, cobra.ShellCompDirectiveNoFileComp
 }
 
 func completeStrategies(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
