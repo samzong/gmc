@@ -72,6 +72,36 @@ gmc completion zsh  > ~/.zsh/completions/_gmc
 gmc completion bash > ~/.bash_completion.d/gmc
 ```
 
+## Troubleshooting
+
+### oh-my-zsh `git` plugin conflicts with `gmc`
+
+If you use [oh-my-zsh](https://ohmyz.sh/) with the `git` plugin enabled, it defines:
+
+```zsh
+alias gmc='git merge --continue'
+```
+
+That alias shadows the `gmc` CLI, so commands like `gmc` or `gmc version` run `git merge --continue` instead.
+
+**Fix:** add this to `~/.zshrc` *after* `source $ZSH/oh-my-zsh.sh`:
+
+```zsh
+unalias gmc 2>/dev/null
+```
+
+Then reload your shell (`source ~/.zshrc`) or open a new terminal.
+
+**Workaround without changing config:** prefix the command to bypass the alias:
+
+```zsh
+\gmc version
+# or
+command gmc version
+```
+
+If you still want a short alias for `git merge --continue`, pick a different name (for example `gmcont`) before removing `gmc`.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
