@@ -3,6 +3,8 @@ BINARY_NAME=gmc
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILDTIME=$(shell date -u '+%Y-%m-%d %H:%M:%S UTC')
 LDFLAGS=-ldflags "-X github.com/samzong/gmc/cmd.Version=$(VERSION) -X 'github.com/samzong/gmc/cmd.BuildTime=$(BUILDTIME)'"
+GREEN := \033[32m
+RESET := \033[0m
 
 # Homebrew related variables
 CLEAN_VERSION=$(shell echo $(VERSION) | sed 's/^v//')
@@ -30,7 +32,17 @@ install: build ## Install the binary to GOPATH/bin (or ~/go/bin if GOPATH unset)
 	@echo "Installing $(BINARY_NAME) $(VERSION)..."
 	@mkdir -p $(or $(GOPATH),$(HOME)/go)/bin
 	@cp $(BUILD_DIR)/$(BINARY_NAME) $(or $(GOPATH),$(HOME)/go)/bin/
+	@if [ -d "$(HOME)/.zsh/completions" ]; then \
+		$(BUILD_DIR)/$(BINARY_NAME) completion zsh > "$(HOME)/.zsh/completions/_gmc"; \
+		printf '$(GREEN)  ✓ Updated ~/.zsh/completions/_gmc$(RESET)\n'; \
+	fi
 	@echo "Install Command Done"
+
+.PHONY: completions
+completions: build ## Regenerate zsh completion script (~/.zsh/completions/_gmc)
+	@mkdir -p "$(HOME)/.zsh/completions"
+	@$(BUILD_DIR)/$(BINARY_NAME) completion zsh > "$(HOME)/.zsh/completions/_gmc"
+	@printf '$(GREEN)  ✓ Wrote ~/.zsh/completions/_gmc$(RESET)\n'
 
 .PHONY: clean
 clean: ## Clean build artifacts
