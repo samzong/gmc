@@ -17,15 +17,19 @@ func TestTaskCommandsRegistered(t *testing.T) {
 	for _, c := range taskCmd.Commands() {
 		names = append(names, c.Name())
 	}
-	assert.Contains(t, names, "create")
-	assert.Contains(t, names, "advance")
-	assert.Contains(t, names, "gc")
-	assert.Contains(t, names, "rm")
-	assert.Contains(t, names, "watch")
-	assert.NotContains(t, names, "run")
+	assert.ElementsMatch(t, []string{
+		"attach",
+		"create",
+		"list",
+		"mark",
+		"rm",
+		"show",
+		"start",
+	}, names)
 }
 
-func TestParseSessionTarget(t *testing.T) {
-	assert.Equal(t, task.SessionCoding, task.ParseSessionTarget("coding"))
-	assert.Equal(t, task.SessionReview, task.ParseSessionTarget("review"))
+func TestTaskStates(t *testing.T) {
+	assert.Equal(t, []string{"new", "plan", "code", "review", "ship"}, task.StateValues())
+	assert.True(t, task.ValidState("ship"))
+	assert.False(t, task.ValidState("done"))
 }

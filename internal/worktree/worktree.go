@@ -137,8 +137,7 @@ type Info struct {
 type AddOptions struct {
 	BaseBranch string // Base branch to create from
 	Fetch      bool   // Whether to fetch before creating
-	// Branch is the git branch name. When empty, name is used as the branch.
-	Branch string
+	Branch     string
 }
 
 // RemoveOptions options for removing a worktree
@@ -633,12 +632,15 @@ func (c *Client) resolveRemoveTarget(name string, worktrees []Info) (removeConte
 		return removeContext{}, errors.New("worktree name cannot be empty")
 	}
 
-	targetPath := filepath.Join(c.searchRoot, name)
+	targetPath := name
+	if !filepath.IsAbs(name) {
+		targetPath = filepath.Join(c.searchRoot, name)
+	}
 	var found bool
 	var wtInfo Info
 	for _, wt := range worktrees {
 		relPath := strings.TrimPrefix(wt.Path, c.searchRoot+string(filepath.Separator))
-		if wt.Path == targetPath || relPath == name {
+		if samePath(wt.Path, targetPath) || relPath == name {
 			wtInfo = wt
 			targetPath = wt.Path
 			found = true
@@ -656,8 +658,7 @@ func (c *Client) resolveRemoveTarget(name string, worktrees []Info) (removeConte
 		return removeContext{}, fmt.Errorf("cannot remove protected worktree '%s' (%s)", name, pp.Reason(wtInfo))
 	}
 
-	rel, err := filepath.Rel(c.searchRoot, wtInfo.Path)
-	if err != nil || strings.HasPrefix(rel, "..") {
+	if !pathWithin(c.searchRoot, wtInfo.Path) {
 		return removeContext{}, fmt.Errorf("worktree '%s' is external (not managed by gmc wt)", name)
 	}
 
@@ -680,6 +681,32 @@ func (c *Client) prepareRemove(name string) (removeContext, error) {
 	}
 
 	return c.resolveRemoveTarget(name, worktrees)
+}
+
+func samePath(a, b string) bool {
+	if filepath.Clean(a) == filepath.Clean(b) {
+		return true
+	}
+	aa, aerr := filepath.EvalSymlinks(a)
+	bb, berr := filepath.EvalSymlinks(b)
+	return aerr == nil && berr == nil && filepath.Clean(aa) == filepath.Clean(bb)
+}
+
+func pathWithin(root, path string) bool {
+	if rel, err := filepath.Rel(root, path); err == nil && isLocalRel(rel) {
+		return true
+	}
+	rr, rerr := filepath.EvalSymlinks(root)
+	pp, perr := filepath.EvalSymlinks(path)
+	if rerr != nil || perr != nil {
+		return false
+	}
+	rel, err := filepath.Rel(rr, pp)
+	return err == nil && isLocalRel(rel)
+}
+
+func isLocalRel(rel string) bool {
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // GetWorktreeStatus returns the git status of a worktree with detailed file counts

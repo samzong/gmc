@@ -9,32 +9,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestInitialAgentPrompt(t *testing.T) {
-	task := Record{
-		ID:     "t-1",
-		Title:  "Review PR #510 (org/repo)",
-		Source: "review pr https://github.com/org/repo/pull/510",
-		PR:     "510",
-	}
-	prompt := InitialAgentPrompt(task)
-	assert.Contains(t, prompt, "Review PR #510")
-	assert.Contains(t, prompt, ".gmc/TASK.md")
-}
-
 func TestWriteTaskContextFile(t *testing.T) {
 	dir := t.TempDir()
-	task := Record{ID: "t-1", Source: "fix the bug", Title: "fix the bug"}
-	attempt := AttemptRecord{ID: "attempt-1", Agent: "codex", Mode: "coding"}
-	path, err := WriteTaskContextFile(dir, task, attempt)
+	rec := Record{ID: "t-1", State: TaskPlan, Source: "fix the bug", Title: "Fix bug"}
+	attempt := AttemptRecord{ID: "attempt-1", Worktree: dir, Branch: "_task/t-1/1", Agent: "codex"}
+
+	path, err := WriteTaskContextFile(dir, rec, attempt)
 	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(dir, TaskContextRelPath), path)
+
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
-	assert.Contains(t, string(data), "fix the bug")
-	assert.Equal(t, filepath.Join(dir, TaskContextRelPath), path)
+	text := string(data)
+	assert.Contains(t, text, "Fix bug")
+	assert.Contains(t, text, "fix the bug")
+	assert.Contains(t, text, "_task/t-1/1")
 }
 
-func TestAgentCommandCodexWithPrompt(t *testing.T) {
-	args, err := AgentCommand("codex", "", "coding", "do the task")
+func TestInitialAgentPrompt(t *testing.T) {
+	rec := Record{Title: "Fix bug"}
+	assert.Contains(t, InitialAgentPrompt(rec), ".gmc/TASK.md")
+}
+
+func TestAgentCommandCodex(t *testing.T) {
+	args, err := AgentCommand("codex", "gpt-5", "coding", "do the task")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"codex", "do the task"}, args)
+	assert.Equal(t, []string{"codex", "-m", "gpt-5", "do the task"}, args)
 }

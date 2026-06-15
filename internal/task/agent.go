@@ -6,7 +6,6 @@ import (
 	"strings"
 )
 
-// NormalizeTaskAgent maps CLI/config names to a canonical agent id.
 func NormalizeTaskAgent(agent string) string {
 	switch strings.ToLower(strings.TrimSpace(agent)) {
 	case "", "codex", "codex-cli":
@@ -15,8 +14,6 @@ func NormalizeTaskAgent(agent string) string {
 		return "claude"
 	case "opencode":
 		return "opencode"
-	case "grok":
-		return "grok"
 	case "custom":
 		return "custom"
 	default:
@@ -24,13 +21,8 @@ func NormalizeTaskAgent(agent string) string {
 	}
 }
 
-// AgentCommand builds the argv for an interactive agent session.
-// prompt is passed to the agent when supported (codex/claude positional prompt).
 func AgentCommand(agent, model, mode, prompt string) ([]string, error) {
 	agent = NormalizeTaskAgent(agent)
-	if agent == "" {
-		agent = "codex"
-	}
 	prompt = strings.TrimSpace(prompt)
 	switch agent {
 	case "codex":
@@ -46,48 +38,21 @@ func AgentCommand(agent, model, mode, prompt string) ([]string, error) {
 		}
 		return args, nil
 	case "claude":
-		args := []string{"claude"}
-		if prompt != "" {
-			args = append(args, prompt)
+		if prompt == "" {
+			return []string{"claude"}, nil
 		}
-		return args, nil
+		return []string{"claude", prompt}, nil
 	case "opencode":
-		if prompt != "" {
-			return append([]string{"opencode", "run"}, prompt), nil
+		if prompt == "" {
+			return []string{"opencode"}, nil
 		}
-		return []string{"opencode"}, nil
+		return []string{"opencode", "run", prompt}, nil
 	case "custom":
-		if mode == "" {
+		if strings.TrimSpace(mode) == "" || mode == "coding" {
 			return nil, errors.New("custom agent requires --mode as the executable command")
 		}
 		return strings.Fields(mode), nil
 	default:
 		return nil, fmt.Errorf("unsupported agent %q (use codex, claude, opencode, or custom)", agent)
-	}
-}
-
-// BuildReviewCommand builds argv for a non-interactive review step in a stage tmux session.
-func BuildReviewCommand(agent, model, baseBranch string) ([]string, error) {
-	agent = NormalizeTaskAgent(agent)
-	if agent == "" {
-		agent = "codex"
-	}
-	switch agent {
-	case "codex":
-		args := []string{"codex", "review"}
-		if strings.TrimSpace(baseBranch) != "" {
-			args = append(args, "--base", strings.TrimSpace(baseBranch))
-		} else {
-			args = append(args, "--uncommitted")
-		}
-		if model != "" {
-			args = append(args, "-m", model)
-		}
-		return args, nil
-	default:
-		return nil, fmt.Errorf(
-			"review command not defined for agent %q; set task.agents.%s.review_command in ~/.gmc.yaml",
-			agent, agent,
-		)
 	}
 }
