@@ -42,6 +42,7 @@ type AttemptRecord struct {
 type TmuxSessionRecord struct {
 	Node      string    `json:"node,omitempty" yaml:"node,omitempty"`
 	Agent     string    `json:"agent,omitempty" yaml:"agent,omitempty"`
+	Command   string    `json:"command,omitempty" yaml:"command,omitempty"`
 	Session   string    `json:"session,omitempty" yaml:"session,omitempty"`
 	Socket    string    `json:"socket,omitempty" yaml:"socket,omitempty"`
 	StartedAt time.Time `json:"started_at,omitempty" yaml:"started_at,omitempty"`

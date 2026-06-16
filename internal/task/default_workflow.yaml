@@ -1,0 +1,54 @@
+version: 1
+start: plan
+
+nodes:
+  plan:
+    agent: codex
+    command: codex --dangerously-bypass-approvals-and-sandbox
+    skills:
+      - systematic-debugging
+    prompt: |
+      Read .gmc/TASK.md and inspect the repo enough to understand the task.
+      Produce a concise plan only. Do not edit project files.
+      Write .gmc/workflow/plan.md with scope, proposed change, risks, and the next command for the operator.
+      Stop and wait for gmc task advance.
+    next: code
+
+  code:
+    agent: grok
+    command: grok --yolo
+    skills:
+      - verification-before-completion
+    prompt: |
+      Read .gmc/TASK.md and all handoff files under .gmc/workflow/.
+      If .gmc/workflow/review.md has findings, address them first.
+      Implement the smallest correct change. Keep the diff tight.
+      Run focused verification first, then the project gate when practical.
+      Write .gmc/workflow/code.md with changed files, verification, risks, and the next command for the operator.
+      Stop and wait for gmc task advance.
+    next: review
+
+  review:
+    agent: cursor-agent
+    command: cursor-agent --yolo
+    skills:
+      - local-code-liability-review
+    prompt: |
+      Review the current diff only. Do not edit files.
+      Focus on correctness, regressions, missing tests, and whether the code satisfies .gmc/TASK.md.
+      Write .gmc/workflow/review.md with findings first. If there are no findings, say so and note residual risk.
+      Stop and wait for gmc task advance.
+    next: ship
+
+  ship:
+    agent: grok
+    command: grok --yolo
+    skills:
+      - verification-before-completion
+    prompt: |
+      Read .gmc/TASK.md and the handoff files under .gmc/workflow/.
+      Prepare the task for operator handoff. Do not commit or push.
+      Run final verification if it has not been run after the latest changes.
+      Write .gmc/workflow/ship.md with summary, verification, remaining risk, and suggested commit message.
+      Stop.
+    next: done

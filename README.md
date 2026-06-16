@@ -65,6 +65,17 @@ gmc config set role    "Backend Developer"
 
 Custom prompt template: set `prompt_template` to a YAML file path with `{{.Role}}`, `{{.Files}}`, `{{.Diff}}` variables. See `docs/`.
 
+## Task workflow
+
+`gmc task` uses an embedded plan -> code -> review -> ship workflow when no user workflow is configured. The default reference lives at `internal/task/default_workflow.yaml`.
+
+To customize it:
+
+```bash
+mkdir -p ~/.config/gmc
+cp internal/task/default_workflow.yaml ~/.config/gmc/workflow.yaml
+```
+
 ## Shell completion
 
 ```bash

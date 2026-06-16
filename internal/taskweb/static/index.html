@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>gmc task webui</title>
+    <script type="module" crossorigin src="/app.js"></script>
+    <link rel="stylesheet" crossorigin href="/app.css">
+  </head>
+  <body>
+    <div id="app" class="app">
+      <header class="topbar">
+        <div class="repo-path"></div>
+      </header>
+      <main class="board" aria-label="Task board"></main>
+    </div>
+
+    <dialog id="add-dialog" class="modal">
+      <form id="add-form" method="dialog" class="modal-card">
+        <div class="modal-head">
+          <div>
+            <h2>Add task</h2>
+            <p>Creates a task in the Add column.</p>
+          </div>
+        </div>
+        <label class="field">
+          <span>Source</span>
+          <textarea id="add-source" rows="6" placeholder="Describe the task or paste a file path..." required></textarea>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost" data-close>Cancel</button>
+          <button type="submit" class="primary">Add</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="start-dialog" class="modal start-modal">
+      <form id="start-form" method="dialog" class="modal-card">
+        <div class="modal-head">
+          <div>
+            <h2>Start task</h2>
+            <p>Start in <strong id="start-target-label"></strong></p>
+          </div>
+        </div>
+        <label class="field">
+          <span>Agent</span>
+          <select id="start-agent">
+            <option value="codex">Codex</option>
+            <option value="grok">Grok</option>
+            <option value="cursor-agent">Cursor Agent</option>
+            <option value="opencode">OpenCode</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Base branch</span>
+          <input id="start-base" type="text" placeholder="optional">
+        </label>
+        <label class="field">
+          <span>Command</span>
+          <input id="start-command" type="text" placeholder="optional override">
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost" data-close>Cancel</button>
+          <button type="submit" class="primary">Start</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="attach-dialog" class="modal attach-modal">
+      <form id="attach-form" method="dialog" class="modal-card">
+        <div class="modal-head">
+          <div>
+            <h2>Attach</h2>
+            <p>Choose where this session opens.</p>
+          </div>
+        </div>
+        <label class="field">
+          <span>Open in</span>
+          <select id="attach-terminal">
+            <option value="ghostty">Ghostty</option>
+            <option value="iterm">iTerm2</option>
+            <option value="terminal">Terminal.app</option>
+          </select>
+        </label>
+        <p id="attach-cli" class="cli-fallback" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost" data-close>Cancel</button>
+          <button type="submit" class="primary">Attach</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="remove-dialog" class="modal">
+      <form id="remove-form" method="dialog" class="modal-card">
+        <div class="modal-head">
+          <div>
+            <h2>Remove task</h2>
+            <p id="remove-summary"></p>
+          </div>
+        </div>
+        <label class="checkbox">
+          <input id="remove-force" type="checkbox">
+          <span>Force remove dirty worktree</span>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost" data-close>Cancel</button>
+          <button type="submit" class="danger">Remove</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast-mount"></div>
+  </body>
+</html>

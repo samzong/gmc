@@ -10,6 +10,8 @@ import (
 
 const gmcTmuxSocket = "gmc-task"
 
+var tmuxSessionStarter = StartTmuxSession
+
 type TmuxProfile struct {
 	Session string
 	Socket  string

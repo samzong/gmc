@@ -9,9 +9,14 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	_ "embed"
 )
 
 const DefaultWorkflowName = "default"
+
+//go:embed default_workflow.yaml
+var defaultWorkflowYAML []byte
 
 func LoadWorkflowConfig() (WorkflowConfig, string, error) {
 	for _, path := range workflowConfigPaths() {
@@ -84,49 +89,10 @@ func ParseWorkflowConfig(data []byte) (WorkflowConfig, error) {
 }
 
 func DefaultWorkflowConfig() WorkflowConfig {
-	wf := WorkflowDefinition{
-		Name:  DefaultWorkflowName,
-		Start: "plan",
-		Nodes: map[string]WorkflowNode{
-			"plan": {
-				Prompt: strings.Join([]string{
-					"Read .gmc/TASK.md.",
-					"Analyze the task and produce a concise implementation plan.",
-					"Do not edit project files yet.",
-				}, " "),
-				Next: "code",
-			},
-			"code": {
-				Prompt: strings.Join([]string{
-					"Implement the approved plan with the smallest correct change.",
-					"Run focused checks.",
-					"Stop after summarizing changed files and verification.",
-				}, " "),
-				Next: "review",
-			},
-			"review": {
-				Prompt: strings.Join([]string{
-					"Review the current diff for correctness, regressions, and missing verification.",
-					"Run make check when practical.",
-					"Stop with findings first.",
-				}, " "),
-				Next: "ship",
-			},
-			"ship": {
-				Prompt: strings.Join([]string{
-					"Prepare a ship summary: changed files, verification, remaining risk, and suggested commit message.",
-					"Do not commit.",
-				}, " "),
-				Next: "done",
-			},
-		},
+	cfg, err := ParseWorkflowConfig(defaultWorkflowYAML)
+	if err != nil {
+		panic(fmt.Sprintf("invalid embedded default workflow: %v", err))
 	}
-	cfg := WorkflowConfig{
-		Version:   1,
-		Default:   DefaultWorkflowName,
-		Workflows: map[string]WorkflowDefinition{DefaultWorkflowName: wf},
-	}
-	cfg.Workflows[DefaultWorkflowName], _ = NormalizeWorkflowDefinition(DefaultWorkflowName, wf)
 	return cfg
 }
 

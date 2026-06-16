@@ -80,3 +80,19 @@ func TestEngineRemoveTaskWithoutAttempt(t *testing.T) {
 	_, err = store.LoadTask(rec.ID)
 	require.ErrorIs(t, err, ErrNotFound)
 }
+
+func TestEngineRemoveTaskWithMissingWorktree(t *testing.T) {
+	engine, store := newTestEngineWithGit(t)
+	rec, err := engine.CreateTask("orphan worktree")
+	require.NoError(t, err)
+	require.NoError(t, store.SaveAttempt(AttemptRecord{
+		ID:       "attempt-1",
+		TaskID:   rec.ID,
+		Worktree: filepath.Join(t.TempDir(), "missing-worktree"),
+		Branch:   "_task/" + rec.ID + "/1",
+	}))
+
+	require.NoError(t, engine.Remove(rec.ID, RemoveOptions{Force: true}))
+	_, err = store.LoadTask(rec.ID)
+	require.ErrorIs(t, err, ErrNotFound)
+}
