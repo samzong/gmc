@@ -19,6 +19,18 @@ func TestDeriveTitle(t *testing.T) {
 }
 
 func TestWorktreeNames(t *testing.T) {
-	assert.Equal(t, ".task-t-20260614-120000-abcd-1", WorktreeDirName("t-20260614-120000-abcd", "attempt-1"))
+	assert.Equal(t, "task-t-20260614-120000-abcd-1", WorktreeDirName("t-20260614-120000-abcd", "attempt-1"))
 	assert.Equal(t, "_task/t-20260614-120000-abcd/1", WorktreeBranchName("t-20260614-120000-abcd", "attempt-1"))
+}
+
+func TestTmuxSessionNameWithWorkflowNode(t *testing.T) {
+	assert.Equal(t, "gmc-t-20260614-120000-abcd-attempt-1", TmuxSessionName("t-20260614-120000-abcd", "attempt-1"))
+	assert.Equal(t,
+		"gmc-t-20260614-120000-abcd-attempt-1-plan-1",
+		TmuxSessionName("t-20260614-120000-abcd", "attempt-1", "plan", "1"),
+	)
+	assert.Equal(t,
+		"gmc-t-20260614-120000-abcd-attempt-1-code-2",
+		TmuxSessionName("t-20260614-120000-abcd", "attempt-1", "code", "2"),
+	)
 }

@@ -39,8 +39,8 @@ parallel AI coding.
 
 The control plane should:
 
-- create a task from a GitHub issue, local note, or plain prompt;
-- create one or more isolated attempts for that task;
+- add a task from a GitHub issue, local note, or plain prompt;
+- start one or more isolated attempts for that task;
 - run interactive agent sessions and non-interactive commands in the right
   worktree;
 - track state, logs, artifacts, and human intervention points;
@@ -562,7 +562,7 @@ Phase 1 should prove the task/session ledger without building a dashboard.
 Candidate commands:
 
 ```text
-gmc task create <issue-or-text>
+gmc task add <issue-or-text>
 gmc task list
 gmc task show <task-id>
 gmc task start <task-id> --agent <agent> --model <model> --mode coding
@@ -574,8 +574,8 @@ gmc task gc --dry-run
 Expected first complete chain:
 
 ```text
-create task
-create worktree
+add task
+start worktree
 start codex in tmux
 run codex review --uncommitted as a headless review run
 run pnpm check as a headless verification run
@@ -679,7 +679,7 @@ Deliver:
 - task directory layout;
 - task/attempt/run YAML snapshots;
 - append-only event log;
-- create/list/show commands;
+- add/list/show commands;
 - tmux runtime adapter for interactive sessions;
 - headless runtime for commands;
 - attach command;

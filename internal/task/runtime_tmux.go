@@ -50,6 +50,31 @@ func AttachTmuxSession(profile TmuxProfile) error {
 	return cmd.Run()
 }
 
+func SendTmuxPrompt(profile TmuxProfile, prompt string) error {
+	if !tmuxAvailable() {
+		return errors.New("tmux not found in PATH")
+	}
+	if !tmuxHasSession(profile) {
+		return fmt.Errorf("tmux session %q not found", profile.Session)
+	}
+	buffer := "gmc-task-prompt"
+	loadArgs := append(tmuxBaseArgs(profile), "load-buffer", "-b", buffer, "-")
+	loadCmd := exec.Command("tmux", loadArgs...)
+	loadCmd.Stdin = strings.NewReader(prompt)
+	if out, err := loadCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("tmux load-buffer: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	pasteArgs := append(tmuxBaseArgs(profile), "paste-buffer", "-d", "-b", buffer, "-t", profile.Session)
+	if out, err := exec.Command("tmux", pasteArgs...).CombinedOutput(); err != nil {
+		return fmt.Errorf("tmux paste-buffer: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	enterArgs := append(tmuxBaseArgs(profile), "send-keys", "-t", profile.Session, "Enter")
+	if out, err := exec.Command("tmux", enterArgs...).CombinedOutput(); err != nil {
+		return fmt.Errorf("tmux send-keys: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 func KillTmuxSession(profile TmuxProfile) error {
 	if !tmuxAvailable() || !tmuxHasSession(profile) {
 		return nil

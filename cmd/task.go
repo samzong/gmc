@@ -16,7 +16,8 @@ var (
 	taskModel      string
 	taskMode       string
 	taskBaseBranch string
-	taskCreateFile string
+	taskAddFile    string
+	taskAdvanceTo  string
 	taskRmForce    bool
 )
 
@@ -26,20 +27,23 @@ var taskCmd = &cobra.Command{
 	GroupID: "worktree",
 	Long: `Manage local AI coding tasks backed by a repo-family ledger.
 
-Minimal flow: create -> start -> mark -> attach/show/list -> rm.
-States: new, plan, code, review, ship.`,
+Minimal flow: add -> start -> advance -> attach/show/list -> rm.
+Workflow nodes come from ~/.config/gmc/workflow.yaml or ~/.gmc/workflow.yaml.`,
 	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return cmd.Help()
+	},
 }
 
-var taskCreateCmd = &cobra.Command{
-	Use:   "create [issue-or-todo-or-text]",
-	Short: "Create a task",
-	Args:  validateTaskCreateArgs,
-	Example: `  gmc task create 76
-  gmc task create todo.md
-  gmc task create --file todo.md
-  gmc task create "Fix flaky wt list test"`,
-	RunE: runTaskCreate,
+var taskAddCmd = &cobra.Command{
+	Use:   "add [issue-or-todo-or-text]",
+	Short: "Add a task",
+	Args:  validateTaskAddArgs,
+	Example: `  gmc task add 76
+  gmc task add todo.md
+  gmc task add --file todo.md
+  gmc task add "Fix flaky wt list test"`,
+	RunE: runTaskAdd,
 }
 
 var taskStartCmd = &cobra.Command{
@@ -74,15 +78,14 @@ var taskAttachCmd = &cobra.Command{
 	RunE:  runTaskAttach,
 }
 
-var taskMarkCmd = &cobra.Command{
-	Use:               "mark <task-id> <state>",
-	Short:             "Set task state",
-	Args:              cobra.ExactArgs(2),
-	ValidArgsFunction: completeTaskMarkArgs,
-	Example: `  gmc task mark t-20260614-120000-a1b2 code
-  gmc task mark t-20260614-120000-a1b2 review
-  gmc task mark t-20260614-120000-a1b2 ship`,
-	RunE: runTaskMark,
+var taskAdvanceCmd = &cobra.Command{
+	Use:   "advance <task-id>",
+	Short: "Advance task to the next workflow node",
+	Args:  cobra.ExactArgs(1),
+	Example: `  gmc task advance t-20260614-120000-a1b2
+  gmc task advance 1
+  gmc task advance 1 --to review`,
+	RunE: runTaskAdvance,
 }
 
 var taskRmCmd = &cobra.Command{
@@ -95,16 +98,16 @@ var taskRmCmd = &cobra.Command{
 }
 
 func init() {
-	taskCmd.AddCommand(taskCreateCmd)
+	taskCmd.AddCommand(taskAddCmd)
 	taskCmd.AddCommand(taskStartCmd)
 	taskCmd.AddCommand(taskListCmd)
 	taskCmd.AddCommand(taskShowCmd)
 	taskCmd.AddCommand(taskAttachCmd)
-	taskCmd.AddCommand(taskMarkCmd)
+	taskCmd.AddCommand(taskAdvanceCmd)
 	taskCmd.AddCommand(taskRmCmd)
 
-	taskCreateCmd.Flags().StringVar(&taskCreateFile, "file", "", "Read task source from file")
-	_ = taskCreateCmd.MarkFlagFilename("file")
+	taskAddCmd.Flags().StringVar(&taskAddFile, "file", "", "Read task source from file")
+	_ = taskAddCmd.MarkFlagFilename("file")
 
 	taskStartCmd.Flags().StringVar(&taskAgent, "agent", "codex", "Agent command: codex, grok, cursor-agent, or opencode")
 	taskStartCmd.Flags().StringVar(&taskModel, "model", "", "Model name for the agent")
@@ -112,13 +115,15 @@ func init() {
 	taskStartCmd.Flags().StringVarP(&taskBaseBranch, "base", "b", "", "Base branch for the task worktree")
 	_ = taskStartCmd.RegisterFlagCompletionFunc("agent", completeTaskAgents)
 
+	taskAdvanceCmd.Flags().StringVar(&taskAdvanceTo, "to", "", "Workflow node to advance to")
+
 	taskRmCmd.Flags().BoolVarP(&taskRmForce, "force", "f", false, "Force worktree removal if dirty")
 
 	rootCmd.AddCommand(taskCmd)
 }
 
-func validateTaskCreateArgs(cmd *cobra.Command, args []string) error {
-	if strings.TrimSpace(taskCreateFile) != "" {
+func validateTaskAddArgs(cmd *cobra.Command, args []string) error {
+	if strings.TrimSpace(taskAddFile) != "" {
 		if len(args) > 0 {
 			return errors.New("--file cannot be used with a text argument")
 		}
@@ -132,14 +137,6 @@ func completeTaskAgents(cmd *cobra.Command, args []string, toComplete string) ([
 	_ = args
 	candidates := []string{"codex", "grok", "cursor-agent", "opencode"}
 	return completeStrings(candidates, toComplete), cobra.ShellCompDirectiveNoFileComp
-}
-
-func completeTaskMarkArgs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	_ = cmd
-	if len(args) == 1 {
-		return completeStrings(task.StateValues(), toComplete), cobra.ShellCompDirectiveNoFileComp
-	}
-	return nil, cobra.ShellCompDirectiveDefault
 }
 
 func completeStrings(candidates []string, prefix string) []string {
@@ -161,13 +158,13 @@ func newTaskEngine() (*task.Engine, error) {
 	return task.NewEngine(store, wt), nil
 }
 
-func runTaskCreate(cmd *cobra.Command, args []string) error {
+func runTaskAdd(cmd *cobra.Command, args []string) error {
 	_ = cmd
 	engine, err := newTaskEngine()
 	if err != nil {
 		return err
 	}
-	source := strings.TrimSpace(taskCreateFile)
+	source := strings.TrimSpace(taskAddFile)
 	if source == "" {
 		source = args[0]
 	}
@@ -178,7 +175,7 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 	if outputFormat() == "json" {
 		return printJSON(outWriter(), rec)
 	}
-	fmt.Fprintf(outWriter(), "Created task %s (%s)\n", rec.ID, rec.State)
+	fmt.Fprintf(outWriter(), "Added task %s (%s)\n", rec.ID, rec.State)
 	fmt.Fprintf(outWriter(), "  title: %s\n", task.DisplayTitle(rec))
 	if rec.SourceFile != "" {
 		fmt.Fprintf(outWriter(), "  source file: %s\n", rec.SourceFile)
@@ -207,6 +204,12 @@ func runTaskStart(cmd *cobra.Command, args []string) error {
 		return printJSON(outWriter(), sum)
 	}
 	fmt.Fprintf(outWriter(), "Started task %s (%s)\n", sum.Task.ID, sum.Task.State)
+	if sum.Task.Workflow != "" {
+		fmt.Fprintf(outWriter(), "  workflow: %s\n", sum.Task.Workflow)
+	}
+	if sum.Task.CurrentNode != "" {
+		fmt.Fprintf(outWriter(), "  node: %s\n", sum.Task.CurrentNode)
+	}
 	if sum.Attempt != nil {
 		fmt.Fprintf(outWriter(), "  worktree: %s\n", sum.Attempt.Worktree)
 		fmt.Fprintf(outWriter(), "  branch: %s\n", sum.Attempt.Branch)
@@ -279,20 +282,27 @@ func runTaskAttach(cmd *cobra.Command, args []string) error {
 	return engine.Attach(args[0])
 }
 
-func runTaskMark(cmd *cobra.Command, args []string) error {
+func runTaskAdvance(cmd *cobra.Command, args []string) error {
 	_ = cmd
 	engine, err := newTaskEngine()
 	if err != nil {
 		return err
 	}
-	sum, err := engine.Mark(args[0], args[1])
+	sum, err := engine.Advance(task.AdvanceOptions{
+		TaskID: args[0],
+		ToNode: taskAdvanceTo,
+	})
 	if err != nil {
 		return err
 	}
 	if outputFormat() == "json" {
 		return printJSON(outWriter(), sum)
 	}
-	fmt.Fprintf(outWriter(), "Marked task %s as %s\n", sum.Task.ID, sum.Task.State)
+	fmt.Fprintf(outWriter(), "Advanced task %s to %s\n", sum.Task.ID, sum.Task.State)
+	if sum.Attempt != nil && sum.Attempt.TmuxSession != "" {
+		fmt.Fprintf(outWriter(), "  tmux: %s\n", sum.Attempt.TmuxSession)
+		fmt.Fprintf(outWriter(), "  attach: gmc task attach %s\n", sum.Task.ID)
+	}
 	return nil
 }
 
@@ -322,6 +332,12 @@ func printTaskDetail(sum task.Summary) {
 	if sum.Task.SourceFile != "" {
 		fmt.Fprintf(outWriter(), "  source file: %s\n", sum.Task.SourceFile)
 	}
+	if sum.Task.Workflow != "" {
+		fmt.Fprintf(outWriter(), "  workflow: %s\n", sum.Task.Workflow)
+	}
+	if sum.Task.CurrentNode != "" {
+		fmt.Fprintf(outWriter(), "  node: %s\n", sum.Task.CurrentNode)
+	}
 	if sum.Attempt != nil {
 		fmt.Fprintf(outWriter(), "Attempt: %s\n", sum.Attempt.ID)
 		fmt.Fprintf(outWriter(), "  worktree: %s\n", sum.Attempt.Worktree)
@@ -338,6 +354,12 @@ func printTaskDetail(sum task.Summary) {
 		}
 		if sum.Attempt.TmuxSession != "" {
 			fmt.Fprintf(outWriter(), "  tmux: %s\n", sum.Attempt.TmuxSession)
+		}
+		if len(sum.Attempt.TmuxSessions) > 0 {
+			fmt.Fprintln(outWriter(), "  tmux sessions:")
+			for _, session := range sum.Attempt.TmuxSessions {
+				fmt.Fprintf(outWriter(), "    %s\t%s\t%s\n", session.Node, session.Agent, session.Session)
+			}
 		}
 	}
 	fmt.Fprintln(outWriter(), "Source:")

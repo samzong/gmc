@@ -26,9 +26,14 @@ func TestWriteTaskContextFile(t *testing.T) {
 	assert.Contains(t, text, "_task/t-1/1")
 }
 
-func TestInitialAgentPrompt(t *testing.T) {
-	rec := Record{Title: "Fix bug"}
-	assert.Contains(t, InitialAgentPrompt(rec), ".gmc/TASK.md")
+func TestBuildWorkflowNodePrompt(t *testing.T) {
+	rec := Record{ID: "t-1", Title: "Fix bug", Workflow: "default"}
+	node := WorkflowNode{ID: "review", Prompt: "Review the diff.", Skills: []string{"local-code-liability-review"}}
+	text := BuildWorkflowNodePrompt(rec, node)
+	assert.Contains(t, text, ".gmc/TASK.md")
+	assert.Contains(t, text, "Node: review")
+	assert.Contains(t, text, "local-code-liability-review")
+	assert.Contains(t, text, ".gmc/workflow/review.md")
 }
 
 func TestAgentCommandCodex(t *testing.T) {

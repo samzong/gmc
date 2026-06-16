@@ -76,7 +76,7 @@ func WorktreeDirName(taskID, attemptID string) string {
 		base = base[:24]
 	}
 	shortAttempt := strings.TrimPrefix(attemptID, "attempt-")
-	return fmt.Sprintf(".task-%s-%s", base, shortAttempt)
+	return fmt.Sprintf("task-%s-%s", base, shortAttempt)
 }
 
 func WorktreeBranchName(taskID, attemptID string) string {
@@ -89,11 +89,25 @@ func WorktreeBranchName(taskID, attemptID string) string {
 	return fmt.Sprintf("_task/%s/%s", base, shortAttempt)
 }
 
-func TmuxSessionName(taskID, attemptID string) string {
+func TmuxSessionName(taskID, attemptID string, suffixes ...string) string {
 	name := slugSanitizer.ReplaceAllString(strings.ToLower(taskID+"-"+attemptID), "-")
 	name = strings.Trim(name, "-")
-	if len(name) > 48 {
-		name = name[:48]
+	if len(suffixes) == 0 {
+		if len(name) > 48 {
+			name = name[:48]
+		}
+		return "gmc-" + name
 	}
-	return "gmc-" + name
+	suffix := slugSanitizer.ReplaceAllString(strings.ToLower(strings.Join(suffixes, "-")), "-")
+	suffix = strings.Trim(suffix, "-")
+	if len(suffix) > 24 {
+		suffix = suffix[:24]
+	}
+	if len(name) > 40 {
+		name = name[:40]
+	}
+	if suffix == "" {
+		return "gmc-" + name
+	}
+	return "gmc-" + name + "-" + suffix
 }

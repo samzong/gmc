@@ -32,6 +32,12 @@ func BuildTaskContextMarkdown(rec Record, attempt AttemptRecord) string {
 	if rec.SourceFile != "" {
 		fmt.Fprintf(&b, "- Source file: %s\n", rec.SourceFile)
 	}
+	if rec.Workflow != "" {
+		fmt.Fprintf(&b, "- Workflow: %s\n", rec.Workflow)
+	}
+	if rec.CurrentNode != "" {
+		fmt.Fprintf(&b, "- Current node: %s\n", rec.CurrentNode)
+	}
 	if attempt.Branch != "" {
 		fmt.Fprintf(&b, "- Branch: %s\n", attempt.Branch)
 	}
@@ -44,11 +50,32 @@ func BuildTaskContextMarkdown(rec Record, attempt AttemptRecord) string {
 	b.WriteString("\n## Source\n\n")
 	b.WriteString(strings.TrimSpace(rec.Source))
 	b.WriteString("\n\n## Contract\n\n")
-	b.WriteString("Analyze the source, produce or refine the plan first, ")
-	b.WriteString("then wait for the operator to move the task through code, review, and ship.\n")
+	b.WriteString("Follow the current workflow node only. ")
+	b.WriteString("Stop when that node is complete and wait for the operator to run gmc task advance.\n")
 	return b.String()
 }
 
-func InitialAgentPrompt(rec Record) string {
-	return "gmc task: " + DisplayTitle(rec) + " - read .gmc/TASK.md and start with planning."
+func BuildWorkflowNodePrompt(rec Record, node WorkflowNode) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "gmc task workflow: %s\n", DisplayTitle(rec))
+	fmt.Fprintf(&b, "Task ID: %s\n", rec.ID)
+	if rec.Workflow != "" {
+		fmt.Fprintf(&b, "Workflow: %s\n", rec.Workflow)
+	}
+	fmt.Fprintf(&b, "Node: %s\n\n", node.ID)
+	b.WriteString("Read .gmc/TASK.md and any previous handoff files under .gmc/workflow/.\n\n")
+	if len(node.Skills) > 0 {
+		b.WriteString("Requested skills:\n")
+		for _, skill := range node.Skills {
+			fmt.Fprintf(&b, "- %s\n", skill)
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("Node instructions:\n")
+	b.WriteString(strings.TrimSpace(node.Prompt))
+	b.WriteString("\n\nBefore stopping, write or update .gmc/workflow/")
+	b.WriteString(node.ID)
+	b.WriteString(".md with a concise handoff: result, changed files, verification, risks, ")
+	b.WriteString("and recommended next step. Then stop and wait for the operator.")
+	return b.String()
 }

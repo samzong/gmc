@@ -47,7 +47,7 @@ func TestStoreResolveTaskID(t *testing.T) {
 	assert.Contains(t, err.Error(), "out of range")
 }
 
-func TestEngineCreateTaskFromFileAndMark(t *testing.T) {
+func TestEngineCreateTaskFromFile(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "todo.md")
 	require.NoError(t, os.WriteFile(source, []byte("# Todo\n\nShip it."), 0o644))
@@ -58,10 +58,16 @@ func TestEngineCreateTaskFromFileAndMark(t *testing.T) {
 	assert.Equal(t, TaskNew, rec.State)
 	assert.Equal(t, source, rec.SourceFile)
 	assert.Contains(t, rec.Source, "Ship it")
+}
 
-	sum, err := engine.Mark(rec.ID, TaskCode)
+func TestEngineAdvanceBeforeStart(t *testing.T) {
+	engine := NewEngine(NewStore(t.TempDir()), nil)
+	rec, err := engine.CreateTask("demo")
 	require.NoError(t, err)
-	assert.Equal(t, TaskCode, sum.Task.State)
+
+	_, err = engine.Advance(AdvanceOptions{TaskID: rec.ID})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "has not started a workflow")
 }
 
 func TestEngineRemoveTaskWithoutAttempt(t *testing.T) {
