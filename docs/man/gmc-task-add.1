@@ -2,20 +2,24 @@
 .TH "GMC" "1" "Jun 2026" "gmc" "GMC Manual"
 
 .SH NAME
-gmc-config-set - Set configuration item
+gmc-task-add - Add a task
 
 
 .SH SYNOPSIS
-\fBgmc config set [flags]\fP
+\fBgmc task add [issue-or-todo-or-text] [flags]\fP
 
 
 .SH DESCRIPTION
-Set configuration item
+Add a task
 
 
 .SH OPTIONS
+\fB--file\fP=""
+	Read task source from file
+
+.PP
 \fB-h\fP, \fB--help\fP[=false]
-	help for set
+	help for add
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -31,8 +35,17 @@ Set configuration item
 	Output format: text or json
 
 
+.SH EXAMPLE
+.EX
+  gmc task add 76
+  gmc task add todo.md
+  gmc task add --file todo.md
+  gmc task add "Fix flaky wt list test"
+.EE
+
+
 .SH SEE ALSO
-\fBgmc-config(1)\fP, \fBgmc-config-set-apibase(1)\fP, \fBgmc-config-set-apikey(1)\fP, \fBgmc-config-set-enable_emoji(1)\fP, \fBgmc-config-set-model(1)\fP, \fBgmc-config-set-prompt_template(1)\fP, \fBgmc-config-set-role(1)\fP
+\fBgmc-task(1)\fP
 
 
 .SH HISTORY

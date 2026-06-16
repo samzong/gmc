@@ -2,20 +2,23 @@
 .TH "GMC" "1" "Jun 2026" "gmc" "GMC Manual"
 
 .SH NAME
-gmc-config-set - Set configuration item
+gmc-task-webui - Start local kanban WebUI for tasks
 
 
 .SH SYNOPSIS
-\fBgmc config set [flags]\fP
+\fBgmc task webui [flags]\fP
 
 
 .SH DESCRIPTION
-Set configuration item
+Start a local HTTP server with a kanban WebUI for managing tasks in the current repository.
+
+.PP
+Opens your browser to a drag-and-drop task board. Attach uses Ghostty, iTerm2, or Terminal.app on macOS.
 
 
 .SH OPTIONS
 \fB-h\fP, \fB--help\fP[=false]
-	help for set
+	help for webui
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -31,8 +34,14 @@ Set configuration item
 	Output format: text or json
 
 
+.SH EXAMPLE
+.EX
+  gmc task webui
+.EE
+
+
 .SH SEE ALSO
-\fBgmc-config(1)\fP, \fBgmc-config-set-apibase(1)\fP, \fBgmc-config-set-apikey(1)\fP, \fBgmc-config-set-enable_emoji(1)\fP, \fBgmc-config-set-model(1)\fP, \fBgmc-config-set-prompt_template(1)\fP, \fBgmc-config-set-role(1)\fP
+\fBgmc-task(1)\fP
 
 
 .SH HISTORY
