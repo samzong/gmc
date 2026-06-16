@@ -23,6 +23,7 @@ type StartOptions struct {
 	Model      string
 	BaseBranch string
 	Workflow   string
+	Command    string
 }
 
 type AdvanceOptions struct {
@@ -140,16 +141,21 @@ func (e *Engine) Start(opts StartOptions) (Summary, error) {
 	}
 	attempt.ContextFile = contextFile
 
-	command, err := WorkflowNodeCommand(node, attempt.Agent, attempt.Model, BuildWorkflowNodePrompt(rec, node))
+	cmdNode := node
+	if strings.TrimSpace(opts.Command) != "" {
+		cmdNode = node
+		cmdNode.Command = strings.TrimSpace(opts.Command)
+	}
+	command, err := WorkflowNodeCommand(cmdNode, attempt.Agent, attempt.Model, BuildWorkflowNodePrompt(rec, node))
 	if err != nil {
 		return Summary{}, err
 	}
 	session := TmuxSessionName(taskID, attemptID, node.ID, "1")
-	profile, err := StartTmuxSession(session, wtPath, command)
+	profile, err := tmuxSessionStarter(session, wtPath, command)
 	if err != nil {
 		return Summary{}, err
 	}
-	attempt = recordTmuxSession(attempt, node.ID, profile)
+	attempt = recordTmuxSession(attempt, node.ID, profile, command)
 	if err := e.store.SaveAttempt(attempt); err != nil {
 		return Summary{}, err
 	}
@@ -284,20 +290,21 @@ func (e *Engine) runWorkflowNode(attempt AttemptRecord, node WorkflowNode, promp
 		return AttemptRecord{}, err
 	}
 	session := TmuxSessionName(attempt.TaskID, attempt.ID, node.ID, strconv.Itoa(len(attempt.TmuxSessions)+1))
-	profile, err := StartTmuxSession(session, attempt.Worktree, command)
+	profile, err := tmuxSessionStarter(session, attempt.Worktree, command)
 	if err != nil {
 		return AttemptRecord{}, err
 	}
-	attempt = recordTmuxSession(attempt, node.ID, profile)
+	attempt = recordTmuxSession(attempt, node.ID, profile, command)
 	return attempt, nil
 }
 
-func recordTmuxSession(attempt AttemptRecord, nodeID string, profile TmuxProfile) AttemptRecord {
+func recordTmuxSession(attempt AttemptRecord, nodeID string, profile TmuxProfile, command []string) AttemptRecord {
 	attempt.TmuxSession = profile.Session
 	attempt.TmuxSocket = profile.Socket
 	attempt.TmuxSessions = append(attempt.TmuxSessions, TmuxSessionRecord{
 		Node:      nodeID,
 		Agent:     attempt.Agent,
+		Command:   shellJoin(command),
 		Session:   profile.Session,
 		Socket:    profile.Socket,
 		StartedAt: time.Now().UTC(),
@@ -333,12 +340,20 @@ func (e *Engine) removeAttemptRuntime(attempt AttemptRecord, opts RemoveOptions)
 		if _, err := e.wt.Remove(attempt.Worktree, worktree.RemoveOptions{
 			Force:        opts.Force,
 			DeleteBranch: true,
-		}); err != nil {
+		}); err != nil && !isMissingWorktreeErr(err) {
 			return fmt.Errorf("remove worktree %s: %w", attempt.Worktree, err)
 		}
 	}
 	killAttemptTmuxSessions(attempt)
 	return nil
+}
+
+func isMissingWorktreeErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "worktree not found")
 }
 
 func killAttemptTmuxSessions(attempt AttemptRecord) {

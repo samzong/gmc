@@ -24,6 +24,7 @@ func TestTaskCommandsRegistered(t *testing.T) {
 		"rm",
 		"show",
 		"start",
+		"webui",
 	}, names)
 
 	listCmd, _, err := taskCmd.Find([]string{"ls"})
