@@ -1,6 +1,28 @@
 # Changelog
 
 
+## [v0.9.0] - 2026-06-17
+### Bug Fixes
+- **gmc:** quote argument hint
+- **lint:** pass make check ([#70](https://github.com/samzong/gmc/issues/70))
+- **release:** copy platform binary in goreleaser dockerfile
+- **worktree:** reuse add naming for PR worktrees
+- **worktree:** use per-worktree upstream for diff stat base ([#79](https://github.com/samzong/gmc/issues/79))
+- **worktree:** duplicate from current worktree ([#73](https://github.com/samzong/gmc/issues/73))
+- **worktree:** scope PR lookup to user branches ([#71](https://github.com/samzong/gmc/issues/71))
+
+### Code Refactoring
+- **task:** embed default workflow config from yaml file ([#85](https://github.com/samzong/gmc/issues/85))
+- **task:** embed default workflow config from yaml file
+
+### Features
+- **task:** phase-1 task control plane ([#80](https://github.com/samzong/gmc/issues/80))
+- **worktree:** support PR worktrees through add ([#83](https://github.com/samzong/gmc/issues/83))
+- **worktree:** show diff stats in worktree list ([#77](https://github.com/samzong/gmc/issues/77))
+- **worktree:** promote candidates into parent ([#72](https://github.com/samzong/gmc/issues/72))
+- **worktree:** show review request status ([#69](https://github.com/samzong/gmc/issues/69))
+
+
 ## [v0.8.1] - 2026-04-27
 ### Features
 - **cli:** worktree-first repositioning and shell-integration wizard
@@ -225,7 +247,8 @@
 - **gma:** add option to automatically stage all changes ([#123](https://github.com/samzong/gmc/issues/123))
 
 
-[Unreleased]: https://github.com/samzong/gmc/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/samzong/gmc/compare/v0.9.0...HEAD
+[v0.9.0]: https://github.com/samzong/gmc/compare/v0.8.1...v0.9.0
 [v0.8.1]: https://github.com/samzong/gmc/compare/v0.8.0...v0.8.1
 [v0.8.0]: https://github.com/samzong/gmc/compare/v0.7.3...v0.8.0
 [v0.7.3]: https://github.com/samzong/gmc/compare/v0.7.2...v0.7.3
