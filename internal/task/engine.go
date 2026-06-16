@@ -21,7 +21,6 @@ type StartOptions struct {
 	TaskID     string
 	Agent      string
 	Model      string
-	Mode       string
 	BaseBranch string
 	Workflow   string
 }
@@ -109,7 +108,6 @@ func (e *Engine) Start(opts StartOptions) (Summary, error) {
 		return Summary{}, err
 	}
 	model := WorkflowNodeModel(node, opts.Model)
-	mode := WorkflowNodeMode(node, opts.Mode)
 
 	attemptID := NewAttemptID()
 	wtDir := WorktreeDirName(taskID, attemptID)
@@ -129,7 +127,6 @@ func (e *Engine) Start(opts StartOptions) (Summary, error) {
 		Branch:    branch,
 		Agent:     agent,
 		Model:     model,
-		Mode:      mode,
 		CreatedAt: time.Now().UTC(),
 	}
 	rec.Workflow = workflow.Name
@@ -143,7 +140,7 @@ func (e *Engine) Start(opts StartOptions) (Summary, error) {
 	}
 	attempt.ContextFile = contextFile
 
-	command, err := AgentCommand(attempt.Agent, attempt.Model, attempt.Mode, BuildWorkflowNodePrompt(rec, node))
+	command, err := WorkflowNodeCommand(node, attempt.Agent, attempt.Model, BuildWorkflowNodePrompt(rec, node))
 	if err != nil {
 		return Summary{}, err
 	}
@@ -219,13 +216,11 @@ func (e *Engine) Advance(opts AdvanceOptions) (Summary, error) {
 		return Summary{}, err
 	}
 	model := WorkflowNodeModel(nextNode, attempt.Model)
-	mode := WorkflowNodeMode(nextNode, attempt.Mode)
 	attempt.Agent = agent
 	attempt.Model = model
-	attempt.Mode = mode
 	attempt.UpdatedAt = time.Now().UTC()
 	prompt := BuildWorkflowNodePrompt(rec, nextNode)
-	attempt, err = e.runWorkflowNode(attempt, nextNode.ID, prompt)
+	attempt, err = e.runWorkflowNode(attempt, nextNode, prompt)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -280,20 +275,20 @@ func (e *Engine) findWorktree(dirName, branchName string) (string, string, error
 	return "", "", fmt.Errorf("worktree %q not found after creation", dirName)
 }
 
-func (e *Engine) runWorkflowNode(attempt AttemptRecord, nodeID, prompt string) (AttemptRecord, error) {
+func (e *Engine) runWorkflowNode(attempt AttemptRecord, node WorkflowNode, prompt string) (AttemptRecord, error) {
 	if attempt.Worktree == "" {
 		return AttemptRecord{}, errors.New("attempt has no worktree")
 	}
-	command, err := AgentCommand(attempt.Agent, attempt.Model, attempt.Mode, prompt)
+	command, err := WorkflowNodeCommand(node, attempt.Agent, attempt.Model, prompt)
 	if err != nil {
 		return AttemptRecord{}, err
 	}
-	session := TmuxSessionName(attempt.TaskID, attempt.ID, nodeID, strconv.Itoa(len(attempt.TmuxSessions)+1))
+	session := TmuxSessionName(attempt.TaskID, attempt.ID, node.ID, strconv.Itoa(len(attempt.TmuxSessions)+1))
 	profile, err := StartTmuxSession(session, attempt.Worktree, command)
 	if err != nil {
 		return AttemptRecord{}, err
 	}
-	attempt = recordTmuxSession(attempt, nodeID, profile)
+	attempt = recordTmuxSession(attempt, node.ID, profile)
 	return attempt, nil
 }
 

@@ -224,13 +224,3 @@ func WorkflowNodeModel(node WorkflowNode, fallback string) string {
 	}
 	return fallback
 }
-
-func WorkflowNodeMode(node WorkflowNode, fallback string) string {
-	if strings.TrimSpace(node.Mode) != "" {
-		return node.Mode
-	}
-	if strings.TrimSpace(fallback) != "" {
-		return fallback
-	}
-	return "coding"
-}

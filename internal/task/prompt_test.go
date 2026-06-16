@@ -37,31 +37,44 @@ func TestBuildWorkflowNodePrompt(t *testing.T) {
 }
 
 func TestAgentCommandCodex(t *testing.T) {
-	args, err := AgentCommand("codex", "gpt-5", "coding", "do the task")
+	args, err := AgentCommand("codex", "gpt-5", "do the task")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"codex", "-m", "gpt-5", "do the task"}, args)
 }
 
 func TestAgentCommandGrok(t *testing.T) {
-	args, err := AgentCommand("grok", "grok-4", "coding", "do the task")
+	args, err := AgentCommand("grok", "grok-4", "do the task")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"grok", "-m", "grok-4", "do the task"}, args)
 }
 
 func TestAgentCommandCursorAgent(t *testing.T) {
-	args, err := AgentCommand("cursor-agent", "gpt-5", "plan", "do the task")
+	args, err := AgentCommand("cursor-agent", "gpt-5", "do the task")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"cursor-agent", "--model", "gpt-5", "--mode", "plan", "do the task"}, args)
+	assert.Equal(t, []string{"cursor-agent", "--model", "gpt-5", "do the task"}, args)
 }
 
 func TestAgentCommandOpencode(t *testing.T) {
-	args, err := AgentCommand("opencode", "", "coding", "do the task")
+	args, err := AgentCommand("opencode", "", "do the task")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"opencode", "run", "do the task"}, args)
 }
 
 func TestAgentCommandUnsupported(t *testing.T) {
-	_, err := AgentCommand("claude", "", "coding", "do the task")
+	_, err := AgentCommand("claude", "", "do the task")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "codex, grok, cursor-agent, or opencode")
+}
+
+func TestWorkflowNodeCommandOverride(t *testing.T) {
+	node := WorkflowNode{ID: "plan", Command: "codex --dangerously-bypass-approvals-and-sandbox --model gpt-5"}
+	args, err := WorkflowNodeCommand(node, "codex", "ignored-model", "do the task")
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		"codex",
+		"--dangerously-bypass-approvals-and-sandbox",
+		"--model",
+		"gpt-5",
+		"do the task",
+	}, args)
 }

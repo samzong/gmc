@@ -454,9 +454,9 @@ Initial adapters:
 - `opencode`;
 - `custom`.
 
-Agent adapters should handle model selection, mode selection, workspace path,
-approval/sandbox flags, resume/fork behavior, and any agent-specific artifact
-extraction.
+Agent adapters should handle model selection, command overrides, workspace
+path, approval/sandbox flags, resume/fork behavior, and any agent-specific
+artifact extraction.
 
 ### Command Adapter
 
@@ -565,7 +565,7 @@ Candidate commands:
 gmc task add <issue-or-text>
 gmc task list
 gmc task show <task-id>
-gmc task start <task-id> --agent <agent> --model <model> --mode coding
+gmc task start <task-id> --agent <agent> --model <model>
 gmc task run <task-id> --attempt <attempt-id> -- <command>
 gmc task attach <task-id> --attempt <attempt-id>
 gmc task gc --dry-run
@@ -619,7 +619,7 @@ stages:
     run:
       type: agent-session
       agent: codex
-      mode: coding
+      command: codex --dangerously-bypass-approvals-and-sandbox
   - id: review
     run:
       type: agent-review
@@ -642,7 +642,7 @@ Phase order:
 
 ```text
 ledger + CLI
-  -> attempt fanout and review mode
+  -> attempt fanout and review command
   -> TUI board
   -> daemon/API
   -> Web dashboard

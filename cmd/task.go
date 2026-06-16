@@ -14,7 +14,6 @@ import (
 var (
 	taskAgent      string
 	taskModel      string
-	taskMode       string
 	taskBaseBranch string
 	taskAddFile    string
 	taskAdvanceTo  string
@@ -52,7 +51,7 @@ var taskStartCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Example: `  gmc task start t-20260614-120000-a1b2
   gmc task start t-20260614-120000-a1b2 --agent codex --model gpt-5
-  gmc task start 1 --agent cursor-agent --mode plan`,
+  gmc task start 1 --agent cursor-agent`,
 	RunE: runTaskStart,
 }
 
@@ -111,7 +110,6 @@ func init() {
 
 	taskStartCmd.Flags().StringVar(&taskAgent, "agent", "codex", "Agent command: codex, grok, cursor-agent, or opencode")
 	taskStartCmd.Flags().StringVar(&taskModel, "model", "", "Model name for the agent")
-	taskStartCmd.Flags().StringVar(&taskMode, "mode", "coding", "Agent mode")
 	taskStartCmd.Flags().StringVarP(&taskBaseBranch, "base", "b", "", "Base branch for the task worktree")
 	_ = taskStartCmd.RegisterFlagCompletionFunc("agent", completeTaskAgents)
 
@@ -194,7 +192,6 @@ func runTaskStart(cmd *cobra.Command, args []string) error {
 		TaskID:     args[0],
 		Agent:      taskAgent,
 		Model:      taskModel,
-		Mode:       taskMode,
 		BaseBranch: taskBaseBranch,
 	})
 	if err != nil {
@@ -238,19 +235,16 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	w := tabwriter.NewWriter(outWriter(), 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "#\tID\tSTATE\tAGENT\tMODE\tTITLE")
+	_, _ = fmt.Fprintln(w, "#\tID\tSTATE\tAGENT\tTITLE")
 	for i, sum := range summaries {
-		agent, mode := "-", "-"
+		agent := "-"
 		if sum.Attempt != nil {
 			if sum.Attempt.Agent != "" {
 				agent = sum.Attempt.Agent
 			}
-			if sum.Attempt.Mode != "" {
-				mode = sum.Attempt.Mode
-			}
 		}
-		_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\n",
-			i+1, sum.Task.ID, sum.Task.State, agent, mode, task.DisplayTitle(sum.Task))
+		_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n",
+			i+1, sum.Task.ID, sum.Task.State, agent, task.DisplayTitle(sum.Task))
 	}
 	_ = w.Flush()
 	return nil
@@ -345,9 +339,6 @@ func printTaskDetail(sum task.Summary) {
 		fmt.Fprintf(outWriter(), "  agent: %s\n", sum.Attempt.Agent)
 		if sum.Attempt.Model != "" {
 			fmt.Fprintf(outWriter(), "  model: %s\n", sum.Attempt.Model)
-		}
-		if sum.Attempt.Mode != "" {
-			fmt.Fprintf(outWriter(), "  mode: %s\n", sum.Attempt.Mode)
 		}
 		if sum.Attempt.ContextFile != "" {
 			fmt.Fprintf(outWriter(), "  task brief: %s\n", sum.Attempt.ContextFile)

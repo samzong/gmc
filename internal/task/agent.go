@@ -30,7 +30,7 @@ func NormalizeAgentAdapter(agent string) (string, error) {
 	}
 }
 
-func AgentCommand(agent, model, mode, prompt string) ([]string, error) {
+func AgentCommand(agent, model, prompt string) ([]string, error) {
 	agent, err := NormalizeAgentAdapter(agent)
 	if err != nil {
 		return nil, err
@@ -41,9 +41,6 @@ func AgentCommand(agent, model, mode, prompt string) ([]string, error) {
 		args := []string{"codex"}
 		if model != "" {
 			args = append(args, "-m", model)
-		}
-		if mode != "" && mode != "coding" {
-			args = append(args, mode)
 		}
 		if prompt != "" {
 			args = append(args, prompt)
@@ -63,9 +60,6 @@ func AgentCommand(agent, model, mode, prompt string) ([]string, error) {
 		if model != "" {
 			args = append(args, "--model", model)
 		}
-		if mode != "" && mode != "coding" {
-			args = append(args, "--mode", mode)
-		}
 		if prompt != "" {
 			args = append(args, prompt)
 		}
@@ -78,4 +72,18 @@ func AgentCommand(agent, model, mode, prompt string) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("unsupported agent %q (use codex, grok, cursor-agent, or opencode)", agent)
 	}
+}
+
+func WorkflowNodeCommand(node WorkflowNode, agent, model, prompt string) ([]string, error) {
+	if strings.TrimSpace(node.Command) != "" {
+		args := strings.Fields(node.Command)
+		if len(args) == 0 {
+			return nil, fmt.Errorf("empty command for workflow node %q", node.ID)
+		}
+		if strings.TrimSpace(prompt) != "" {
+			args = append(args, strings.TrimSpace(prompt))
+		}
+		return args, nil
+	}
+	return AgentCommand(agent, model, prompt)
 }

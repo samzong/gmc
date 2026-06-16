@@ -31,7 +31,6 @@ type AttemptRecord struct {
 	Branch       string              `json:"branch,omitempty" yaml:"branch,omitempty"`
 	Agent        string              `json:"agent,omitempty" yaml:"agent,omitempty"`
 	Model        string              `json:"model,omitempty" yaml:"model,omitempty"`
-	Mode         string              `json:"mode,omitempty" yaml:"mode,omitempty"`
 	TmuxSession  string              `json:"tmux_session,omitempty" yaml:"tmux_session,omitempty"`
 	TmuxSocket   string              `json:"tmux_socket,omitempty" yaml:"tmux_socket,omitempty"`
 	TmuxSessions []TmuxSessionRecord `json:"tmux_sessions,omitempty" yaml:"tmux_sessions,omitempty"`
@@ -68,12 +67,12 @@ type WorkflowDefinition struct {
 }
 
 type WorkflowNode struct {
-	ID     string   `json:"id,omitempty" yaml:"id,omitempty"`
-	Agent  string   `json:"agent,omitempty" yaml:"agent,omitempty"`
-	Model  string   `json:"model,omitempty" yaml:"model,omitempty"`
-	Mode   string   `json:"mode,omitempty" yaml:"mode,omitempty"`
-	Prompt string   `json:"prompt,omitempty" yaml:"prompt,omitempty"`
-	Skill  string   `json:"skill,omitempty" yaml:"skill,omitempty"`
-	Skills []string `json:"skills,omitempty" yaml:"skills,omitempty"`
-	Next   string   `json:"next,omitempty" yaml:"next,omitempty"`
+	ID      string   `json:"id,omitempty" yaml:"id,omitempty"`
+	Agent   string   `json:"agent,omitempty" yaml:"agent,omitempty"`
+	Command string   `json:"command,omitempty" yaml:"command,omitempty"`
+	Model   string   `json:"model,omitempty" yaml:"model,omitempty"`
+	Prompt  string   `json:"prompt,omitempty" yaml:"prompt,omitempty"`
+	Skill   string   `json:"skill,omitempty" yaml:"skill,omitempty"`
+	Skills  []string `json:"skills,omitempty" yaml:"skills,omitempty"`
+	Next    string   `json:"next,omitempty" yaml:"next,omitempty"`
 }
