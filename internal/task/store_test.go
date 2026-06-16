@@ -24,14 +24,27 @@ func TestStoreCreateAndLoadSummary(t *testing.T) {
 	assert.FileExists(t, filepath.Join(store.Root(), "tasks", "t-demo", "task.yaml"))
 }
 
-func TestStoreResolvePrefix(t *testing.T) {
+func TestStoreResolveTaskID(t *testing.T) {
 	store := NewStore(t.TempDir())
 	now := time.Now().UTC()
 	require.NoError(t, store.CreateTask(Record{ID: "t-alpha", State: TaskNew, Source: "a", CreatedAt: now}))
+	require.NoError(t, store.CreateTask(Record{ID: "t-beta", State: TaskNew, Source: "b", CreatedAt: now}))
 
 	id, err := store.ResolveTaskID("t-al")
 	require.NoError(t, err)
 	assert.Equal(t, "t-alpha", id)
+
+	id, err = store.ResolveTaskID("1")
+	require.NoError(t, err)
+	assert.Equal(t, "t-alpha", id)
+
+	id, err = store.ResolveTaskID("2")
+	require.NoError(t, err)
+	assert.Equal(t, "t-beta", id)
+
+	_, err = store.ResolveTaskID("3")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "out of range")
 }
 
 func TestEngineCreateTaskFromFileAndMark(t *testing.T) {

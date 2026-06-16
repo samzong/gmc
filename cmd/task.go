@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"text/tabwriter"
@@ -15,6 +16,7 @@ var (
 	taskModel      string
 	taskMode       string
 	taskBaseBranch string
+	taskCreateFile string
 	taskRmForce    bool
 )
 
@@ -30,11 +32,12 @@ States: new, plan, code, review, ship.`,
 }
 
 var taskCreateCmd = &cobra.Command{
-	Use:   "create <issue-or-todo-or-text>",
+	Use:   "create [issue-or-todo-or-text]",
 	Short: "Create a task",
-	Args:  cobra.ExactArgs(1),
+	Args:  validateTaskCreateArgs,
 	Example: `  gmc task create 76
   gmc task create todo.md
+  gmc task create --file todo.md
   gmc task create "Fix flaky wt list test"`,
 	RunE: runTaskCreate,
 }
@@ -44,15 +47,17 @@ var taskStartCmd = &cobra.Command{
 	Short: "Create worktree and start agent",
 	Args:  cobra.ExactArgs(1),
 	Example: `  gmc task start t-20260614-120000-a1b2
-  gmc task start t-20260614-120000-a1b2 --agent codex --model gpt-5`,
+  gmc task start t-20260614-120000-a1b2 --agent codex --model gpt-5
+  gmc task start 1 --agent cursor-agent --mode plan`,
 	RunE: runTaskStart,
 }
 
 var taskListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List tasks",
-	Args:  cobra.NoArgs,
-	RunE:  runTaskList,
+	Use:     "list",
+	Aliases: []string{"ls"},
+	Short:   "List tasks",
+	Args:    cobra.NoArgs,
+	RunE:    runTaskList,
 }
 
 var taskShowCmd = &cobra.Command{
@@ -98,9 +103,12 @@ func init() {
 	taskCmd.AddCommand(taskMarkCmd)
 	taskCmd.AddCommand(taskRmCmd)
 
-	taskStartCmd.Flags().StringVar(&taskAgent, "agent", "codex", "Agent command: codex, claude, opencode, or custom")
+	taskCreateCmd.Flags().StringVar(&taskCreateFile, "file", "", "Read task source from file")
+	_ = taskCreateCmd.MarkFlagFilename("file")
+
+	taskStartCmd.Flags().StringVar(&taskAgent, "agent", "codex", "Agent command: codex, grok, cursor-agent, or opencode")
 	taskStartCmd.Flags().StringVar(&taskModel, "model", "", "Model name for the agent")
-	taskStartCmd.Flags().StringVar(&taskMode, "mode", "coding", "Agent mode, or executable when agent=custom")
+	taskStartCmd.Flags().StringVar(&taskMode, "mode", "coding", "Agent mode")
 	taskStartCmd.Flags().StringVarP(&taskBaseBranch, "base", "b", "", "Base branch for the task worktree")
 	_ = taskStartCmd.RegisterFlagCompletionFunc("agent", completeTaskAgents)
 
@@ -109,10 +117,20 @@ func init() {
 	rootCmd.AddCommand(taskCmd)
 }
 
+func validateTaskCreateArgs(cmd *cobra.Command, args []string) error {
+	if strings.TrimSpace(taskCreateFile) != "" {
+		if len(args) > 0 {
+			return errors.New("--file cannot be used with a text argument")
+		}
+		return nil
+	}
+	return cobra.ExactArgs(1)(cmd, args)
+}
+
 func completeTaskAgents(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	_ = cmd
 	_ = args
-	candidates := []string{"codex", "claude", "opencode", "custom"}
+	candidates := []string{"codex", "grok", "cursor-agent", "opencode"}
 	return completeStrings(candidates, toComplete), cobra.ShellCompDirectiveNoFileComp
 }
 
@@ -149,7 +167,11 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	rec, err := engine.CreateTask(args[0])
+	source := strings.TrimSpace(taskCreateFile)
+	if source == "" {
+		source = args[0]
+	}
+	rec, err := engine.CreateTask(source)
 	if err != nil {
 		return err
 	}
@@ -158,6 +180,9 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Fprintf(outWriter(), "Created task %s (%s)\n", rec.ID, rec.State)
 	fmt.Fprintf(outWriter(), "  title: %s\n", task.DisplayTitle(rec))
+	if rec.SourceFile != "" {
+		fmt.Fprintf(outWriter(), "  source file: %s\n", rec.SourceFile)
+	}
 	fmt.Fprintf(outWriter(), "  next: gmc task start %s\n", rec.ID)
 	return nil
 }
@@ -210,8 +235,8 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	w := tabwriter.NewWriter(outWriter(), 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ID\tSTATE\tAGENT\tMODE\tTITLE")
-	for _, sum := range summaries {
+	_, _ = fmt.Fprintln(w, "#\tID\tSTATE\tAGENT\tMODE\tTITLE")
+	for i, sum := range summaries {
 		agent, mode := "-", "-"
 		if sum.Attempt != nil {
 			if sum.Attempt.Agent != "" {
@@ -221,8 +246,8 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 				mode = sum.Attempt.Mode
 			}
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-			sum.Task.ID, sum.Task.State, agent, mode, task.DisplayTitle(sum.Task))
+		_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\n",
+			i+1, sum.Task.ID, sum.Task.State, agent, mode, task.DisplayTitle(sum.Task))
 	}
 	_ = w.Flush()
 	return nil

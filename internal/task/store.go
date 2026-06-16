@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -154,6 +155,15 @@ func (s *Store) ResolveTaskID(ref string) (string, error) {
 	ids, err := s.ListTaskIDs()
 	if err != nil {
 		return "", err
+	}
+	if index, err := strconv.Atoi(ref); err == nil {
+		if index < 1 || index > len(ids) {
+			if len(ids) == 0 {
+				return "", fmt.Errorf("task index %d out of range (no tasks)", index)
+			}
+			return "", fmt.Errorf("task index %d out of range (use 1-%d)", index, len(ids))
+		}
+		return ids[index-1], nil
 	}
 	var matches []string
 	for _, id := range ids {

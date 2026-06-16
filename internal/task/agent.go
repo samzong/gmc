@@ -1,7 +1,6 @@
 package task
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 )
@@ -10,19 +9,32 @@ func NormalizeTaskAgent(agent string) string {
 	switch strings.ToLower(strings.TrimSpace(agent)) {
 	case "", "codex", "codex-cli":
 		return "codex"
-	case "claude", "claude-code", "claude_code":
-		return "claude"
+	case "grok":
+		return "grok"
+	case "cursor", "cursor-agent", "cursor_agent":
+		return "cursor-agent"
 	case "opencode":
 		return "opencode"
-	case "custom":
-		return "custom"
 	default:
 		return strings.ToLower(strings.TrimSpace(agent))
 	}
 }
 
+func NormalizeAgentAdapter(agent string) (string, error) {
+	normalized := NormalizeTaskAgent(agent)
+	switch normalized {
+	case "codex", "grok", "cursor-agent", "opencode":
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("unsupported task agent %q (use codex, grok, cursor-agent, or opencode)", agent)
+	}
+}
+
 func AgentCommand(agent, model, mode, prompt string) ([]string, error) {
-	agent = NormalizeTaskAgent(agent)
+	agent, err := NormalizeAgentAdapter(agent)
+	if err != nil {
+		return nil, err
+	}
 	prompt = strings.TrimSpace(prompt)
 	switch agent {
 	case "codex":
@@ -37,22 +49,33 @@ func AgentCommand(agent, model, mode, prompt string) ([]string, error) {
 			args = append(args, prompt)
 		}
 		return args, nil
-	case "claude":
-		if prompt == "" {
-			return []string{"claude"}, nil
+	case "grok":
+		args := []string{"grok"}
+		if model != "" {
+			args = append(args, "-m", model)
 		}
-		return []string{"claude", prompt}, nil
+		if prompt != "" {
+			args = append(args, prompt)
+		}
+		return args, nil
+	case "cursor-agent":
+		args := []string{"cursor-agent"}
+		if model != "" {
+			args = append(args, "--model", model)
+		}
+		if mode != "" && mode != "coding" {
+			args = append(args, "--mode", mode)
+		}
+		if prompt != "" {
+			args = append(args, prompt)
+		}
+		return args, nil
 	case "opencode":
 		if prompt == "" {
 			return []string{"opencode"}, nil
 		}
 		return []string{"opencode", "run", prompt}, nil
-	case "custom":
-		if strings.TrimSpace(mode) == "" || mode == "coding" {
-			return nil, errors.New("custom agent requires --mode as the executable command")
-		}
-		return strings.Fields(mode), nil
 	default:
-		return nil, fmt.Errorf("unsupported agent %q (use codex, claude, opencode, or custom)", agent)
+		return nil, fmt.Errorf("unsupported agent %q (use codex, grok, cursor-agent, or opencode)", agent)
 	}
 }

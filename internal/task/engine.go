@@ -85,6 +85,10 @@ func (e *Engine) Start(opts StartOptions) (Summary, error) {
 	if _, err := e.store.LoadAttempt(taskID); err == nil {
 		return Summary{}, fmt.Errorf("task %s already started", taskID)
 	}
+	agent, err := NormalizeAgentAdapter(opts.Agent)
+	if err != nil {
+		return Summary{}, err
+	}
 
 	attemptID := NewAttemptID()
 	wtDir := WorktreeDirName(taskID, attemptID)
@@ -102,7 +106,7 @@ func (e *Engine) Start(opts StartOptions) (Summary, error) {
 		TaskID:    taskID,
 		Worktree:  wtPath,
 		Branch:    branch,
-		Agent:     NormalizeTaskAgent(opts.Agent),
+		Agent:     agent,
 		Model:     opts.Model,
 		Mode:      opts.Mode,
 		CreatedAt: time.Now().UTC(),
