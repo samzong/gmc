@@ -1,11 +1,13 @@
 FROM alpine:3.19
 
+ARG TARGETPLATFORM
+
 RUN apk --no-cache add ca-certificates git
 
 WORKDIR /root
 
-# Copy the binary from goreleaser
-COPY gmc /usr/local/bin/gmc
+# Copy the platform-specific binary from goreleaser build context
+COPY ${TARGETPLATFORM}/gmc /usr/local/bin/gmc
 
 # Make sure gmc is executable
 RUN chmod +x /usr/local/bin/gmc
