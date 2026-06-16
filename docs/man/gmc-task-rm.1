@@ -2,20 +2,24 @@
 .TH "GMC" "1" "Jun 2026" "gmc" "GMC Manual"
 
 .SH NAME
-gmc-config-set - Set configuration item
+gmc-task-rm - Delete a task
 
 
 .SH SYNOPSIS
-\fBgmc config set [flags]\fP
+\fBgmc task rm  [flags]\fP
 
 
 .SH DESCRIPTION
-Set configuration item
+Delete a task
 
 
 .SH OPTIONS
+\fB-f\fP, \fB--force\fP[=false]
+	Force worktree removal if dirty
+
+.PP
 \fB-h\fP, \fB--help\fP[=false]
-	help for set
+	help for rm
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -31,8 +35,15 @@ Set configuration item
 	Output format: text or json
 
 
+.SH EXAMPLE
+.EX
+  gmc task rm t-20260614-120000-a1b2
+  gmc task rm t-20260614-120000-a1b2 --force
+.EE
+
+
 .SH SEE ALSO
-\fBgmc-config(1)\fP, \fBgmc-config-set-apibase(1)\fP, \fBgmc-config-set-apikey(1)\fP, \fBgmc-config-set-enable_emoji(1)\fP, \fBgmc-config-set-model(1)\fP, \fBgmc-config-set-prompt_template(1)\fP, \fBgmc-config-set-role(1)\fP
+\fBgmc-task(1)\fP
 
 
 .SH HISTORY
