@@ -39,8 +39,8 @@ parallel AI coding.
 
 The control plane should:
 
-- create a task from a GitHub issue, local note, or plain prompt;
-- create one or more isolated attempts for that task;
+- add a task from a GitHub issue, local note, or plain prompt;
+- start one or more isolated attempts for that task;
 - run interactive agent sessions and non-interactive commands in the right
   worktree;
 - track state, logs, artifacts, and human intervention points;
@@ -454,9 +454,9 @@ Initial adapters:
 - `opencode`;
 - `custom`.
 
-Agent adapters should handle model selection, mode selection, workspace path,
-approval/sandbox flags, resume/fork behavior, and any agent-specific artifact
-extraction.
+Agent adapters should handle model selection, command overrides, workspace
+path, approval/sandbox flags, resume/fork behavior, and any agent-specific
+artifact extraction.
 
 ### Command Adapter
 
@@ -562,10 +562,10 @@ Phase 1 should prove the task/session ledger without building a dashboard.
 Candidate commands:
 
 ```text
-gmc task create <issue-or-text>
+gmc task add <issue-or-text>
 gmc task list
 gmc task show <task-id>
-gmc task start <task-id> --agent <agent> --model <model> --mode coding
+gmc task start <task-id> --agent <agent> --model <model>
 gmc task run <task-id> --attempt <attempt-id> -- <command>
 gmc task attach <task-id> --attempt <attempt-id>
 gmc task gc --dry-run
@@ -574,8 +574,8 @@ gmc task gc --dry-run
 Expected first complete chain:
 
 ```text
-create task
-create worktree
+add task
+start worktree
 start codex in tmux
 run codex review --uncommitted as a headless review run
 run pnpm check as a headless verification run
@@ -619,7 +619,7 @@ stages:
     run:
       type: agent-session
       agent: codex
-      mode: coding
+      command: codex --dangerously-bypass-approvals-and-sandbox
   - id: review
     run:
       type: agent-review
@@ -642,7 +642,7 @@ Phase order:
 
 ```text
 ledger + CLI
-  -> attempt fanout and review mode
+  -> attempt fanout and review command
   -> TUI board
   -> daemon/API
   -> Web dashboard
@@ -679,7 +679,7 @@ Deliver:
 - task directory layout;
 - task/attempt/run YAML snapshots;
 - append-only event log;
-- create/list/show commands;
+- add/list/show commands;
 - tmux runtime adapter for interactive sessions;
 - headless runtime for commands;
 - attach command;

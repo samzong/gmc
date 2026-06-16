@@ -137,6 +137,7 @@ type Info struct {
 type AddOptions struct {
 	BaseBranch string // Base branch to create from
 	Fetch      bool   // Whether to fetch before creating
+	Branch     string
 }
 
 // RemoveOptions options for removing a worktree
@@ -148,6 +149,7 @@ type RemoveOptions struct {
 
 type addContext struct {
 	name       string
+	branchName string
 	repoDir    string
 	targetPath string
 	baseBranch string
@@ -546,7 +548,11 @@ func (c *Client) prepareAdd(name string, opts AddOptions) (addContext, error) {
 	if name == "" {
 		return addContext{}, errors.New("worktree name cannot be empty")
 	}
-	if err := gitutil.ValidateBranchName(name); err != nil {
+	branchName := name
+	if opts.Branch != "" {
+		branchName = opts.Branch
+	}
+	if err := gitutil.ValidateBranchName(branchName); err != nil {
 		return addContext{}, err
 	}
 
@@ -574,6 +580,7 @@ func (c *Client) prepareAdd(name string, opts AddOptions) (addContext, error) {
 
 	return addContext{
 		name:       name,
+		branchName: branchName,
 		repoDir:    c.repoDir,
 		targetPath: targetPath,
 		baseBranch: baseBranch,
@@ -589,11 +596,13 @@ func (c *Client) maybeFetchForAdd(ctx addContext, opts AddOptions, report *Repor
 }
 
 func (c *Client) addArgs(ctx addContext) ([]string, bool) {
-	branchExists, _ := c.branchExists(ctx.name)
+	branchExists, _ := c.branchExists(ctx.branchName)
 	if branchExists {
-		return []string{"-C", ctx.repoDir, "worktree", "add", ctx.targetPath, ctx.name}, true
+		return []string{"-C", ctx.repoDir, "worktree", "add", ctx.targetPath, ctx.branchName}, true
 	}
-	return []string{"-C", ctx.repoDir, "worktree", "add", "-b", ctx.name, ctx.targetPath, ctx.baseBranch}, false
+	return []string{
+		"-C", ctx.repoDir, "worktree", "add", "-b", ctx.branchName, ctx.targetPath, ctx.baseBranch,
+	}, false
 }
 
 func (c *Client) ensureAddedWorktreeConfig(targetPath string) error {
@@ -611,9 +620,9 @@ func (c *Client) ensureAddedWorktreeConfig(targetPath string) error {
 func (c *Client) appendAddSummary(report *Report, ctx addContext, branchExists bool) {
 	report.Info(fmt.Sprintf("Created worktree '%s' at %s", ctx.name, ctx.targetPath))
 	if branchExists {
-		report.Info(fmt.Sprintf("Branch: %s (existing)", ctx.name))
+		report.Info(fmt.Sprintf("Branch: %s (existing)", ctx.branchName))
 	} else {
-		report.Info(fmt.Sprintf("Branch: %s (based on %s)", ctx.name, ctx.baseBranch))
+		report.Info(fmt.Sprintf("Branch: %s (based on %s)", ctx.branchName, ctx.baseBranch))
 	}
 	report.Info("Next step: cd " + ctx.targetPath)
 }
@@ -623,12 +632,15 @@ func (c *Client) resolveRemoveTarget(name string, worktrees []Info) (removeConte
 		return removeContext{}, errors.New("worktree name cannot be empty")
 	}
 
-	targetPath := filepath.Join(c.searchRoot, name)
+	targetPath := name
+	if !filepath.IsAbs(name) {
+		targetPath = filepath.Join(c.searchRoot, name)
+	}
 	var found bool
 	var wtInfo Info
 	for _, wt := range worktrees {
 		relPath := strings.TrimPrefix(wt.Path, c.searchRoot+string(filepath.Separator))
-		if wt.Path == targetPath || relPath == name {
+		if samePath(wt.Path, targetPath) || relPath == name {
 			wtInfo = wt
 			targetPath = wt.Path
 			found = true
@@ -646,8 +658,7 @@ func (c *Client) resolveRemoveTarget(name string, worktrees []Info) (removeConte
 		return removeContext{}, fmt.Errorf("cannot remove protected worktree '%s' (%s)", name, pp.Reason(wtInfo))
 	}
 
-	rel, err := filepath.Rel(c.searchRoot, wtInfo.Path)
-	if err != nil || strings.HasPrefix(rel, "..") {
+	if !pathWithin(c.searchRoot, wtInfo.Path) {
 		return removeContext{}, fmt.Errorf("worktree '%s' is external (not managed by gmc wt)", name)
 	}
 
@@ -670,6 +681,32 @@ func (c *Client) prepareRemove(name string) (removeContext, error) {
 	}
 
 	return c.resolveRemoveTarget(name, worktrees)
+}
+
+func samePath(a, b string) bool {
+	if filepath.Clean(a) == filepath.Clean(b) {
+		return true
+	}
+	aa, aerr := filepath.EvalSymlinks(a)
+	bb, berr := filepath.EvalSymlinks(b)
+	return aerr == nil && berr == nil && filepath.Clean(aa) == filepath.Clean(bb)
+}
+
+func pathWithin(root, path string) bool {
+	if rel, err := filepath.Rel(root, path); err == nil && isLocalRel(rel) {
+		return true
+	}
+	rr, rerr := filepath.EvalSymlinks(root)
+	pp, perr := filepath.EvalSymlinks(path)
+	if rerr != nil || perr != nil {
+		return false
+	}
+	rel, err := filepath.Rel(rr, pp)
+	return err == nil && isLocalRel(rel)
+}
+
+func isLocalRel(rel string) bool {
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // GetWorktreeStatus returns the git status of a worktree with detailed file counts
