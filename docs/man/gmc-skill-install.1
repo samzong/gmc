@@ -2,20 +2,36 @@
 .TH "GMC" "1" "Jun 2026" "gmc" "GMC Manual"
 
 .SH NAME
-gmc-wt-share-list - List configured shared resources
+gmc-skill-install - Install bundled Agent Skill
 
 
 .SH SYNOPSIS
-\fBgmc wt share list [flags]\fP
+\fBgmc skill install [flags]\fP
 
 
 .SH DESCRIPTION
-List configured shared resources
+Install bundled Agent Skill
 
 
 .SH OPTIONS
+\fB--agent\fP=[]
+	Target agent id. Repeat for multiple agents. Use '*' for all.
+
+.PP
+\fB--dry-run\fP[=false]
+	Show install plan without writing
+
+.PP
 \fB-h\fP, \fB--help\fP[=false]
-	help for list
+	help for install
+
+.PP
+\fB--scope\fP=""
+	Install scope: user or project
+
+.PP
+\fB-y\fP, \fB--yes\fP[=false]
+	Skip prompts and accept policy-selected targets
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -32,7 +48,7 @@ List configured shared resources
 
 
 .SH SEE ALSO
-\fBgmc-wt-share(1)\fP
+\fBgmc-skill(1)\fP
 
 
 .SH HISTORY
