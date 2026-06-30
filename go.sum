@@ -83,6 +83,10 @@ github.com/russross/blackfriday/v2 v2.1.0 h1:JIOH55/0cWyOuilr9/qlrm0BSXldqnqwMsf
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/sagikazarmark/locafero v0.12.0 h1:/NQhBAkUb4+fH1jivKHWusDYFjMOOKU88eegjfxfHb4=
 github.com/sagikazarmark/locafero v0.12.0/go.mod h1:sZh36u/YSZ918v0Io+U9ogLYQJ9tLLBmM4eneO6WwsI=
+github.com/samzong/kitup/go v0.1.1 h1:U4KAM11sP7Wu0kWCepVTl9EvZl1C+6Pad0TSAD/aPfg=
+github.com/samzong/kitup/go v0.1.1/go.mod h1:HKrHTi2NJhUEYei3+0ngMKSS4Abpp2JE2L34Rq0eiDY=
+github.com/samzong/kitup/go-cobra v0.1.1 h1:uuZAouJFBNJOD91Izmm2Jq55OKz1m1dDydnSd+rFhJY=
+github.com/samzong/kitup/go-cobra v0.1.1/go.mod h1:Kwpg8hNw0feW8fuiE9yPy4Q0mHdgpH54+1wtnZDO/po=
 github.com/sashabaranov/go-openai v1.41.2 h1:vfPRBZNMpnqu8ELsclWcAvF19lDNgh1t6TVfFFOPiSM=
 github.com/sashabaranov/go-openai v1.41.2/go.mod h1:lj5b/K+zjTSFxVLijLSTDZuP7adOgerWeFyZLUhAKRg=
 github.com/spf13/afero v1.15.0 h1:b/YBCLWAJdFWJTN9cLhiXXcD7mzKn9Dm86dNnfyQw1I=
