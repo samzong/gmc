@@ -1,5 +1,5 @@
 import { Provider } from '@/components/provider';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './global.css';
 
 export const metadata: Metadata = {
@@ -8,7 +8,14 @@ export const metadata: Metadata = {
     template: '%s | gmc',
   },
   description: 'Parallel worktrees for parallel AI agents.',
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://gmc.pages.dev'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://gmc.samzong.me'),
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#00c7f2' },
+    { media: '(prefers-color-scheme: dark)', color: '#020617' },
+  ],
 };
 
 export default function Layout({ children }: LayoutProps<'/'>) {
