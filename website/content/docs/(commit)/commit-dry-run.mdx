@@ -1,0 +1,23 @@
+---
+title: Dry Run
+description: Generate a commit message without committing.
+---
+
+Use `--dry-run` to preview the generated commit message.
+
+## Usage
+
+```bash
+git add .
+gmc --dry-run
+```
+
+## When to use it
+
+- Review the message before deciding whether to commit.
+- Debug LLM config without changing Git history.
+- Generate a suggested message for another commit tool.
+
+## Notes
+
+`--dry-run` still needs a staged diff unless you combine it with `-a`.

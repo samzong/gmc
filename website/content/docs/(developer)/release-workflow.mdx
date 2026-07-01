@@ -1,0 +1,29 @@
+---
+title: Release Workflow
+description: Release gmc with tags and GoReleaser.
+---
+
+`gmc` uses tag-driven releases.
+
+## Validate locally
+
+```bash
+make check
+make build
+goreleaser check
+goreleaser release --snapshot --clean
+```
+
+## Create a tag
+
+```bash
+gmc tag
+```
+
+## Homebrew
+
+The release workflow dispatches the Homebrew tap update after a successful tagged release.
+
+## Notes
+
+Keep release changes focused. Generated changelog and Homebrew updates are handled by release automation.

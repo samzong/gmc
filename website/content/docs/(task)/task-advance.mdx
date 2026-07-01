@@ -1,0 +1,22 @@
+---
+title: Advance
+description: Move a task to the next workflow node.
+---
+
+`gmc task advance` moves a task through the workflow.
+
+## Usage
+
+```bash
+gmc task advance <task-id>
+```
+
+## Jump to a node
+
+```bash
+gmc task advance <task-id> --to review
+```
+
+## Notes
+
+Use the default advance path for normal plan -> code -> review -> ship progress. Use `--to` when the workflow needs an explicit jump.

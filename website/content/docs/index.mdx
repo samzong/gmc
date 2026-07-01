@@ -1,0 +1,34 @@
+---
+title: Introduction
+description: Parallel worktrees for parallel AI agents.
+---
+
+`gmc` is a Go CLI for parallel AI-agent development.
+
+Its primary surface is worktree management: clone once, fan out sibling worktrees, share heavy or sensitive local resources across them, and promote the branch that wins.
+
+Its secondary surface is commit help: generate a Conventional Commit message from the staged diff and commit it after confirmation.
+
+## Install
+
+```bash
+brew install samzong/tap/gmc
+```
+
+## Main areas
+
+- Get Started: install, initialize config, shell completion, and bundled Skill setup.
+- Worktree: clone, fan out, share, sync, promote, and clean isolated worktrees.
+- Task: run local plan -> code -> review -> ship workflows.
+- Commit: generate Conventional Commit messages from staged diffs.
+- Developer: version, tags, and release workflow notes.
+- Troubleshooting: common setup and cleanup failures.
+
+## Next
+
+<Cards>
+  <Card title="Install gmc" href="/docs/installation" />
+  <Card title="Worktree commands" href="/docs/worktree" />
+  <Card title="Task workflow" href="/docs/task" />
+  <Card title="Commit workflow" href="/docs/commit" />
+</Cards>

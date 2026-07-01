@@ -1,0 +1,35 @@
+---
+title: Add Worktree
+description: Create named worktrees with new branches.
+---
+
+`gmc wt add` creates one or more sibling worktrees.
+
+## Usage
+
+```bash
+gmc wt add feature-login
+gmc wt add feat-a feat-b feat-c
+```
+
+## Base branch
+
+```bash
+gmc wt add hotfix-bug123 -b release
+```
+
+## Sync first
+
+```bash
+gmc wt add feature-login --sync
+```
+
+## PR shortcut
+
+```bash
+gmc wt add --pr 1065
+```
+
+## Notes
+
+Use clear names. The worktree name normally becomes the branch name.

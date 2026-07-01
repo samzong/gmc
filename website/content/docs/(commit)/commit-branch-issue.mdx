@@ -1,0 +1,26 @@
+---
+title: Branch and Issue Flags
+description: Add branch creation and issue references to the commit flow.
+---
+
+`gmc` can create a branch name and attach an issue reference while committing.
+
+## Branch
+
+```bash
+gmc --branch "fix worktree prune race"
+```
+
+This generates a branch name from the description, switches to it, then continues the commit workflow.
+
+## Issue
+
+```bash
+gmc --issue 123
+```
+
+This appends the issue reference to the generated subject.
+
+## Notes
+
+Use `--branch` before work starts when you want the branch name to match the change. Use `--issue` when the project tracks work in GitHub issues or another issue tracker.

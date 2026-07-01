@@ -1,0 +1,26 @@
+---
+title: Tag
+description: Suggest and create a semantic version tag.
+---
+
+`gmc tag` analyzes commits since the latest tag and suggests the next semantic version.
+
+## Usage
+
+```bash
+gmc tag
+```
+
+## Auto-confirm
+
+```bash
+gmc tag -y
+```
+
+## When to use it
+
+Use it during release prep after the intended release changes are merged.
+
+## Notes
+
+Tags matching `v*` trigger the release workflow.

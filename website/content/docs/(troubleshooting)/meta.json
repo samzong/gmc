@@ -1,0 +1,12 @@
+{
+  "title": "Troubleshooting",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": [
+    "troubleshooting",
+    "shell-alias-conflict",
+    "config-issues",
+    "llm-api-failures",
+    "worktree-cleanup"
+  ]
+}

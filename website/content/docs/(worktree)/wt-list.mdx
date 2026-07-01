@@ -1,0 +1,29 @@
+---
+title: List
+description: List worktrees in the repo family.
+---
+
+`gmc wt list` shows the worktrees that belong to the current repo family.
+
+## Usage
+
+```bash
+gmc wt list
+gmc wt ls
+```
+
+## PR status
+
+```bash
+gmc wt list --pr
+```
+
+This checks review request status when `gh` or `glab` is available.
+
+## Diff base
+
+```bash
+gmc wt list --diff-base main
+```
+
+Use this when the default base branch is not the right comparison point.

@@ -1,0 +1,26 @@
+---
+title: Switch
+description: Interactively switch to another worktree.
+---
+
+`gmc wt switch` opens an interactive picker for sibling worktrees.
+
+## Usage
+
+```bash
+gmc wt switch
+```
+
+## Shell integration
+
+For the command to change your shell directory, load the shell integration first:
+
+```bash
+eval "$(gmc wt init zsh)"
+```
+
+Use `bash` or `fish` instead of `zsh` for those shells.
+
+## Notes
+
+Without shell integration, a child process cannot permanently change the parent shell directory.

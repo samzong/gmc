@@ -1,0 +1,31 @@
+---
+title: Start
+description: Create a task worktree and start an agent.
+---
+
+`gmc task start` creates a worktree for a task and starts the selected agent.
+
+## Usage
+
+```bash
+gmc task start t-20260614-120000-a1b2
+```
+
+## Agent
+
+```bash
+gmc task start <task-id> --agent codex
+gmc task start <task-id> --agent opencode
+```
+
+Supported agent commands include `codex`, `grok`, `cursor-agent`, and `opencode`.
+
+## Base and model
+
+```bash
+gmc task start <task-id> --base main --model gpt-5
+```
+
+## Notes
+
+Use a base branch when the task should not start from the current default.

@@ -1,0 +1,28 @@
+---
+title: Completion
+description: Generate shell completion scripts.
+---
+
+`gmc completion` prints shell completion code.
+
+## Usage
+
+```bash
+gmc completion zsh
+gmc completion bash
+gmc completion fish
+gmc completion powershell
+```
+
+## zsh
+
+```bash
+mkdir -p ~/.zsh/completions
+gmc completion zsh > ~/.zsh/completions/_gmc
+```
+
+Make sure your shell loads that completions directory.
+
+## Notes
+
+Completion helps most with nested command groups such as `gmc wt share` and `gmc task`.

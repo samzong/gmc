@@ -1,0 +1,34 @@
+---
+title: Overview
+description: Manage local AI coding tasks.
+---
+
+`gmc task` manages local AI coding tasks backed by a repo-family ledger.
+
+The default workflow is plan -> code -> review -> ship.
+
+## Minimal flow
+
+```bash
+gmc task add "Fix worktree cleanup"
+gmc task start <task-id>
+gmc task advance <task-id>
+gmc task show <task-id>
+```
+
+## Workflow config
+
+Workflow nodes come from:
+
+```text
+~/.config/gmc/workflow.yaml
+~/.gmc/workflow.yaml
+```
+
+If no user workflow exists, `gmc` uses the embedded default workflow.
+
+## Related
+
+- `gmc task webui`
+- `gmc task attach`
+- `gmc wt dup --task`

@@ -1,0 +1,21 @@
+{
+  "title": "Worktree",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": [
+    "worktree",
+    "wt-clone",
+    "wt-init",
+    "wt-share",
+    "wt-hook",
+    "wt-sync",
+    "wt-add",
+    "wt-dup",
+    "wt-pr-review",
+    "wt-list",
+    "wt-switch",
+    "wt-promote",
+    "wt-remove",
+    "wt-prune"
+  ]
+}

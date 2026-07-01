@@ -1,0 +1,30 @@
+---
+title: Config Issues
+description: Fix missing or unexpected gmc configuration.
+---
+
+Most commit workflow failures start with missing model or API config.
+
+## Inspect config
+
+```bash
+gmc config get
+gmc config get -o json
+```
+
+## Reconfigure
+
+```bash
+gmc init
+gmc config set model gpt-4.1-mini
+gmc config set apibase https://api.openai.com/v1
+gmc config set apikey
+```
+
+## Resolution order
+
+`gmc` checks `--config`, `GMC_CONFIG`, XDG config, legacy `~/.gmc.yaml`, then project `.gmc.yaml`.
+
+## Notes
+
+Project config can override global config. Check the repo root when behavior changes only inside one project.

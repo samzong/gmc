@@ -1,0 +1,14 @@
+{
+  "title": "Commit",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": [
+    "commit",
+    "commit-basic-flow",
+    "commit-stage-and-commit",
+    "commit-dry-run",
+    "commit-branch-issue",
+    "prompt-template",
+    "commit-json-output"
+  ]
+}

@@ -1,0 +1,36 @@
+---
+title: Share Resources
+description: Share local files and directories across worktrees.
+---
+
+`gmc wt share` manages resources that should be synced to every worktree.
+
+## Add resources
+
+```bash
+gmc wt share add .env
+gmc wt share add node_modules --strategy link
+```
+
+`copy` is the default strategy. Use it for secrets and local config. Use `link` for large identical directories.
+
+## Discover
+
+```bash
+gmc wt share discover
+gmc wt share discover --auto
+```
+
+Discovery previews likely shared resources unless `--auto` is used.
+
+## List, remove, sync
+
+```bash
+gmc wt share list
+gmc wt share remove .env
+gmc wt share sync
+```
+
+## Notes
+
+The shared config lives in the repo's Git common directory, such as `.git/gmc-share.yml` or `.bare/gmc-share.yml`.

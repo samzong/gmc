@@ -1,0 +1,6 @@
+{
+  "title": "Get Started",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": ["get-started", "installation", "init", "configuration", "skill", "completion"]
+}

@@ -1,0 +1,30 @@
+---
+title: Duplicate
+description: Fan out candidate worktrees for parallel agents.
+---
+
+`gmc wt dup` creates multiple temporary candidate worktrees.
+
+## Usage
+
+```bash
+gmc wt dup 3
+```
+
+## Base branch
+
+```bash
+gmc wt dup 3 -b main
+```
+
+## Task context
+
+```bash
+gmc wt dup 3 --task todo.md
+```
+
+`--task` can be repeated to copy more context files into each candidate.
+
+## Notes
+
+Candidate names use `.dup-N`. Promote the one you want to keep with `gmc wt promote`.

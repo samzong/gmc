@@ -1,0 +1,25 @@
+---
+title: Basic Commit Flow
+description: Generate a commit message from the staged diff.
+---
+
+Use the root `gmc` command after staging the files you want to commit.
+
+## Usage
+
+```bash
+git add cmd/root.go internal/workflow
+gmc
+```
+
+## What happens
+
+1. `gmc` reads the staged diff.
+2. It builds a prompt from the diff, role, and optional context.
+3. It asks the configured LLM for a Conventional Commit message.
+4. It shows the message for confirmation.
+5. It creates the commit.
+
+## Notes
+
+The staged diff is the contract. If a file is not staged, it is not part of the commit message.

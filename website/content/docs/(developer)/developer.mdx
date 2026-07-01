@@ -1,0 +1,26 @@
+---
+title: Overview
+description: Version, tag, and release-oriented commands.
+---
+
+Developer docs cover commands used by maintainers and automation.
+
+## Commands
+
+- `gmc version`
+- `gmc tag`
+
+## Release workflow
+
+`gmc` releases are tag-driven. Tags that match `v*` trigger the GoReleaser workflow.
+
+Before release work, run the normal repo checks:
+
+```bash
+make check
+make build
+```
+
+## Notes
+
+This section is for operating the `gmc` project itself, not for using `gmc` inside another repo.

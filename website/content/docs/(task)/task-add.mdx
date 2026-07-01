@@ -1,0 +1,23 @@
+---
+title: Add
+description: Add a local AI coding task.
+---
+
+`gmc task add` records a new task in the local task ledger.
+
+## Usage
+
+```bash
+gmc task add "Fix the release workflow"
+gmc task add 76
+```
+
+## From a file
+
+```bash
+gmc task add --file todo.md
+```
+
+## Notes
+
+The task source can be an issue number, a todo file, or plain text. Keep it specific enough for an agent to start work without guessing.

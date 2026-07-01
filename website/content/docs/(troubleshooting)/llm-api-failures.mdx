@@ -1,0 +1,35 @@
+---
+title: LLM/API Failures
+description: Debug commit message generation failures.
+---
+
+The commit workflow needs a reachable OpenAI-compatible API.
+
+## Check config
+
+```bash
+gmc config get
+```
+
+Verify:
+
+- `api_base`
+- `api_key`
+- `model`
+
+## Increase timeout
+
+```bash
+gmc --timeout 60
+```
+
+## Dry run
+
+```bash
+git add .
+gmc --dry-run
+```
+
+## Notes
+
+Use `--debug` only when you need more local diagnostic output. Do not paste secrets from config or logs into bug reports.

@@ -1,0 +1,49 @@
+---
+title: Configuration
+description: Configure model, API, role, and prompt template.
+---
+
+Configuration controls the LLM used by the commit workflow.
+
+## Setup
+
+```bash
+gmc init
+```
+
+Or set values directly:
+
+```bash
+gmc config set apibase https://api.openai.com/v1
+gmc config set apikey
+gmc config set model gpt-4.1-mini
+gmc config set role "Backend Developer"
+```
+
+## Read config
+
+```bash
+gmc config get
+gmc config get -o json
+```
+
+## Resolution order
+
+`gmc` resolves config in this order:
+
+1. `--config`
+2. `GMC_CONFIG`
+3. `$XDG_CONFIG_HOME/gmc/config.yaml`
+4. `~/.gmc.yaml`
+5. project `.gmc.yaml`
+
+## Keys
+
+- `role`
+- `model`
+- `api_key`
+- `api_base`
+- `prompt_template`
+- `enable_emoji`
+
+`prompt_template` points to a YAML template file, or `default` for the built-in template.

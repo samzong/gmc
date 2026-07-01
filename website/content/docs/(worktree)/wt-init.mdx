@@ -1,0 +1,30 @@
+---
+title: Shell Integration
+description: Generate shell integration for worktree switching.
+---
+
+`gmc wt init` prints shell integration code.
+
+## Usage
+
+```bash
+gmc wt init bash
+gmc wt init zsh
+gmc wt init fish
+```
+
+## Load it
+
+```bash
+eval "$(gmc wt init zsh)"
+```
+
+For fish:
+
+```fish
+gmc wt init fish | source
+```
+
+## Notes
+
+This is different from `gmc completion`. Completion completes commands; worktree shell integration lets `gmc wt switch` change directories.

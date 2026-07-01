@@ -1,0 +1,36 @@
+---
+title: Remove
+description: Remove worktrees and optionally their branches.
+---
+
+`gmc wt remove` deletes one or more worktrees.
+
+## Usage
+
+```bash
+gmc wt remove feature-login
+gmc wt rm feat-a feat-b
+```
+
+## Delete branch too
+
+```bash
+gmc wt rm feature-login -D
+```
+
+## Dirty worktrees
+
+```bash
+gmc wt rm feature-login --dry-run
+gmc wt rm feature-login -f
+```
+
+## Bulk cleanup
+
+```bash
+gmc wt rm --all -D
+```
+
+## Notes
+
+Use `--dry-run` before destructive cleanup.

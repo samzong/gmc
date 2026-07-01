@@ -1,0 +1,28 @@
+---
+title: Sync Base
+description: Refresh the base branch used for worktrees.
+---
+
+`gmc wt sync` updates the base branch used by worktree commands.
+
+## Usage
+
+```bash
+gmc wt sync
+```
+
+## Base branch
+
+```bash
+gmc wt sync -b main
+```
+
+## Preview
+
+```bash
+gmc wt sync --dry-run
+```
+
+## Notes
+
+Run sync before creating new worktrees when you need candidates based on the latest base branch.

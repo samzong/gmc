@@ -1,0 +1,12 @@
+{
+  "title": "gmc",
+  "pages": [
+    "index",
+    "(get-started)",
+    "(worktree)",
+    "(task)",
+    "(commit)",
+    "(developer)",
+    "(troubleshooting)"
+  ]
+}

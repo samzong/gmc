@@ -1,0 +1,6 @@
+{
+  "title": "Developer",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": ["developer", "version", "tag", "release-workflow"]
+}

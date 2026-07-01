@@ -1,0 +1,29 @@
+---
+title: Hooks
+description: Run commands after worktree creation.
+---
+
+`gmc wt hook` manages commands that run after shared resources are synced into a new worktree.
+
+## Add a hook
+
+```bash
+gmc wt hook add "pnpm install"
+gmc wt hook add "pnpm install && pnpm build" --desc "Install dependencies"
+```
+
+## List hooks
+
+```bash
+gmc wt hook
+```
+
+## Remove a hook
+
+```bash
+gmc wt hook remove 1
+```
+
+## Notes
+
+Hooks are useful for dependency installation, generated files, or repo-local setup that every new worktree needs.

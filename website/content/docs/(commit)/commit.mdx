@@ -1,0 +1,31 @@
+---
+title: Overview
+description: Generate Conventional Commit messages from staged diffs.
+---
+
+The root `gmc` command is the commit workflow.
+
+It reads the staged diff, asks the configured LLM for a Conventional Commit message, shows the result, and commits after confirmation.
+
+## Minimal flow
+
+```bash
+git add .
+gmc
+```
+
+## Main options
+
+- `--dry-run` generates a message without committing.
+- `-a, --all` stages files before committing.
+- `-y, --yes` accepts the generated message without prompting.
+- `--branch` creates and switches to a generated branch name.
+- `--issue` appends an issue reference to the subject.
+- `-o json` returns machine-readable output.
+
+## Related pages
+
+- Basic commit flow
+- Stage and commit
+- Prompt template
+- JSON output

@@ -1,0 +1,24 @@
+---
+title: Promote
+description: Apply a candidate back into the current worktree.
+---
+
+`gmc wt promote` applies a candidate worktree back into the current parent worktree.
+
+## Usage
+
+```bash
+gmc wt promote .dup-1
+```
+
+## Preview
+
+```bash
+gmc wt promote .dup-1 --dry-run
+```
+
+## Notes
+
+`promote` accepts the candidate only. If you need a different branch name, rename the branch from inside the worktree with Git.
+
+Promote only after checking the candidate diff.

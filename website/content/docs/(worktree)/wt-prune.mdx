@@ -1,0 +1,34 @@
+---
+title: Prune
+description: Remove worktrees whose branches are merged.
+---
+
+`gmc wt prune` removes worktrees whose branches are already merged into the base branch.
+
+## Usage
+
+```bash
+gmc wt prune
+```
+
+## Preview
+
+```bash
+gmc wt prune --dry-run
+```
+
+## PR-aware cleanup
+
+```bash
+gmc wt prune --pr-aware
+```
+
+## Base branch
+
+```bash
+gmc wt prune -b main
+```
+
+## Notes
+
+Use `--force` only when you accept losing dirty worktree changes.

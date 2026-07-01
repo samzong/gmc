@@ -1,0 +1,16 @@
+{
+  "title": "Task",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": [
+    "task",
+    "task-add",
+    "task-start",
+    "task-attach",
+    "task-show",
+    "task-list",
+    "task-advance",
+    "task-webui",
+    "task-rm"
+  ]
+}

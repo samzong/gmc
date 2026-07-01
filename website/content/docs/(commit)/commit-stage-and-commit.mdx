@@ -1,0 +1,24 @@
+---
+title: Stage and Commit
+description: Let gmc stage files before generating the message.
+---
+
+Use `-a` or `--all` when you want `gmc` to stage files before generating the message.
+
+## Stage all changes
+
+```bash
+gmc -a
+```
+
+## Stage selected paths
+
+```bash
+gmc -a cmd/root.go internal/workflow
+```
+
+## Notes
+
+Use selected paths when the working tree contains unrelated changes.
+
+`-a` changes the index before the LLM prompt is generated, so inspect your diff first when scope matters.

@@ -1,0 +1,28 @@
+---
+title: Clone
+description: Clone a repository into the gmc worktree layout.
+---
+
+`gmc wt clone` creates the bare repository plus sibling worktree layout used by the rest of `gmc wt`.
+
+## Usage
+
+```bash
+gmc wt clone https://github.com/user/repo.git
+```
+
+## Fork workflow
+
+```bash
+gmc wt clone https://github.com/me/fork.git --upstream https://github.com/upstream/repo.git
+```
+
+## Custom name
+
+```bash
+gmc wt clone https://github.com/user/repo.git --name my-project
+```
+
+## Notes
+
+Use this as the starting point for new repos. In an existing clone, use `gmc wt add` or `gmc wt dup`.

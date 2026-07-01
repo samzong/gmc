@@ -1,0 +1,30 @@
+---
+title: Prompt Template
+description: Customize the LLM prompt used for commit messages.
+---
+
+`prompt_template` points to a YAML template file for commit-message generation.
+
+## Configure
+
+```bash
+gmc config set prompt_template /path/to/template.yaml
+```
+
+Use `default` to return to the built-in template:
+
+```bash
+gmc config set prompt_template default
+```
+
+## Variables
+
+Templates can use:
+
+- `{{.Role}}`
+- `{{.Files}}`
+- `{{.Diff}}`
+
+## Notes
+
+Keep templates short. The diff is already truncated by `gmc`, so the template should guide style, not restate the whole workflow.

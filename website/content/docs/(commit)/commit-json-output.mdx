@@ -1,0 +1,23 @@
+---
+title: JSON Output
+description: Return machine-readable commit workflow output.
+---
+
+Use `-o json` when another tool or agent needs structured output.
+
+## Usage
+
+```bash
+gmc --dry-run -o json
+gmc -a -y -o json
+```
+
+## When to use it
+
+- Automation
+- Agent workflows
+- Scripts that need to parse the generated message
+
+## Notes
+
+`-o json` is the current output flag. The older `gmc config get --json` form is deprecated; prefer `gmc config get -o json`.

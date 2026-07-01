@@ -1,0 +1,30 @@
+---
+title: Overview
+description: Manage isolated worktrees for parallel agents.
+---
+
+`gmc wt` is the primary command group.
+
+It uses a bare repository plus sibling worktrees so multiple AI agents can work on the same repo without fighting over one working tree.
+
+## Common flow
+
+```bash
+gmc wt clone https://github.com/user/repo.git
+cd repo
+gmc wt dup 3
+gmc wt list
+```
+
+## Core commands
+
+- `gmc wt clone` creates the `.bare` layout.
+- `gmc wt add` creates named worktrees.
+- `gmc wt dup` fans out candidate worktrees.
+- `gmc wt share` syncs local resources.
+- `gmc wt promote` applies the winning candidate back.
+- `gmc wt prune` removes merged worktrees.
+
+## Notes
+
+All worktree operations live under `gmc wt`. There is no top-level `gmc add` or `gmc clone`.

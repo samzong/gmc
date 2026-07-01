@@ -1,0 +1,36 @@
+---
+title: Worktree Cleanup
+description: Safely remove stale or merged worktrees.
+---
+
+Use dry runs before deleting worktrees.
+
+## List state
+
+```bash
+gmc wt list
+```
+
+## Preview removal
+
+```bash
+gmc wt remove feature-login --dry-run
+gmc wt prune --dry-run
+```
+
+## Remove merged branches
+
+```bash
+gmc wt prune
+```
+
+## Force dirty removal
+
+```bash
+gmc wt remove feature-login -f
+gmc wt prune -f
+```
+
+## Notes
+
+Force cleanup can discard dirty worktree state. Inspect the worktree before using it.
