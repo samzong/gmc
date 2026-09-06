@@ -2,7 +2,7 @@
 .TH "GMC" "1" "Jun 2026" "gmc" "GMC Manual"
 
 .SH NAME
-gmc-wt-hook - Manage hooks executed after worktree creation
+gmc-wt-hook - Manage hooks after worktree creation
 
 
 .SH SYNOPSIS
@@ -10,18 +10,19 @@ gmc-wt-hook - Manage hooks executed after worktree creation
 
 
 .SH DESCRIPTION
-Manage hooks that are executed after shared resources are synced to a new worktree.
+Manage commands run in a new worktree after shared resources are prepared.
 
 .PP
-Hooks run in the target worktree directory and are useful for running
-package installation commands like 'pnpm install'.
-
-.PP
-Config file is stored at the repository's shared git common dir
-(for example .git/gmc-share.yml or .bare/gmc-share.yml).
+Global defaults live under worktree.hooks in the selected gmc config file.
+Repository hooks live alongside shared resources in gmc-share.yml. Give a hook an
+ID to replace or disable it in a repository. Hooks run in effective list order.
 
 
 .SH OPTIONS
+\fB--global\fP[=false]
+	Use defaults in the selected gmc config file
+
+.PP
 \fB-h\fP, \fB--help\fP[=false]
 	help for hook
 
@@ -40,7 +41,7 @@ Config file is stored at the repository's shared git common dir
 
 
 .SH SEE ALSO
-\fBgmc-wt(1)\fP, \fBgmc-wt-hook-add(1)\fP, \fBgmc-wt-hook-remove(1)\fP
+\fBgmc-wt(1)\fP, \fBgmc-wt-hook-add(1)\fP, \fBgmc-wt-hook-list(1)\fP, \fBgmc-wt-hook-remove(1)\fP
 
 
 .SH HISTORY

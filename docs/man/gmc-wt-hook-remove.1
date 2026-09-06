@@ -2,7 +2,7 @@
 .TH "GMC" "1" "Jun 2026" "gmc" "GMC Manual"
 
 .SH NAME
-gmc-wt-hook-remove - Remove a hook by index
+gmc-wt-hook-remove - Remove or disable a hook
 
 
 .SH SYNOPSIS
@@ -10,7 +10,11 @@ gmc-wt-hook-remove - Remove a hook by index
 
 
 .SH DESCRIPTION
-Remove a hook by index
+Remove a hook by its ID or the one-based index shown by hook list.
+
+.PP
+Repository removal also disables an inherited global hook. With --global, use
+the index from hook list --global to remove a global default.
 
 
 .SH OPTIONS
@@ -27,8 +31,19 @@ Remove a hook by index
 	Enable debug output
 
 .PP
+\fB--global\fP[=false]
+	Use defaults in the selected gmc config file
+
+.PP
 \fB-o\fP, \fB--output\fP="text"
 	Output format: text or json
+
+
+.SH EXAMPLE
+.EX
+  gmc wt hook remove install
+  gmc wt hook remove 1 --global
+.EE
 
 
 .SH SEE ALSO

@@ -1,36 +1,79 @@
 ---
 title: Share Resources
-description: Share local files and directories across worktrees.
+description: Prepare local files and directories before worktree hooks run.
 ---
 
-`gmc wt share` manages resources that should be synced to every worktree.
+`gmc wt share` prepares files and directories in each repository's worktrees. Global defaults and repository rules use the same configuration as [hooks](./wt-hook.mdx).
 
 ## Add resources
 
 ```bash
-gmc wt share add .env
-gmc wt share add node_modules --strategy link
+gmc wt share add .env --strategy copy
+gmc wt share add .local --strategy link --global
+gmc wt share add '**/.local' --strategy link --global
 ```
 
-`copy` is the default strategy. Use it for secrets and local config. Use `link` for large identical directories.
+`copy` creates an independent copy. `link` creates a symlink to a shared writable source. Without `--strategy`, the command prompts for a strategy, defaulting to `copy`.
+
+`.local` is an example of a personal rule, not a built-in default. Quote patterns to prevent shell expansion; `**` matches nested paths. Scans skip dependency, build, and `.local` directory interiors. A directory share includes its whole contents; to exclude individual children, disable the parent rule and share selected children. Global and pattern rules always use worktree-relative paths from the primary worktree: the original checkout, or the protected main-branch worktree in a bare layout. If no primary worktree is available, automatic sharing waits for one. Directories found only in other worktrees remain visible in discovery but are not propagated by these rules. Existing worktree-relative sources take precedence over legacy worktree-name prefixes; legacy prefixes remain a fallback for repository rules.
+
+Adding a repository rule syncs its effective configuration to existing worktrees. Adding a global rule only saves the default; use `share sync` in a repository to apply it to existing worktrees. New worktrees apply effective rules before running configured hooks.
+
+## Global and repository configuration
+
+Global defaults live under `worktree` in the selected gmc config file, normally `~/.config/gmc/config.yaml`. The selection follows `--config`, `GMC_CONFIG`, and the existing XDG/legacy fallback rules.
+
+```yaml
+worktree:
+  shared:
+    - path: .local
+      strategy: link
+  hooks: []
+```
+
+Repository configuration stays in the Git common directory: `.git/gmc-share.yml` or `.bare/gmc-share.yml`. It uses `shared` and `hooks` at the top level, without a `worktree` wrapper. A repository rule overrides a global rule for the same path; `disabled: true` excludes an inherited resource.
+
+```yaml
+shared:
+  - path: .local
+    disabled: true
+```
+
+Global rules share resources within each repository, not between unrelated repositories. Global edits preserve unrelated settings in the selected config file.
 
 ## Discover
 
 ```bash
 gmc wt share discover
+gmc wt share discover --output json
 gmc wt share discover --auto
 ```
 
-Discovery previews likely shared resources unless `--auto` is used.
+Discovery scans repository worktrees for nested Node.js, Python, Go, and Rust projects, configuration files, and dependency or build directories. The text preview lists directories first, largest first, followed by files and unresolved paths. Sizes use KiB, MiB, or GiB; a `+` marks a partial scan. The sharing column describes configuration, while the current-state column shows what exists in this worktree.
+
+Project manifests and lockfiles contribute to the project summary instead of appearing as resource rows. The hook summary counts enabled and disabled hooks; use `gmc wt hook list` to inspect commands. `--output json` retains the full resource list, source paths, matched rules, guidance, project details, and hooks. Neither output format changes what `--auto` applies.
+
+- `candidate`: an untracked configuration file that can be copied.
+- `configured` or `excluded`: covered by an existing rule or exclusion, including parent-directory rules.
+- `managed`: a project, dependency environment, or build directory with ecosystem-specific guidance.
+- `tracked`: Git-tracked content that should remain in each checkout.
+
+Unconfigured `node_modules`, Python environments, and Rust build artifacts are informational results. Discovery does not automatically link them. Explicit sharing rules still apply; linking an environment lets installs in one branch change the dependencies seen by another.
+
+Sizes are logical file bytes, not exclusive physical usage or guaranteed savings. Existing hard links and copy-on-write storage can already reuse disk blocks. Incomplete size scans are marked as lower bounds.
+
+Without `--auto`, discovery only previews, including when `--dry-run=false` is passed. `--auto` adds eligible copy candidates and syncs effective rules, even if no new candidates were found. It cannot be combined with an explicit `--dry-run`. Neither discovery nor sync runs hooks or installs dependencies.
 
 ## List, remove, sync
 
 ```bash
 gmc wt share list
-gmc wt share remove .env
+gmc wt share list --global
+gmc wt share remove .local
+gmc wt share remove .local --global
 gmc wt share sync
 ```
 
-## Notes
+Lists show rule origins and disabled entries; `--output json` is also supported. Repository removal disables a matching inherited global rule. `--global` removes the default itself.
 
-The shared config lives in the repo's Git common directory, such as `.git/gmc-share.yml` or `.bare/gmc-share.yml`.
+Sync preserves existing target files, directories, and links, and reports conflicts. Adding a rule does not convert existing independent directories or reclaim their space. Removing a rule preserves existing files.

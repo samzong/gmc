@@ -2,7 +2,7 @@
 .TH "GMC" "1" "Jun 2026" "gmc" "GMC Manual"
 
 .SH NAME
-gmc-wt-share-discover - Discover files that should be shared across worktrees
+gmc-wt-share-discover - Inspect sharing and dependency hotspots
 
 
 .SH SYNOPSIS
@@ -10,20 +10,33 @@ gmc-wt-share-discover - Discover files that should be shared across worktrees
 
 
 .SH DESCRIPTION
-Scan the main worktree for files that should be shared across worktrees.
+Inspect nested projects, shared resources, and dependency directories across repository worktrees.
 
 .PP
-By default, shows a preview of discovered files (dry-run mode).
-Use --auto to actually add discovered files and sync them.
+The preview lists directories first, largest first, with readable sizes and sharing
+status. Project manifests are summarized instead of listed as resources.
+Use --output json for full source paths, matched rules, and per-resource guidance.
+
+.PP
+The preview includes effective hooks, which run after sharing only during worktree
+creation. Dependency environments and build outputs are reported with guidance;
+only safe configuration-file candidates are automatically added. Size estimates
+are apparent bytes, not exclusive disk usage or guaranteed savings.
+Sources outside the primary worktree are inspected but not propagated by global
+or pattern rules.
+
+.PP
+Use --auto to add candidates and sync effective rules to existing worktrees.
+Hooks are not executed by discover or share sync.
 
 
 .SH OPTIONS
 \fB--auto\fP[=false]
-	Actually add discovered items and sync
+	Add safe candidates and sync effective rules
 
 .PP
 \fB--dry-run\fP[=true]
-	Preview mode (default behavior)
+	Preview only (also the default without --auto)
 
 .PP
 \fB-h\fP, \fB--help\fP[=false]
@@ -41,6 +54,14 @@ Use --auto to actually add discovered files and sync them.
 .PP
 \fB-o\fP, \fB--output\fP="text"
 	Output format: text or json
+
+
+.SH EXAMPLE
+.EX
+  gmc wt share discover
+  gmc wt share discover --output json
+  gmc wt share discover --auto
+.EE
 
 
 .SH SEE ALSO

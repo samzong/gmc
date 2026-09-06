@@ -1,29 +1,57 @@
 ---
 title: Hooks
-description: Run commands after worktree creation.
+description: Run configured commands after shared resources are prepared.
 ---
 
-`gmc wt hook` manages commands that run after shared resources are synced into a new worktree.
+`gmc wt hook` manages commands run in a new worktree after [shared resources](./wt-share.mdx) are prepared. Use hooks for dependency installation, generated files, or repository setup. Adding a hook saves its configuration without executing it.
 
 ## Add a hook
 
 ```bash
-gmc wt hook add "pnpm install"
-gmc wt hook add "pnpm install && pnpm build" --desc "Install dependencies"
+gmc wt hook add "pnpm install" --id install --desc "Install dependencies"
+gmc wt hook add "test ! -f uv.lock || uv sync" --id python --global
 ```
 
-## List hooks
+Global hooks apply to every repository, so use explicit shell conditions for project-specific commands. Project discovery does not generate installation hooks or execute package managers.
+
+Give a hook a stable, nonnumeric `--id` without whitespace to replace or disable it in a repository. A repository hook with the same ID replaces the global command in its existing execution position. Additional repository hooks follow global hooks. Unnamed hooks are matched by their exact command text.
+
+## Configuration and order
+
+Global hooks live under `worktree.hooks` in the selected gmc config file, normally `~/.config/gmc/config.yaml`. `--config`, `GMC_CONFIG`, and existing XDG/legacy fallback rules select the file.
+
+```yaml
+worktree:
+  shared:
+    - path: .local
+      strategy: link
+  hooks:
+    - id: python
+      cmd: test ! -f uv.lock || uv sync
+```
+
+Repository overrides live alongside `shared` in `.git/gmc-share.yml` or `.bare/gmc-share.yml`, without the `worktree` wrapper. For example, disable an inherited hook:
+
+```yaml
+hooks:
+  - id: python
+    disabled: true
+```
+
+Enabled hooks run in effective list order in the target worktree directory. Sharing runs first, so an installation hook operates on any dependency directory that was explicitly linked. Existing resource targets are preserved; a hook may therefore encounter an existing independent directory instead of a requested link. `share discover` previews the resource and hook configuration together.
+
+`share discover` and `share sync` do not run hooks.
+
+## List and remove hooks
 
 ```bash
-gmc wt hook
+gmc wt hook list
+gmc wt hook list --global
+gmc wt hook list --output json
+gmc wt hook remove install
+gmc wt hook remove 1 --global
 ```
 
-## Remove a hook
+Running `gmc wt hook` also lists hooks. Lists show IDs, origins, disabled entries, and one-based indices. Use the index from the matching scope: effective list for repository removal, `list --global` for global removal.
 
-```bash
-gmc wt hook remove 1
-```
-
-## Notes
-
-Hooks are useful for dependency installation, generated files, or repo-local setup that every new worktree needs.
+Removing an inherited hook disables it only in the current repository. `--global` removes the default. Disabled entries remain visible in the effective list but are not executed.

@@ -2,22 +2,18 @@
 .TH "GMC" "1" "Jun 2026" "gmc" "GMC Manual"
 
 .SH NAME
-gmc-wt-share-list - List effective shared resources
+gmc-wt-hook-list - List effective hooks in execution order
 
 
 .SH SYNOPSIS
-\fBgmc wt share list [flags]\fP
+\fBgmc wt hook list [flags]\fP
 
 
 .SH DESCRIPTION
-List effective shared resources
+List effective hooks in execution order
 
 
 .SH OPTIONS
-\fB--global\fP[=false]
-	Use defaults in the selected gmc config file
-
-.PP
 \fB-h\fP, \fB--help\fP[=false]
 	help for list
 
@@ -31,12 +27,16 @@ List effective shared resources
 	Enable debug output
 
 .PP
+\fB--global\fP[=false]
+	Use defaults in the selected gmc config file
+
+.PP
 \fB-o\fP, \fB--output\fP="text"
 	Output format: text or json
 
 
 .SH SEE ALSO
-\fBgmc-wt-share(1)\fP
+\fBgmc-wt-hook(1)\fP
 
 
 .SH HISTORY

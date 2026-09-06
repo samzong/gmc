@@ -1,7 +1,10 @@
 package cmd
 
-import "github.com/samzong/gmc/internal/worktree"
+import (
+	"github.com/samzong/gmc/internal/config"
+	"github.com/samzong/gmc/internal/worktree"
+)
 
 func newWorktreeClient() *worktree.Client {
-	return worktree.NewClient(worktree.Options{Verbose: verbose})
+	return worktree.NewClient(worktree.Options{Verbose: verbose, GlobalConfigPath: config.FilePath()})
 }

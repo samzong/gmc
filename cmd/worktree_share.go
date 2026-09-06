@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,94 +20,117 @@ var (
 var wtShareCmd = &cobra.Command{
 	Use:   "share",
 	Short: "Manage shared resources for worktrees",
-	Long: `Manage shared resources that are automatically synced to all worktrees.
+	Long: `Manage resources prepared before hooks run in new worktrees.
 
-If run without arguments, it opens an interactive mode to manage resources.
-
-Config file is stored at the repository's shared git common dir
-(for example .git/gmc-share.yml or .bare/gmc-share.yml).`,
+Global defaults live under worktree in the selected gmc config file.
+Repository rules in the git common dir's gmc-share.yml override global paths.
+Run without arguments for interactive repository management.`,
+	Example: "  gmc wt share discover\n  gmc wt share list --global",
+	Args:    cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		wtClient := newWorktreeClient()
-		return runWorktreeShareInteractive(wtClient)
+		return runWorktreeShareInteractive(newWorktreeClient())
 	},
 }
 
 var wtShareAddCmd = &cobra.Command{
 	Use:   "add <path>",
 	Short: "Add or update a shared resource",
-	Long: `Add a file or directory to be shared across all worktrees.
+	Long: `Add a file or directory shared across worktrees in each repository.
 
-Strategies:
-  - copy: Copies the file/directory (good for .env files that need isolation)
-  - link: Creates a symlink (good for large model directories)`,
-	Args: cobra.ExactArgs(1),
+copy creates an independent copy; link shares a writable source through a symlink.
+Global defaults apply when creating worktrees. Adding a global rule does not sync
+existing worktrees. Run share sync in a repository to apply its effective rules.
+Global and pattern rules use the primary worktree as their source, never a
+directory found only in another linked worktree.
+
+Quote patterns such as '**/.local' to match nested project paths. Pattern scans
+skip dependency, build, and .local directory interiors. Linking dependency environments
+shares writable state across branches; prefer package-manager caches where possible.`,
+	Example: "  gmc wt share add .env --strategy copy\n" +
+		"  gmc wt share add .local --strategy link --global\n" +
+		"  gmc wt share add '**/node_modules' --strategy link --global",
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: cobra.FixedCompletions(nil, cobra.ShellCompDirectiveDefault),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		wtClient := newWorktreeClient()
-
+		client := newWorktreeClient()
 		strategy := worktree.ResourceStrategy(shareStrategy)
-		// If strategy not explicitly set via flag, ask interactively
 		if !cmd.Flags().Changed("strategy") {
 			strategy = promptStrategy(bufio.NewReader(os.Stdin))
 		}
-
-		report, err := wtClient.AddSharedResource(args[0], strategy)
-		printWorktreeReport(report)
+		global, _ := cmd.Flags().GetBool("global")
+		if global {
+			report, err := client.AddGlobalSharedResource(args[0], strategy)
+			printPreparationReport(report)
+			return err
+		}
+		report, err := client.AddSharedResource(args[0], strategy)
+		printPreparationReport(report)
 		if err != nil {
 			return err
 		}
-		return askToSyncAll(wtClient)
+		return askToSyncAll(client)
 	},
 }
 
 var wtShareRemoveCmd = &cobra.Command{
 	Use:     "remove <path>",
 	Aliases: []string{"rm"},
-	Short:   "Remove a shared resource from config",
-	Args:    cobra.ExactArgs(1),
-	RunE: func(_ *cobra.Command, args []string) error {
-		wtClient := newWorktreeClient()
-		report, err := wtClient.RemoveSharedResource(args[0])
-		printWorktreeReport(report)
-		if err != nil {
-			return err
+	Short:   "Remove or disable a shared resource",
+	Long: `Remove a repository rule and disable any inherited global rule for that path.
+Use --global to remove a global default. Existing files are preserved.`,
+	Example:           "  gmc wt share remove .local\n  gmc wt share remove .local --global",
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: completeSharedResources,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client := newWorktreeClient()
+		global, _ := cmd.Flags().GetBool("global")
+		var report worktree.Report
+		var err error
+		if global {
+			report, err = client.RemoveGlobalSharedResource(args[0])
+		} else {
+			report, err = client.RemoveSharedResource(args[0])
 		}
-		fmt.Println("Note: This does not remove the files from existing worktrees, only from the config.")
-		return nil
+		printPreparationReport(report)
+		if err == nil {
+			fmt.Fprintln(errWriter(), "Existing files are preserved.")
+		}
+		return err
 	},
 }
 
 type ShareJSON struct {
 	Path     string `json:"path"`
 	Strategy string `json:"strategy"`
+	Origin   string `json:"origin"`
+	Disabled bool   `json:"disabled"`
 }
 
 var wtShareListCmd = &cobra.Command{
-	Use:     "list",
-	Aliases: []string{"ls"},
-	Short:   "List configured shared resources",
-	RunE: func(_ *cobra.Command, _ []string) error {
-		wtClient := newWorktreeClient()
-		cfg, _, err := wtClient.LoadSharedConfig()
+	Use:               "list",
+	Aliases:           []string{"ls"},
+	Short:             "List effective shared resources",
+	Args:              cobra.NoArgs,
+	ValidArgsFunction: cobra.NoFileCompletions,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		global, _ := cmd.Flags().GetBool("global")
+		cfg, err := loadListedSharedConfig(newWorktreeClient(), global)
 		if err != nil {
 			return err
 		}
-
 		if outputFormat() == "json" {
 			items := make([]ShareJSON, len(cfg.Resources))
 			for i, res := range cfg.Resources {
-				items[i] = ShareJSON{Path: res.Path, Strategy: string(res.Strategy)}
+				items[i] = ShareJSON{Path: res.Path, Strategy: string(res.Strategy), Origin: res.Origin, Disabled: res.Disabled}
 			}
-			return printJSON(outWriter(), items)
+			return printJSON(cmd.OutOrStdout(), items)
 		}
-
 		if len(cfg.Resources) == 0 {
-			fmt.Println("No shared resources configured.")
+			fmt.Fprintln(cmd.OutOrStdout(), "No shared resources configured.")
 			return nil
 		}
-
-		fmt.Println("Shared Resources:")
 		for _, res := range cfg.Resources {
-			fmt.Printf("  - %s (%s)\n", res.Path, res.Strategy)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s (%s; %s%s)\n", res.Path, res.Strategy, res.Origin, disabledSuffix(res.Disabled))
 		}
 		return nil
 	},
@@ -114,125 +138,172 @@ var wtShareListCmd = &cobra.Command{
 
 var wtShareDiscoverCmd = &cobra.Command{
 	Use:   "discover",
-	Short: "Discover files that should be shared across worktrees",
-	Long: `Scan the main worktree for files that should be shared across worktrees.
+	Short: "Inspect sharing and dependency hotspots",
+	Long: `Inspect nested projects, shared resources, and dependency directories across repository worktrees.
 
-By default, shows a preview of discovered files (dry-run mode).
-Use --auto to actually add discovered files and sync them.`,
-	RunE: func(_ *cobra.Command, _ []string) error {
-		wtClient := newWorktreeClient()
+The preview lists directories first, largest first, with readable sizes and sharing
+status. Project manifests are summarized instead of listed as resources.
+Use --output json for full source paths, matched rules, and per-resource guidance.
 
-		results, err := wtClient.Discover(worktree.DiscoverOptions{})
-		if err != nil {
+The preview includes effective hooks, which run after sharing only during worktree
+creation. Dependency environments and build outputs are reported with guidance;
+only safe configuration-file candidates are automatically added. Size estimates
+are apparent bytes, not exclusive disk usage or guaranteed savings.
+Sources outside the primary worktree are inspected but not propagated by global
+or pattern rules.
+
+Use --auto to add candidates and sync effective rules to existing worktrees.
+Hooks are not executed by discover or share sync.`,
+	Example:           "  gmc wt share discover\n  gmc wt share discover --output json\n  gmc wt share discover --auto",
+	Args:              cobra.NoArgs,
+	ValidArgsFunction: cobra.NoFileCompletions,
+	RunE:              runWorktreeShareDiscover,
+}
+
+func runWorktreeShareDiscover(cmd *cobra.Command, _ []string) error {
+	return discoverSharedResources(cmd, newWorktreeClient())
+}
+
+func discoverSharedResources(cmd *cobra.Command, client *worktree.Client) error {
+	if discoverAuto && cmd.Flags().Changed("dry-run") {
+		return errors.New("--auto and --dry-run are mutually exclusive")
+	}
+	results, err := client.Discover(worktree.DiscoverOptions{IncludeConfigured: true})
+	if err != nil {
+		return err
+	}
+	cfg, err := client.LoadEffectiveSharedConfig()
+	if err != nil {
+		return err
+	}
+	if outputFormat() == "json" {
+		if results == nil {
+			results = []worktree.DiscoverResult{}
+		}
+		if err := printJSON(cmd.OutOrStdout(), struct {
+			Resources []worktree.DiscoverResult `json:"resources"`
+			Hooks     []HookJSON                `json:"hooks"`
+		}{results, hookJSON(cfg.Hooks)}); err != nil {
 			return err
 		}
-
-		if len(results) == 0 {
-			fmt.Println("No new shareable files discovered.")
-			return nil
-		}
-
-		var copyResults, linkResults []worktree.DiscoverResult
-		for _, r := range results {
-			switch r.Strategy {
-			case worktree.StrategyCopy:
-				copyResults = append(copyResults, r)
-			case worktree.StrategySymlink:
-				linkResults = append(linkResults, r)
-			}
-		}
-
-		fmt.Println("Discovered shareable files:")
-		fmt.Println()
-		if len(copyResults) > 0 {
-			fmt.Println("Copy strategy (isolated per worktree):")
-			for _, r := range copyResults {
-				fmt.Printf("  %s\n", r.Path)
-			}
-		}
-		if len(linkResults) > 0 {
-			fmt.Println("Link strategy (shared, saves disk):")
-			for _, r := range linkResults {
-				fmt.Printf("  %s\n", r.Path)
-			}
-		}
-
-		if !discoverAuto {
-			fmt.Printf("\n[dry-run] Would add %d copy + %d link resources\n", len(copyResults), len(linkResults))
-			return nil
-		}
-
-		fmt.Println()
-		addReport, addErr := wtClient.AddDiscoveredResources(results)
-		printWorktreeReport(addReport)
-		if addErr != nil {
-			return addErr
-		}
-
-		fmt.Println("\nSyncing to all worktrees...")
-		report, err := wtClient.SyncAllSharedResources()
-		printWorktreeReport(report)
-		if err != nil {
-			return err
-		}
-		fmt.Println("Done.")
+	} else {
+		printDiscoverOverview(cmd, results, cfg.Hooks)
+	}
+	if !discoverAuto {
 		return nil
-	},
+	}
+	report, err := client.AddDiscoveredResources(results)
+	printPreparationReport(report)
+	if err != nil {
+		return err
+	}
+	report, err = client.SyncAllSharedResources()
+	printPreparationReport(report)
+	return err
 }
 
 var wtShareSyncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Manually sync shared resources to all worktrees",
+	Short: "Sync effective resources to all worktrees",
+	Long: "Sync global and repository rules to existing worktrees without running hooks " +
+		"or replacing existing directories.",
+	Example:           "  gmc wt share sync",
+	Args:              cobra.NoArgs,
+	ValidArgsFunction: cobra.NoFileCompletions,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		wtClient := newWorktreeClient()
-		report, err := wtClient.SyncAllSharedResources()
-		printWorktreeReport(report)
+		report, err := newWorktreeClient().SyncAllSharedResources()
+		printPreparationReport(report)
 		return err
 	},
 }
 
+func loadListedSharedConfig(client *worktree.Client, global bool) (*worktree.SharedConfig, error) {
+	if global {
+		cfg, _, err := client.LoadGlobalSharedConfig()
+		if err == nil {
+			for i := range cfg.Resources {
+				cfg.Resources[i].Origin = "global"
+			}
+			for i := range cfg.Hooks {
+				cfg.Hooks[i].Origin = "global"
+			}
+		}
+		return cfg, err
+	}
+	return client.LoadEffectiveSharedConfig()
+}
+
+func printPreparationReport(report worktree.Report) {
+	for _, event := range report.Events {
+		fmt.Fprintln(errWriter(), event.Message)
+	}
+}
+
+func disabledSuffix(disabled bool) string {
+	if disabled {
+		return "; disabled"
+	}
+	return ""
+}
+
+func completeSharedResources(cmd *cobra.Command, args []string, prefix string) ([]string, cobra.ShellCompDirective) {
+	if len(args) != 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	global, _ := cmd.Flags().GetBool("global")
+	cfg, err := loadListedSharedConfig(newWorktreeClient(), global)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+	var paths []string
+	for _, res := range cfg.Resources {
+		if strings.HasPrefix(res.Path, prefix) {
+			paths = append(paths, res.Path)
+		}
+	}
+	return paths, cobra.ShellCompDirectiveNoFileComp
+}
+
 func init() {
 	wtCmd.AddCommand(wtShareCmd)
-	wtShareCmd.AddCommand(wtShareAddCmd)
-	wtShareCmd.AddCommand(wtShareRemoveCmd)
-	wtShareCmd.AddCommand(wtShareListCmd)
-	wtShareCmd.AddCommand(wtShareSyncCmd)
-	wtShareCmd.AddCommand(wtShareDiscoverCmd)
-
+	wtShareCmd.AddCommand(wtShareAddCmd, wtShareRemoveCmd, wtShareListCmd, wtShareSyncCmd, wtShareDiscoverCmd)
+	for _, command := range []*cobra.Command{wtShareAddCmd, wtShareRemoveCmd, wtShareListCmd} {
+		command.Flags().Bool("global", false, "Use defaults in the selected gmc config file")
+	}
 	wtShareAddCmd.Flags().StringVarP(&shareStrategy, "strategy", "s", "copy", "Sync strategy: copy or link")
 	_ = wtShareAddCmd.RegisterFlagCompletionFunc("strategy", completeStrategies)
-
-	wtShareDiscoverCmd.Flags().BoolVar(&discoverAuto, "auto", false, "Actually add discovered items and sync")
-	wtShareDiscoverCmd.Flags().Bool("dry-run", true, "Preview mode (default behavior)")
+	wtShareDiscoverCmd.Flags().BoolVar(&discoverAuto, "auto", false, "Add safe candidates and sync effective rules")
+	wtShareDiscoverCmd.Flags().Bool("dry-run", true, "Preview only (also the default without --auto)")
+	wtShareDiscoverCmd.MarkFlagsMutuallyExclusive("auto", "dry-run")
 }
 
 func runWorktreeShareInteractive(c *worktree.Client) error {
 	reader := bufio.NewReader(os.Stdin)
 
 	for {
-		// Clear screen strictly speaking is not easy cross-platform without libs, just print newlines
-		fmt.Println("--- Manage Shared Resources ---")
+		fmt.Fprintln(errWriter(), "--- Manage Shared Resources ---")
 
-		cfg, _, err := c.LoadSharedConfig()
+		cfg, err := c.LoadEffectiveSharedConfig()
 		if err != nil {
 			return err
 		}
 
 		if len(cfg.Resources) > 0 {
-			fmt.Println("Current Resources:")
+			fmt.Fprintln(errWriter(), "Current Resources:")
 			for i, res := range cfg.Resources {
-				fmt.Printf("  %d. %s (%s)\n", i+1, res.Path, res.Strategy)
+				fmt.Fprintf(errWriter(), "  %d. %s (%s; %s%s)\n",
+					i+1, res.Path, res.Strategy, res.Origin, disabledSuffix(res.Disabled))
 			}
 		} else {
-			fmt.Println("No shared resources configured.")
+			fmt.Fprintln(errWriter(), "No shared resources configured.")
 		}
-		fmt.Println()
-		fmt.Println("Options:")
-		fmt.Println("  a. Add new resource")
-		fmt.Println("  r. Remove resource")
-		fmt.Println("  s. Sync all worktrees now")
-		fmt.Println("  q. Quit")
-		fmt.Print("\nSelect option: ")
+		fmt.Fprintln(errWriter())
+		fmt.Fprintln(errWriter(), "Options:")
+		fmt.Fprintln(errWriter(), "  a. Add new resource")
+		fmt.Fprintln(errWriter(), "  r. Remove resource")
+		fmt.Fprintln(errWriter(), "  s. Sync all worktrees now")
+		fmt.Fprintln(errWriter(), "  q. Quit")
+		fmt.Fprint(errWriter(), "\nSelect option: ")
 
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(strings.ToLower(input))
@@ -244,17 +315,17 @@ func runWorktreeShareInteractive(c *worktree.Client) error {
 			promptRemoveResource(c, reader, cfg)
 		case "s":
 			report, err := c.SyncAllSharedResources()
-			printWorktreeReport(report)
+			printPreparationReport(report)
 			if err != nil {
-				fmt.Printf("Error syncing: %v\n", err)
+				fmt.Fprintf(errWriter(), "Error syncing: %v\n", err)
 			} else {
-				fmt.Println("Sync complete!")
+				fmt.Fprintln(errWriter(), "Sync complete!")
 			}
 			promptContinue(reader)
 		case "q":
 			return nil
 		default:
-			fmt.Println("Invalid option")
+			fmt.Fprintln(errWriter(), "Invalid option")
 		}
 	}
 }
@@ -262,7 +333,6 @@ func runWorktreeShareInteractive(c *worktree.Client) error {
 func promptAddResource(c *worktree.Client, reader *bufio.Reader) {
 	root, _ := c.GetWorktreeRoot()
 
-	// Detect current worktree
 	cwd, _ := os.Getwd()
 	currentWorktree := ""
 	if strings.HasPrefix(cwd, root) {
@@ -273,11 +343,11 @@ func promptAddResource(c *worktree.Client, reader *bufio.Reader) {
 		}
 	}
 
-	fmt.Printf("\nProject root: %s\n", root)
+	fmt.Fprintf(errWriter(), "\nProject root: %s\n", root)
 	if currentWorktree != "" {
-		fmt.Printf("Current worktree: %s\n", currentWorktree)
+		fmt.Fprintf(errWriter(), "Current worktree: %s\n", currentWorktree)
 	}
-	fmt.Print("\nPath: ")
+	fmt.Fprint(errWriter(), "\nPath: ")
 	path, _ := reader.ReadString('\n')
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -287,20 +357,19 @@ func promptAddResource(c *worktree.Client, reader *bufio.Reader) {
 	strategy := promptStrategy(reader)
 
 	report, err := c.AddSharedResource(path, strategy)
-	printWorktreeReport(report)
+	printPreparationReport(report)
 	if err != nil {
-		fmt.Printf("Error adding resource: %v\n", err)
+		fmt.Fprintf(errWriter(), "Error adding resource: %v\n", err)
 	} else {
-		fmt.Println("Resource added!")
-		// Ask to sync immediately
-		fmt.Print("Sync to all existing worktrees now? [Y/n]: ")
+		fmt.Fprintln(errWriter(), "Resource added!")
+		fmt.Fprint(errWriter(), "Sync to all existing worktrees now? [Y/n]: ")
 		syncInput, _ := reader.ReadString('\n')
 		syncInput = strings.TrimSpace(strings.ToLower(syncInput))
 		if syncInput == "" || syncInput == "y" || syncInput == "yes" {
 			report, err := c.SyncAllSharedResources()
-			printWorktreeReport(report)
+			printPreparationReport(report)
 			if err != nil {
-				fmt.Printf("Warning: failed to sync: %v\n", err)
+				fmt.Fprintf(errWriter(), "Warning: failed to sync: %v\n", err)
 			}
 		}
 	}
@@ -310,30 +379,30 @@ func promptRemoveResource(c *worktree.Client, reader *bufio.Reader, cfg *worktre
 	if len(cfg.Resources) == 0 {
 		return
 	}
-	fmt.Print("\nEnter number to remove: ")
+	fmt.Fprint(errWriter(), "\nEnter number to remove: ")
 	numStr, _ := reader.ReadString('\n')
 	var num int
 	_, err := fmt.Sscanf(strings.TrimSpace(numStr), "%d", &num)
 	if err != nil || num < 1 || num > len(cfg.Resources) {
-		fmt.Println("Invalid selection")
+		fmt.Fprintln(errWriter(), "Invalid selection")
 		return
 	}
 
 	res := cfg.Resources[num-1]
 	report, err := c.RemoveSharedResource(res.Path)
-	printWorktreeReport(report)
+	printPreparationReport(report)
 	if err != nil {
-		fmt.Printf("Error removing resource: %v\n", err)
+		fmt.Fprintf(errWriter(), "Error removing resource: %v\n", err)
 	} else {
-		fmt.Printf("Resource '%s' removed from config.\n", res.Path)
+		fmt.Fprintf(errWriter(), "Resource '%s' removed from config.\n", res.Path)
 	}
 }
 
 func promptStrategy(reader *bufio.Reader) worktree.ResourceStrategy {
-	fmt.Println("\nStrategy:")
-	fmt.Println("  1. copy - each worktree gets its own copy")
-	fmt.Println("  2. link - symlink to shared source")
-	fmt.Print("\nSelect [1/2, default: 1]: ")
+	fmt.Fprintln(errWriter(), "\nStrategy:")
+	fmt.Fprintln(errWriter(), "  1. copy - each worktree gets its own copy")
+	fmt.Fprintln(errWriter(), "  2. link - symlink to shared source")
+	fmt.Fprint(errWriter(), "\nSelect [1/2, default: 1]: ")
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(strings.ToLower(input))
 	if input == "2" || input == "link" || input == "l" {
@@ -343,12 +412,12 @@ func promptStrategy(reader *bufio.Reader) worktree.ResourceStrategy {
 }
 
 func promptContinue(reader *bufio.Reader) {
-	fmt.Print("\nPress Enter to continue...")
+	fmt.Fprint(errWriter(), "\nPress Enter to continue...")
 	_, _ = reader.ReadString('\n')
 }
 
 func askToSyncAll(c *worktree.Client) error {
 	report, err := c.SyncAllSharedResources()
-	printWorktreeReport(report)
+	printPreparationReport(report)
 	return err
 }

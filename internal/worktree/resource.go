@@ -20,13 +20,19 @@ const (
 )
 
 type SharedResource struct {
-	Path     string           `yaml:"path"`
-	Strategy ResourceStrategy `yaml:"strategy"`
+	worktreeRelative bool
+	Path             string           `yaml:"path" json:"path"`
+	Strategy         ResourceStrategy `yaml:"strategy,omitempty" json:"strategy,omitempty"`
+	Disabled         bool             `yaml:"disabled,omitempty" json:"disabled,omitempty"`
+	Origin           string           `yaml:"-" json:"origin,omitempty"`
 }
 
 type Hook struct {
-	Cmd  string `yaml:"cmd"`
-	Desc string `yaml:"desc,omitempty"`
+	ID       string `yaml:"id,omitempty" json:"id,omitempty"`
+	Cmd      string `yaml:"cmd,omitempty" json:"cmd,omitempty"`
+	Desc     string `yaml:"desc,omitempty" json:"desc,omitempty"`
+	Disabled bool   `yaml:"disabled,omitempty" json:"disabled,omitempty"`
+	Origin   string `yaml:"-" json:"origin,omitempty"`
 }
 
 const (
@@ -54,7 +60,7 @@ func (c *Client) SyncSharedResources(worktreeName string) (Report, error) {
 func (c *Client) syncSharedResourcesToPath(targetRoot string, runHooks bool) (Report, error) {
 	var report Report
 
-	cfg, _, err := c.LoadSharedConfig()
+	cfg, err := c.LoadEffectiveSharedConfig()
 	if err != nil {
 		return report, err
 	}
@@ -67,7 +73,11 @@ func (c *Client) syncSharedResourcesToPath(targetRoot string, runHooks bool) (Re
 		return report, err
 	}
 
-	for _, res := range cfg.Resources {
+	resources, err := c.expandSharedResources(cfg.Resources)
+	if err != nil {
+		return report, err
+	}
+	for _, res := range resources {
 		resourceReport, err := c.syncOneResource(c.worktreeRoot, targetRoot, res)
 		report.Merge(resourceReport)
 		if err != nil {
@@ -111,9 +121,38 @@ func (c *Client) syncOneResource(repoRoot, targetRoot string, res SharedResource
 		}
 		return report, nil
 	}
+	if err != nil {
+		return report, fmt.Errorf("cannot inspect shared source %s: %w", srcPath, err)
+	}
 
-	if _, err := os.Stat(dstPath); err == nil {
+	if filepath.Clean(srcPath) == filepath.Clean(dstPath) {
 		return report, nil
+	}
+	if dstInfo, statErr := os.Lstat(dstPath); statErr == nil {
+		if res.Strategy == StrategyCopy && dstInfo.Mode().Type() == info.Mode().Type() {
+			return report, nil
+		}
+		if dstInfo.Mode()&os.ModeSymlink != 0 {
+			destination, dstErr := filepath.EvalSymlinks(dstPath)
+			source, srcErr := filepath.EvalSymlinks(srcPath)
+			if dstErr == nil && srcErr == nil && destination == source && res.Strategy == StrategySymlink {
+				return report, nil
+			}
+		}
+		report.Warn(fmt.Sprintf("Kept existing resource: %s (not replaced; requested %s from %s)",
+			dstPath, res.Strategy, srcPath))
+		return report, nil
+	} else if !os.IsNotExist(statErr) {
+		return report, fmt.Errorf("cannot inspect shared destination %s: %w", dstPath, statErr)
+	}
+	if err := ensureUntrackedResource(targetRoot, targetPath); err != nil {
+		return report, err
+	}
+	if err := ensureUntrackedResource(filepath.Dir(srcPath), filepath.Base(srcPath)); err != nil {
+		return report, err
+	}
+	if err := ensureSharedDestination(targetRoot, targetPath); err != nil {
+		return report, err
 	}
 
 	if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
@@ -198,6 +237,9 @@ func (c *Client) LoadSharedConfig() (*SharedConfig, string, error) {
 }
 
 func (c *Client) SaveSharedConfig(cfg *SharedConfig, path string) error {
+	if err := validateSharedConfig(cfg); err != nil {
+		return err
+	}
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal shared config: %w", err)
@@ -207,133 +249,26 @@ func (c *Client) SaveSharedConfig(cfg *SharedConfig, path string) error {
 		return fmt.Errorf("failed to create shared config directory: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := writeSharedConfig(path, data, 0o644); err != nil {
 		return fmt.Errorf("failed to write shared config: %w", err)
 	}
 	return nil
 }
 
 func (c *Client) AddSharedResource(path string, strategy ResourceStrategy) (Report, error) {
-	var report Report
-
-	normalizedPath, err := c.NormalizeSharedResourcePath(path)
-	if err != nil {
-		return report, err
-	}
-
-	cfg, configPath, err := c.LoadSharedConfig()
-	if err != nil {
-		return report, err
-	}
-
-	found := false
-	for i, res := range cfg.Resources {
-		if res.Path == normalizedPath {
-			cfg.Resources[i].Strategy = strategy
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		cfg.Resources = append(cfg.Resources, SharedResource{
-			Path:     normalizedPath,
-			Strategy: strategy,
-		})
-	}
-
-	if err := c.SaveSharedConfig(cfg, configPath); err != nil {
-		return report, err
-	}
-
-	report.Info(fmt.Sprintf("Updated shared resource: %s (%s)", normalizedPath, strategy))
-	return report, nil
+	return c.addSharedResource(path, strategy, false)
 }
 
 func (c *Client) RemoveSharedResource(path string) (Report, error) {
-	var report Report
-
-	normalizedPath, err := c.NormalizeSharedResourcePath(path)
-	if err != nil {
-		return report, err
-	}
-
-	cfg, configPath, err := c.LoadSharedConfig()
-	if err != nil {
-		return report, err
-	}
-
-	var newResources []SharedResource
-	for _, res := range cfg.Resources {
-		if res.Path != normalizedPath {
-			newResources = append(newResources, res)
-		}
-	}
-
-	if len(newResources) == len(cfg.Resources) {
-		return report, fmt.Errorf("resource not found in config: %s", normalizedPath)
-	}
-
-	cfg.Resources = newResources
-	if err := c.SaveSharedConfig(cfg, configPath); err != nil {
-		return report, err
-	}
-
-	report.Info("Removed shared resource: " + normalizedPath)
-	return report, nil
+	return c.removeSharedResource(path, false)
 }
 
 func (c *Client) AddHook(hook Hook) (Report, error) {
-	var report Report
-
-	if hook.Cmd == "" {
-		return report, errors.New("hook command cannot be empty")
-	}
-
-	cfg, configPath, err := c.LoadSharedConfig()
-	if err != nil {
-		return report, err
-	}
-
-	cfg.Hooks = append(cfg.Hooks, hook)
-
-	if err := c.SaveSharedConfig(cfg, configPath); err != nil {
-		return report, err
-	}
-
-	desc := hook.Desc
-	if desc == "" {
-		desc = hook.Cmd
-	}
-	report.Info(fmt.Sprintf("Added hook: %s", desc))
-	return report, nil
+	return c.addHook(hook, false)
 }
 
 func (c *Client) RemoveHook(index int) (Report, error) {
-	var report Report
-
-	cfg, configPath, err := c.LoadSharedConfig()
-	if err != nil {
-		return report, err
-	}
-
-	if index < 0 || index >= len(cfg.Hooks) {
-		return report, fmt.Errorf("hook index %d out of range (total: %d)", index, len(cfg.Hooks))
-	}
-
-	removed := cfg.Hooks[index]
-	cfg.Hooks = append(cfg.Hooks[:index], cfg.Hooks[index+1:]...)
-
-	if err := c.SaveSharedConfig(cfg, configPath); err != nil {
-		return report, err
-	}
-
-	desc := removed.Desc
-	if desc == "" {
-		desc = removed.Cmd
-	}
-	report.Info(fmt.Sprintf("Removed hook: %s", desc))
-	return report, nil
+	return c.removeHook(index, false)
 }
 
 func (c *Client) SyncAllSharedResources() (Report, error) {
@@ -365,15 +300,17 @@ func (c *Client) SyncAllSharedResources() (Report, error) {
 	}
 
 	report.Info(fmt.Sprintf("Syncing resources to %d worktrees...", len(targets)))
+	var failures []error
 	for _, wt := range targets {
 		resourceReport, err := c.syncSharedResourcesToPath(wt.Path, false)
 		report.Merge(resourceReport)
 		if err != nil {
 			report.Warn(fmt.Sprintf("Warning: failed to sync %s: %v", filepath.Base(wt.Path), err))
+			failures = append(failures, fmt.Errorf("sync %s: %w", filepath.Base(wt.Path), err))
 		}
 	}
 
-	return report, nil
+	return report, errors.Join(failures...)
 }
 
 func (c *Client) resolveWorktreePath(worktreeName string) (string, error) {
@@ -481,8 +418,29 @@ func (c *Client) resolveSharedPaths(
 		return "", "", false, err
 	}
 
+	roots, rootsErr := c.sharedSourceRoots()
+	if rootsErr != nil {
+		return "", "", false, rootsErr
+	}
+	if res.worktreeRelative {
+		roots = c.primarySharedRoots(roots)
+		if len(roots) == 0 {
+			return "", targetPath, true, nil
+		}
+		repoRoot = roots[0]
+	}
+	for _, root := range roots {
+		if _, statErr := os.Lstat(filepath.Join(root, ".git")); statErr != nil {
+			continue
+		}
+		candidate := filepath.Join(root, targetPath)
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			return candidate, targetPath, false, nil
+		}
+	}
+
 	parts := strings.SplitN(res.Path, string(filepath.Separator), 2)
-	if len(parts) == 2 {
+	if len(parts) == 2 && !res.worktreeRelative {
 		worktrees, listErr := c.ListCached()
 		if listErr == nil {
 			var baseMatches []string
@@ -512,9 +470,8 @@ func (c *Client) resolveSharedPaths(
 		return srcPath, targetPath, false, nil
 	}
 
-	currentRoot := c.currentTopLevel()
-	if currentRoot != "" {
-		candidate := filepath.Join(currentRoot, targetPath)
+	for _, root := range roots {
+		candidate := filepath.Join(root, targetPath)
 		if _, statErr := os.Stat(candidate); statErr == nil {
 			return candidate, targetPath, false, nil
 		}
@@ -597,7 +554,7 @@ func (c *Client) runHooks(worktreeRoot string, hooks []Hook, report *Report) err
 	}
 
 	for _, hook := range hooks {
-		if hook.Cmd == "" {
+		if hook.Disabled || hook.Cmd == "" {
 			continue
 		}
 
