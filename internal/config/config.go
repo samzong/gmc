@@ -32,6 +32,10 @@ const (
 
 var configFilePath string
 
+func FilePath() string {
+	return configFilePath
+}
+
 var suggestedRoles = []string{
 	"Developer",
 	"Frontend Developer",

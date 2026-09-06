@@ -10,14 +10,12 @@ gmc-wt-share - Manage shared resources for worktrees
 
 
 .SH DESCRIPTION
-Manage shared resources that are automatically synced to all worktrees.
+Manage resources prepared before hooks run in new worktrees.
 
 .PP
-If run without arguments, it opens an interactive mode to manage resources.
-
-.PP
-Config file is stored at the repository's shared git common dir
-(for example .git/gmc-share.yml or .bare/gmc-share.yml).
+Global defaults live under worktree in the selected gmc config file.
+Repository rules in the git common dir's gmc-share.yml override global paths.
+Run without arguments for interactive repository management.
 
 
 .SH OPTIONS
@@ -36,6 +34,13 @@ Config file is stored at the repository's shared git common dir
 .PP
 \fB-o\fP, \fB--output\fP="text"
 	Output format: text or json
+
+
+.SH EXAMPLE
+.EX
+  gmc wt share discover
+  gmc wt share list --global
+.EE
 
 
 .SH SEE ALSO

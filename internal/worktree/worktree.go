@@ -15,12 +15,14 @@ import (
 )
 
 type Options struct {
-	Verbose bool
+	Verbose          bool
+	GlobalConfigPath string
 }
 
 type Client struct {
-	runner  gitcmd.Runner
-	verbose bool
+	runner           gitcmd.Runner
+	verbose          bool
+	globalConfigPath string
 
 	once         sync.Once
 	bareRoot     string
@@ -36,8 +38,9 @@ type Client struct {
 
 func NewClient(opts Options) *Client {
 	return &Client{
-		runner:  gitcmd.Runner{Verbose: opts.Verbose},
-		verbose: opts.Verbose,
+		runner:           gitcmd.Runner{Verbose: opts.Verbose},
+		verbose:          opts.Verbose,
+		globalConfigPath: opts.GlobalConfigPath,
 	}
 }
 

@@ -2,7 +2,7 @@
 .TH "GMC" "1" "Jun 2026" "gmc" "GMC Manual"
 
 .SH NAME
-gmc-wt-share-sync - Manually sync shared resources to all worktrees
+gmc-wt-share-sync - Sync effective resources to all worktrees
 
 
 .SH SYNOPSIS
@@ -10,7 +10,7 @@ gmc-wt-share-sync - Manually sync shared resources to all worktrees
 
 
 .SH DESCRIPTION
-Manually sync shared resources to all worktrees
+Sync global and repository rules to existing worktrees without running hooks or replacing existing directories.
 
 
 .SH OPTIONS
@@ -29,6 +29,12 @@ Manually sync shared resources to all worktrees
 .PP
 \fB-o\fP, \fB--output\fP="text"
 	Output format: text or json
+
+
+.SH EXAMPLE
+.EX
+  gmc wt share sync
+.EE
 
 
 .SH SEE ALSO

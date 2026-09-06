@@ -48,7 +48,7 @@ func TestRunWorktreeDefault_ShowsWorktreesInNonBareRepo(t *testing.T) {
 	assert.NotContains(t, output, "not using the bare worktree pattern")
 }
 
-func TestWtHookRemoveCmd_RejectsTrailingCharactersInIndex(t *testing.T) {
+func TestWtHookRemoveCmd_UnknownIDPreservesHooks(t *testing.T) {
 	repoDir := initCmdTestRepo(t)
 	cfgPath := filepath.Join(repoDir, ".git", "gmc-share.yml")
 	require.NoError(t, os.WriteFile(cfgPath, []byte("hooks:\n  - cmd: echo ok\n"), 0o644))
@@ -70,7 +70,6 @@ func TestWtHookRemoveCmd_RejectsTrailingCharactersInIndex(t *testing.T) {
 
 	err = wtHookRemoveCmd.RunE(wtHookRemoveCmd, []string{"1abc"})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid hook index")
 
 	client := worktree.NewClient(worktree.Options{})
 	cfg, _, err := client.LoadSharedConfig()

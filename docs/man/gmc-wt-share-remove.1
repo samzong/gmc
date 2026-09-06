@@ -2,7 +2,7 @@
 .TH "GMC" "1" "Jun 2026" "gmc" "GMC Manual"
 
 .SH NAME
-gmc-wt-share-remove - Remove a shared resource from config
+gmc-wt-share-remove - Remove or disable a shared resource
 
 
 .SH SYNOPSIS
@@ -10,10 +10,15 @@ gmc-wt-share-remove - Remove a shared resource from config
 
 
 .SH DESCRIPTION
-Remove a shared resource from config
+Remove a repository rule and disable any inherited global rule for that path.
+Use --global to remove a global default. Existing files are preserved.
 
 
 .SH OPTIONS
+\fB--global\fP[=false]
+	Use defaults in the selected gmc config file
+
+.PP
 \fB-h\fP, \fB--help\fP[=false]
 	help for remove
 
@@ -29,6 +34,13 @@ Remove a shared resource from config
 .PP
 \fB-o\fP, \fB--output\fP="text"
 	Output format: text or json
+
+
+.SH EXAMPLE
+.EX
+  gmc wt share remove .local
+  gmc wt share remove .local --global
+.EE
 
 
 .SH SEE ALSO

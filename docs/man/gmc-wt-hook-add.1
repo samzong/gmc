@@ -2,7 +2,7 @@
 .TH "GMC" "1" "Jun 2026" "gmc" "GMC Manual"
 
 .SH NAME
-gmc-wt-hook-add - Add a hook to run after worktree creation
+gmc-wt-hook-add - Add or replace a worktree hook
 
 
 .SH SYNOPSIS
@@ -10,16 +10,12 @@ gmc-wt-hook-add - Add a hook to run after worktree creation
 
 
 .SH DESCRIPTION
-Add a hook command that will be executed after shared resources are synced to a worktree.
+Configure a command executed after sharing during worktree creation.
 
 .PP
-Hooks are executed in the target worktree directory after resources are synced.
-This is useful for running package installation commands like 'pnpm install'.
-
-.PP
-Example:
-  gmc wt hook add "pnpm install" -d "Install dependencies"
-  gmc wt hook add "pnpm install && pnpm build"
+A repository hook with the same ID replaces an inherited global hook. Global
+commands run in every repository; use shell conditions for project-specific work.
+Adding a hook does not execute it.
 
 
 .SH OPTIONS
@@ -29,6 +25,10 @@ Example:
 .PP
 \fB-h\fP, \fB--help\fP[=false]
 	help for add
+
+.PP
+\fB--id\fP=""
+	Stable hook ID for repository overrides and removal
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -40,8 +40,19 @@ Example:
 	Enable debug output
 
 .PP
+\fB--global\fP[=false]
+	Use defaults in the selected gmc config file
+
+.PP
 \fB-o\fP, \fB--output\fP="text"
 	Output format: text or json
+
+
+.SH EXAMPLE
+.EX
+  gmc wt hook add 'pnpm install' --id install --desc 'Install dependencies'
+  gmc wt hook add 'test ! -f uv.lock || uv sync' --id python --global
+.EE
 
 
 .SH SEE ALSO

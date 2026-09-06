@@ -10,15 +10,26 @@ gmc-wt-share-add - Add or update a shared resource
 
 
 .SH DESCRIPTION
-Add a file or directory to be shared across all worktrees.
+Add a file or directory shared across worktrees in each repository.
 
 .PP
-Strategies:
-  - copy: Copies the file/directory (good for .env files that need isolation)
-  - link: Creates a symlink (good for large model directories)
+copy creates an independent copy; link shares a writable source through a symlink.
+Global defaults apply when creating worktrees. Adding a global rule does not sync
+existing worktrees. Run share sync in a repository to apply its effective rules.
+Global and pattern rules use the primary worktree as their source, never a
+directory found only in another linked worktree.
+
+.PP
+Quote patterns such as '**/.local' to match nested project paths. Pattern scans
+skip dependency, build, and .local directory interiors. Linking dependency environments
+shares writable state across branches; prefer package-manager caches where possible.
 
 
 .SH OPTIONS
+\fB--global\fP[=false]
+	Use defaults in the selected gmc config file
+
+.PP
 \fB-h\fP, \fB--help\fP[=false]
 	help for add
 
@@ -38,6 +49,14 @@ Strategies:
 .PP
 \fB-o\fP, \fB--output\fP="text"
 	Output format: text or json
+
+
+.SH EXAMPLE
+.EX
+  gmc wt share add .env --strategy copy
+  gmc wt share add .local --strategy link --global
+  gmc wt share add '**/node_modules' --strategy link --global
+.EE
 
 
 .SH SEE ALSO
