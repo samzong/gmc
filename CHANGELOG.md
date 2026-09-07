@@ -1,6 +1,15 @@
 # Changelog
 
 
+## [v0.10.0] - 2026-09-07
+### Bug Fixes
+- **worktree:** default interactive share strategy to link ([#90](https://github.com/samzong/gmc/issues/90))
+
+### Features
+- **skill:** integrate kitup for bundled agent skill install ([#88](https://github.com/samzong/gmc/issues/88))
+- **worktree:** add global preparation rules and improve discovery ([#89](https://github.com/samzong/gmc/issues/89))
+
+
 ## [v0.9.0] - 2026-06-17
 ### Bug Fixes
 - **gmc:** quote argument hint
@@ -247,7 +256,8 @@
 - **gma:** add option to automatically stage all changes ([#123](https://github.com/samzong/gmc/issues/123))
 
 
-[Unreleased]: https://github.com/samzong/gmc/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/samzong/gmc/compare/v0.10.0...HEAD
+[v0.10.0]: https://github.com/samzong/gmc/compare/v0.9.0...v0.10.0
 [v0.9.0]: https://github.com/samzong/gmc/compare/v0.8.1...v0.9.0
 [v0.8.1]: https://github.com/samzong/gmc/compare/v0.8.0...v0.8.1
 [v0.8.0]: https://github.com/samzong/gmc/compare/v0.7.3...v0.8.0
