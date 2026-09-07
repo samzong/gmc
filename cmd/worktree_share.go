@@ -402,13 +402,13 @@ func promptStrategy(reader *bufio.Reader) worktree.ResourceStrategy {
 	fmt.Fprintln(errWriter(), "\nStrategy:")
 	fmt.Fprintln(errWriter(), "  1. copy - each worktree gets its own copy")
 	fmt.Fprintln(errWriter(), "  2. link - symlink to shared source")
-	fmt.Fprint(errWriter(), "\nSelect [1/2, default: 1]: ")
+	fmt.Fprint(errWriter(), "\nSelect [1/2, default: 2]: ")
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(strings.ToLower(input))
-	if input == "2" || input == "link" || input == "l" {
-		return worktree.StrategySymlink
+	if input == "1" || input == "copy" || input == "c" {
+		return worktree.StrategyCopy
 	}
-	return worktree.StrategyCopy
+	return worktree.StrategySymlink
 }
 
 func promptContinue(reader *bufio.Reader) {
