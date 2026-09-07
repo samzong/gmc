@@ -13,7 +13,7 @@ gmc wt share add .local --strategy link --global
 gmc wt share add '**/.local' --strategy link --global
 ```
 
-`copy` creates an independent copy. `link` creates a symlink to a shared writable source. Without `--strategy`, the command prompts for a strategy, defaulting to `copy`.
+`copy` creates an independent copy. `link` creates a symlink to a shared writable source. Without `--strategy`, the command prompts for a strategy, defaulting to `link`.
 
 `.local` is an example of a personal rule, not a built-in default. Quote patterns to prevent shell expansion; `**` matches nested paths. Scans skip dependency, build, and `.local` directory interiors. A directory share includes its whole contents; to exclude individual children, disable the parent rule and share selected children. Global and pattern rules always use worktree-relative paths from the primary worktree: the original checkout, or the protected main-branch worktree in a bare layout. If no primary worktree is available, automatic sharing waits for one. Directories found only in other worktrees remain visible in discovery but are not propagated by these rules. Existing worktree-relative sources take precedence over legacy worktree-name prefixes; legacy prefixes remain a fallback for repository rules.
 
