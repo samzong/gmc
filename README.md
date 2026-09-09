@@ -58,7 +58,9 @@ New Rust worktrees automatically cache dependencies with [Kache](https://github.
 Keep using the same gmc and Cargo commands; no separate installation or configuration is required.
 Packages selected by Cargo retain native incremental compilation, and each worktree keeps its own target directory.
 
-Setup requires a root `Cargo.toml` and skips existing `.cargo` directories or compiler wrappers.
+Setup discovers root and nested `Cargo.toml` files, including multiple Rust projects in a monorepo.
+Parent Rust roots cover their descendants; existing `.cargo` directories or compiler wrappers are preserved.
+Dependency/build directories, symbolic links, and nested Git repositories are excluded from discovery.
 It adds ignored local Cargo configuration without changing global configuration or tracked files.
 The first eligible creation downloads a pinned, checksum-verified Kache release. Tools and a local
 cache capped at 10 GiB live under `${XDG_DATA_HOME:-~/.local/share}/gmc/rust-cache`.
