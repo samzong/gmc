@@ -52,6 +52,18 @@ go install github.com/samzong/gmc@latest
 | `gmc --output json` | Machine-readable output for agents and CI |
 | `gmc completion zsh\|bash\|fish` | Shell completion |
 
+## Rust dependency cache
+
+New Rust worktrees automatically cache dependencies with [Kache](https://github.com/kunobi-ninja/kache).
+Keep using the same gmc and Cargo commands; no separate installation or configuration is required.
+Packages selected by Cargo retain native incremental compilation, and each worktree keeps its own target directory.
+
+Setup requires a root `Cargo.toml` and skips existing `.cargo` directories or compiler wrappers.
+It adds ignored local Cargo configuration without changing global configuration or tracked files.
+The first eligible creation downloads a pinned, checksum-verified Kache release. Tools and a local
+cache capped at 10 GiB live under `${XDG_DATA_HOME:-~/.local/share}/gmc/rust-cache`.
+Unavailable setup leaves normal Cargo builds available; diagnostics use gmc's existing `--debug` flag.
+
 ## Config
 
 Config lives at `~/.config/gmc/config.yaml` (legacy `~/.gmc.yaml` still works; a project-level `.gmc.yaml` overrides global). Run `gmc init` for a guided setup, or set fields manually:

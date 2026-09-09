@@ -73,6 +73,7 @@ func (c *Client) Clone(repoURL string, opts CloneOptions) (Report, error) {
 		os.RemoveAll(projectName)
 		return report, err
 	}
+	c.prepareRustCache(mainWorktree, &report)
 
 	report.Info("")
 	report.Info(fmt.Sprintf("Successfully cloned to %s/", projectName))
