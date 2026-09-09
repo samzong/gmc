@@ -109,7 +109,7 @@ func (c *Client) AddPR(prNumber int, remote string) (Report, error) {
 		return report, err
 	}
 
-	sharedReport, err := c.syncSharedResourcesToPath(ctx.targetPath, true)
+	sharedReport, err := c.prepareNewWorktree(ctx.targetPath)
 	report.Merge(sharedReport)
 	if err != nil {
 		report.Warn(fmt.Sprintf("Warning: failed to sync shared resources: %v", err))

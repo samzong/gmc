@@ -58,6 +58,14 @@ func (c *Client) SyncSharedResources(worktreeName string) (Report, error) {
 }
 
 func (c *Client) syncSharedResourcesToPath(targetRoot string, runHooks bool) (Report, error) {
+	return c.syncWorktreeResources(targetRoot, runHooks, false)
+}
+
+func (c *Client) prepareNewWorktree(targetRoot string) (Report, error) {
+	return c.syncWorktreeResources(targetRoot, true, true)
+}
+
+func (c *Client) syncWorktreeResources(targetRoot string, runHooks, prepare bool) (Report, error) {
 	var report Report
 
 	cfg, err := c.LoadEffectiveSharedConfig()
@@ -65,7 +73,7 @@ func (c *Client) syncSharedResourcesToPath(targetRoot string, runHooks bool) (Re
 		return report, err
 	}
 
-	if len(cfg.Resources) == 0 && (!runHooks || len(cfg.Hooks) == 0) {
+	if !prepare && len(cfg.Resources) == 0 && (!runHooks || len(cfg.Hooks) == 0) {
 		return report, nil
 	}
 
@@ -85,6 +93,9 @@ func (c *Client) syncSharedResourcesToPath(targetRoot string, runHooks bool) (Re
 		}
 	}
 
+	if prepare {
+		c.prepareRustCache(targetRoot, &report)
+	}
 	if runHooks {
 		if err := c.runHooks(targetRoot, cfg.Hooks, &report); err != nil {
 			return report, err

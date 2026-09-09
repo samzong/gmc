@@ -379,7 +379,7 @@ func (c *Client) Add(name string, opts AddOptions) (Report, error) {
 		return report, err
 	}
 
-	sharedReport, err := c.syncSharedResourcesToPath(ctx.targetPath, true)
+	sharedReport, err := c.prepareNewWorktree(ctx.targetPath)
 	report.Merge(sharedReport)
 	if err != nil {
 		report.Warn(fmt.Sprintf("Warning: failed to sync shared resources: %v", err))
@@ -857,7 +857,7 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 			return nil, err
 		}
 
-		sharedReport, err := c.syncSharedResourcesToPath(targetPath, true)
+		sharedReport, err := c.prepareNewWorktree(targetPath)
 		if err != nil {
 			dupResult.Warnings = append(
 				dupResult.Warnings,

@@ -9,7 +9,34 @@ import (
 	"testing"
 
 	"github.com/samzong/gmc/internal/gitutil"
+	"github.com/stretchr/testify/require"
 )
+
+func TestRustCacheCreation(t *testing.T) {
+	t.Setenv("CARGO_HOME", t.TempDir())
+	repo := initTestRepo(t)
+	t.Chdir(repo)
+	writeFile(t, filepath.Join(repo, "Cargo.toml"), "[package]\nname = 'test'\nversion = '0.1.0'\n")
+	runGit(t, repo, "add", "Cargo.toml")
+	runGit(t, repo, "commit", "-m", "Add Rust package")
+	previous := ensureRustCache
+	helper := filepath.Join(t.TempDir(), "gmc-rustc")
+	ensureRustCache = func() (string, error) {
+		return helper, os.WriteFile(helper, []byte("test adapter"), 0755)
+	}
+	t.Cleanup(func() { ensureRustCache = previous })
+	client := NewClient(Options{})
+	_, err := client.Add("cache-test", AddOptions{})
+	require.NoError(t, err)
+	target := repo + "--cache-test"
+	t.Cleanup(func() {
+		_, err := client.Remove(target, RemoveOptions{Force: true, DeleteBranch: true})
+		require.NoError(t, err)
+	})
+	require.FileExists(t, filepath.Join(target, ".cargo", "config.toml"))
+	require.Empty(t, runGit(t, target, "status", "--porcelain"))
+	require.NoDirExists(t, filepath.Join(repo, ".cargo"))
+}
 
 func TestRepoTypeString(t *testing.T) {
 	tests := []struct {
