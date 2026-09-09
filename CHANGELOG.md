@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [v0.10.1] - 2026-09-09
+### Features
+- **worktree:** cache Rust dependencies in new worktrees ([#92](https://github.com/samzong/gmc/issues/92))
+
+
 ## [v0.10.0] - 2026-09-07
 ### Bug Fixes
 - **worktree:** default interactive share strategy to link ([#90](https://github.com/samzong/gmc/issues/90))
@@ -256,7 +261,8 @@
 - **gma:** add option to automatically stage all changes ([#123](https://github.com/samzong/gmc/issues/123))
 
 
-[Unreleased]: https://github.com/samzong/gmc/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/samzong/gmc/compare/v0.10.1...HEAD
+[v0.10.1]: https://github.com/samzong/gmc/compare/v0.10.0...v0.10.1
 [v0.10.0]: https://github.com/samzong/gmc/compare/v0.9.0...v0.10.0
 [v0.9.0]: https://github.com/samzong/gmc/compare/v0.8.1...v0.9.0
 [v0.8.1]: https://github.com/samzong/gmc/compare/v0.8.0...v0.8.1
