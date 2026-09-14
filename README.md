@@ -68,7 +68,7 @@ Unavailable setup leaves normal Cargo builds available; diagnostics use gmc's ex
 
 ## Config
 
-Config lives at `~/.config/gmc/config.yaml` (legacy `~/.gmc.yaml` still works; a project-level `.gmc.yaml` overrides global). Run `gmc init` for a guided setup, or set fields manually:
+Config lives at `~/.config/gmc/config.yaml` (legacy `~/.gmc.yaml` still works). A project-level `.gmc.yaml` also applies, but it is repository content and untrusted, so it may only set `role`, `model` and `enable_emoji` — never `api_key`, `api_base` or `prompt_template`. Those three decide which credential is used, where it is sent, and which local file is read into the prompt, so they come only from your own config or `GMC_*` variables. Names passed with `--config` or `GMC_*` always win over a project config, and gmc warns on stderr whenever it ignores something from one. Run `gmc init` for a guided setup, or set fields manually:
 
 ```bash
 gmc config set apibase https://api.openai.com/v1
@@ -77,7 +77,18 @@ gmc config set model   gpt-4.1-mini
 gmc config set role    "Backend Developer"
 ```
 
-Custom prompt template: set `prompt_template` to a YAML file path with `{{.Role}}`, `{{.Files}}`, `{{.Diff}}` variables. See `docs/`.
+Custom prompt template: set `prompt_template` to a YAML file whose `template` key holds a prompt using the `{{.Role}}`, `{{.Files}}` and `{{.Diff}}` variables. A file without a `template` key, or an empty one, is reported and the built-in template is used instead.
+
+```yaml
+template: |
+  {{.Role}}, summarize the changes below as one Conventional Commits line.
+
+  Files:
+  {{.Files}}
+
+  Diff:
+  {{.Diff}}
+```
 
 ## Task workflow
 

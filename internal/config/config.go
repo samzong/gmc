@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -36,6 +38,65 @@ func FilePath() string {
 	return configFilePath
 }
 
+var repoAllowedKeys = map[string]bool{
+	"role":         true,
+	"model":        true,
+	"enable_emoji": true,
+}
+
+const maxIgnoredKeys = 10
+
+func safeKeyName(key string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			return r
+		case r == '_', r == '-', r == '.':
+			return r
+		default:
+			return -1
+		}
+	}, key)
+
+	if cleaned == "" {
+		return "(unnamed key)"
+	}
+	const maxKeyLength = 64
+	if len(cleaned) > maxKeyLength {
+		cleaned = cleaned[:maxKeyLength] + "..."
+	}
+	return cleaned
+}
+
+type repoLayer struct {
+	path    string
+	values  map[string]any
+	ignored []string
+	total   int
+	skipped bool
+	err     error
+}
+
+var repo repoLayer
+
+type RepoConfigStatus struct {
+	Path         string
+	Ignored      []string
+	IgnoredTotal int
+	Skipped      bool
+	Err          error
+}
+
+func RepoConfig() RepoConfigStatus {
+	return RepoConfigStatus{
+		Path:         repo.path,
+		Ignored:      repo.ignored,
+		IgnoredTotal: repo.total,
+		Skipped:      repo.skipped,
+		Err:          repo.err,
+	}
+}
+
 var suggestedRoles = []string{
 	"Developer",
 	"Frontend Developer",
@@ -51,29 +112,20 @@ var suggestedModels = []string{
 	"gpt-4-turbo",
 }
 
-// getConfigPath returns the config path following priority:
-// 1. Explicit --config flag
-// 2. GMC_CONFIG env var
-// 3. $XDG_CONFIG_HOME/gmc/config.yaml
-// 4. ~/.config/gmc/config.yaml (XDG default)
-// 5. ~/.gmc.yaml (legacy fallback)
-func getConfigPath(cfgFile string) (string, error) {
-	// 1. Explicit config file
+func getConfigPath(cfgFile string) (string, bool, error) {
 	if cfgFile != "" {
-		return cfgFile, nil
+		return cfgFile, true, nil
 	}
 
-	// 2. GMC_CONFIG env var
 	if envConfig := os.Getenv("GMC_CONFIG"); envConfig != "" {
-		return envConfig, nil
+		return envConfig, true, nil
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("failed to find home directory: %w", err)
+		return "", false, fmt.Errorf("failed to find home directory: %w", err)
 	}
 
-	// 3. XDG_CONFIG_HOME
 	xdgConfigHome := os.Getenv("XDG_CONFIG_HOME")
 	if xdgConfigHome == "" {
 		xdgConfigHome = filepath.Join(home, ".config")
@@ -81,32 +133,29 @@ func getConfigPath(cfgFile string) (string, error) {
 
 	xdgConfigPath := filepath.Join(xdgConfigHome, DefaultConfigDir, DefaultConfigName+".yaml")
 
-	// Check if XDG config exists
 	if _, err := os.Stat(xdgConfigPath); err == nil {
-		return xdgConfigPath, nil
+		return xdgConfigPath, false, nil
 	}
 
-	// 4. Check legacy path
 	legacyPath := filepath.Join(home, LegacyConfigName+".yaml")
 	if _, err := os.Stat(legacyPath); err == nil {
-		return legacyPath, nil
+		return legacyPath, false, nil
 	}
 
-	// 5. Default to XDG path for new installations
-	return xdgConfigPath, nil
+	return xdgConfigPath, false, nil
 }
 
 func InitConfig(cfgFile string) error {
-	configPath, err := getConfigPath(cfgFile)
+	configPath, explicit, err := getConfigPath(cfgFile)
 	if err != nil {
 		return err
 	}
 	configFilePath = configPath
+	repo = repoLayer{}
 
 	viper.SetConfigFile(configPath)
 	viper.SetConfigType("yaml")
 
-	// Set defaults
 	viper.SetDefault("role", DefaultRole)
 	viper.SetDefault("model", DefaultModel)
 	viper.SetDefault("api_key", "")
@@ -114,8 +163,6 @@ func InitConfig(cfgFile string) error {
 	viper.SetDefault("prompt_template", DefaultPromptTemplate)
 	viper.SetDefault("enable_emoji", false)
 
-	// Enable GMC_ prefixed environment variables
-	// GMC_MODEL, GMC_API_KEY, GMC_API_BASE, etc.
 	viper.SetEnvPrefix(EnvPrefix)
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
@@ -143,21 +190,11 @@ func InitConfig(cfgFile string) error {
 		}
 	}
 
-	// Merge repo-level config if exists (higher priority than user config)
-	if repoConfig := findRepoConfig(); repoConfig != "" {
-		repoViper := viper.New()
-		repoViper.SetConfigFile(repoConfig)
-		if err := repoViper.ReadInConfig(); err == nil {
-			for _, key := range repoViper.AllKeys() {
-				viper.Set(key, repoViper.Get(key))
-			}
-		}
-	}
+	loadRepoLayer(explicit)
 
 	return nil
 }
 
-// findRepoConfig searches for .gmc.yaml in the current working directory.
 func findRepoConfig() string {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -170,11 +207,104 @@ func findRepoConfig() string {
 	return ""
 }
 
+func loadRepoLayer(explicit bool) {
+	path := findRepoConfig()
+	if path == "" {
+		return
+	}
+	repo.path = path
+
+	if explicit {
+		repo.skipped = true
+		return
+	}
+
+	repoViper := viper.New()
+	repoViper.SetConfigFile(path)
+	if err := repoViper.ReadInConfig(); err != nil {
+		repo.err = fmt.Errorf("ignoring project config %s: %w", path, err)
+		return
+	}
+
+	values := make(map[string]any)
+	for _, key := range repoViper.AllKeys() {
+		if !repoAllowedKeys[key] {
+			repo.total++
+			if len(repo.ignored) < maxIgnoredKeys {
+				repo.ignored = append(repo.ignored, safeKeyName(key))
+			}
+			continue
+		}
+		values[key] = repoViper.Get(key)
+	}
+	sort.Strings(repo.ignored)
+	repo.values = values
+}
+
+func applyRepoLayer(cfg *Config) {
+	for key, value := range repo.values {
+		if envVarSet(key) {
+			continue
+		}
+
+		switch key {
+		case "role":
+			if v := stringValue(value); v != "" {
+				cfg.Role = v
+			}
+		case "model":
+			if v := stringValue(value); v != "" {
+				cfg.Model = v
+			}
+		case "enable_emoji":
+			if v, ok := boolValue(value); ok {
+				cfg.EnableEmoji = v
+			}
+		}
+	}
+}
+
+func envKey(key string) string {
+	return EnvPrefix + "_" + strings.ToUpper(strings.ReplaceAll(key, ".", "_"))
+}
+
+func envVarSet(key string) bool {
+	_, ok := os.LookupEnv(envKey(key))
+	return ok
+}
+
+func stringValue(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(v)
+	default:
+		return strings.TrimSpace(fmt.Sprintf("%v", v))
+	}
+}
+
+func boolValue(value any) (bool, bool) {
+	switch v := value.(type) {
+	case bool:
+		return v, true
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(v))
+		if err != nil {
+			return false, false
+		}
+		return parsed, true
+	default:
+		return false, false
+	}
+}
+
 func GetConfig() (*Config, error) {
 	cfg := defaultConfig()
 	if err := viper.Unmarshal(cfg); err != nil {
 		return cfg, fmt.Errorf("failed to parse configuration: %w", err)
 	}
+	applyRepoLayer(cfg)
 	return cfg, nil
 }
 

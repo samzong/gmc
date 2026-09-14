@@ -30,6 +30,8 @@ type Server struct {
 	http     *http.Server
 	listener net.Listener
 	url      string
+	token    string
+	port     string
 }
 
 func New(engine *task.Engine, repoPath string, opts Options) (*Server, error) {
@@ -50,19 +52,26 @@ func New(engine *task.Engine, repoPath string, opts Options) (*Server, error) {
 	if opts.TerminalLauncher == nil {
 		opts.TerminalLauncher = LaunchTerminal
 	}
+	token, err := newSessionToken()
+	if err != nil {
+		return nil, err
+	}
 	s := &Server{
 		engine:   engine,
 		project:  project,
 		workflow: wf,
 		opts:     opts,
 		mux:      http.NewServeMux(),
+		token:    token,
 	}
-	s.registerRoutes()
+	if err := s.registerRoutes(); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 
 func (s *Server) Handler() http.Handler {
-	return s.mux
+	return s.guard(s.mux)
 }
 
 const PreferredWebUIPort = 24508
@@ -110,10 +119,16 @@ func (s *Server) Listen(hostPort string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	_, port, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		_ = ln.Close()
+		return "", err
+	}
 	s.listener = ln
+	s.port = port
 	s.url = "http://" + ln.Addr().String()
 	s.http = &http.Server{
-		Handler:           s.mux,
+		Handler:           s.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return s.url, nil
@@ -152,7 +167,7 @@ func (s *Server) ProjectPath() string {
 	return s.project.Path
 }
 
-func (s *Server) registerRoutes() {
+func (s *Server) registerRoutes() error {
 	s.mux.HandleFunc("GET /api/v1/project", s.handleProject)
 	s.mux.HandleFunc("GET /api/v1/workflow", s.handleWorkflow)
 	s.mux.HandleFunc("GET /api/v1/tasks", s.handleListTasks)
@@ -162,18 +177,38 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/v1/tasks/{id}/move", s.handleMoveTask)
 	s.mux.HandleFunc("POST /api/v1/tasks/{id}/attach", s.handleAttachTask)
 	s.mux.HandleFunc("DELETE /api/v1/tasks/{id}", s.handleRemoveTask)
-	s.registerStaticRoutes()
+	return s.registerStaticRoutes()
 }
 
-func (s *Server) registerStaticRoutes() {
+func (s *Server) registerStaticRoutes() error {
 	sub, err := fs.Sub(staticFiles, "static")
 	if err != nil {
-		panic("taskweb static files: " + err.Error())
+		return fmt.Errorf("taskweb static assets are unavailable: %w", err)
 	}
-	fileServer := http.FileServer(http.FS(sub))
-	s.mux.Handle("GET /{$}", fileServer)
+	fileServer := noStore(http.FileServer(http.FS(sub)))
+	s.mux.Handle("GET /{$}", http.HandlerFunc(s.handleIndex))
 	s.mux.Handle("GET /app.js", fileServer)
 	s.mux.Handle("GET /app.css", fileServer)
+	return nil
+}
+
+func noStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
+	page, err := staticFiles.ReadFile("static/index.html")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "webui assets are unavailable")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(strings.Replace(string(page), tokenPlaceholder, s.token, 1)))
 }
 
 func taskCard(index int, sum task.Summary) TaskCard {

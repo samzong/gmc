@@ -13,6 +13,7 @@ type DiffFile struct {
 	Hunks         []string
 	IsBinary      bool
 	IsRename      bool
+	IsNew         bool
 	Priority      int
 	Added         int
 	Deleted       int
@@ -168,10 +169,14 @@ func applyHeaderLine(file *DiffFile, line string) {
 		file.Path = strings.Trim(file.Path, "\"")
 		return
 	}
-	if strings.HasPrefix(line, "old mode ") ||
-		strings.HasPrefix(line, "new mode ") ||
-		strings.HasPrefix(line, "new file mode ") ||
-		strings.HasPrefix(line, "deleted file mode ") {
+	if strings.HasPrefix(line, "new file mode ") {
+		file.IsNew = true
+		return
+	}
+	if strings.HasPrefix(line, "deleted file mode ") {
+		return
+	}
+	if strings.HasPrefix(line, "old mode ") || strings.HasPrefix(line, "new mode ") {
 		file.HasModeChange = true
 		return
 	}
@@ -332,7 +337,12 @@ func summarizeFile(file DiffFile) string {
 	if file.HasModeChange {
 		return file.Path + " (mode changed)"
 	}
-	return file.Path + " (+" + strconv.Itoa(file.Added) + "/-" + strconv.Itoa(file.Deleted) + ")"
+
+	path := file.Path
+	if file.IsNew {
+		path += " (added)"
+	}
+	return path + " (+" + strconv.Itoa(file.Added) + "/-" + strconv.Itoa(file.Deleted) + ")"
 }
 
 func truncateDiff(files []DiffFile, limit int) string {

@@ -47,6 +47,74 @@ func TestStoreResolveTaskID(t *testing.T) {
 	assert.Contains(t, err.Error(), "out of range")
 }
 
+func TestStoreRejectsTaskRefsOutsideRoot(t *testing.T) {
+	root := t.TempDir()
+	store := NewStore(root)
+
+	victim := filepath.Join(root, "victim")
+	require.NoError(t, os.MkdirAll(victim, 0o755))
+	decoy := filepath.Join(victim, "task.yaml")
+	require.NoError(t, os.WriteFile(decoy, []byte("source: OUTSIDE_STORE_ROOT\n"), 0o600))
+
+	escapes := []string{
+		"../../victim",
+		"..",
+		"../victim",
+		"a/../../victim",
+		".",
+		"./",
+		"sub/..",
+		"anything/..",
+	}
+	for _, ref := range escapes {
+		_, err := store.ResolveTaskID(ref)
+		require.Error(t, err, ref)
+		assert.ErrorIs(t, err, ErrInvalidTaskID, ref)
+
+		_, err = store.LoadTask(ref)
+		assert.ErrorIs(t, err, ErrInvalidTaskID, ref)
+
+		assert.ErrorIs(t, store.RemoveTask(ref), ErrInvalidTaskID, ref)
+	}
+
+	_, err := store.ResolveTaskID("")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "required")
+	assert.ErrorIs(t, store.RemoveTask(""), ErrInvalidTaskID)
+
+	assert.FileExists(t, decoy, "a traversal reference must not delete outside the store")
+	assert.DirExists(t, victim)
+}
+
+func TestStoreRejectsTaskRootItself(t *testing.T) {
+	root := t.TempDir()
+	store := NewStore(root)
+	taskRoot := filepath.Join(root, "gmc-tasks", "tasks")
+	require.NoError(t, os.MkdirAll(taskRoot, 0o755))
+
+	require.NoError(t, os.WriteFile(filepath.Join(taskRoot, "task.yaml"), []byte("id: .\n"), 0o600))
+	require.NoError(t, store.CreateTask(Record{ID: "t-one", State: TaskNew, Source: "x", CreatedAt: time.Now().UTC()}))
+
+	for _, ref := range []string{"", ".", "./", "sub/.."} {
+		assert.ErrorIs(t, store.RemoveTask(ref), ErrInvalidTaskID, ref)
+	}
+
+	assert.DirExists(t, taskRoot, "the task root must survive")
+	assert.FileExists(t, filepath.Join(taskRoot, "t-one", "task.yaml"))
+}
+
+func TestStoreAllowsNestedLookingRefsInsideRoot(t *testing.T) {
+	store := NewStore(t.TempDir())
+	require.NoError(t, store.CreateTask(Record{ID: "t-demo", State: TaskNew, Source: "d", CreatedAt: time.Now().UTC()}))
+
+	id, err := store.ResolveTaskID("t-demo")
+	require.NoError(t, err)
+	assert.Equal(t, "t-demo", id)
+
+	_, err = store.LoadTask("sub/../t-demo")
+	require.NoError(t, err)
+}
+
 func TestEngineCreateTaskFromFile(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "todo.md")

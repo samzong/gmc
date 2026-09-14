@@ -1,4 +1,5 @@
 const API = "/api/v1";
+const TOKEN = window.__GMC_TOKEN__ || "";
 const TERMINAL_KEY = "gmc.taskweb.terminal";
 const POLL_MS = 5000;
 const AGENTS = ["codex", "grok", "cursor-agent", "opencode"];
@@ -25,7 +26,8 @@ const state = {
 const els = {};
 
 function request(path, init = {}) {
-  const headers = init.body ? { "Content-Type": "application/json" } : {};
+  const headers = { "X-GMC-Token": TOKEN };
+  if (init.body) headers["Content-Type"] = "application/json";
   return fetch(API + path, { headers, ...init }).then(async (res) => {
     const body = await res.text();
     let data = null;
@@ -216,7 +218,6 @@ async function startTask() {
       method: "POST",
       body: JSON.stringify({
         agent: els.startAgent.value.trim(),
-        command: els.startCommand.value.trim(),
         base_branch: els.startBase.value.trim(),
       }),
     });

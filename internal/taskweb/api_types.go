@@ -72,7 +72,6 @@ type createTaskRequest struct {
 
 type startTaskRequest struct {
 	Agent      string `json:"agent,omitempty"`
-	Command    string `json:"command,omitempty"`
 	BaseBranch string `json:"base_branch,omitempty"`
 }
 

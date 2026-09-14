@@ -13,7 +13,10 @@ import (
 	"github.com/samzong/gmc/internal/ui"
 )
 
-var ErrNoChanges = errors.New("no changes detected in the staging area files")
+var (
+	ErrNoChanges       = errors.New("no changes detected in the staging area files")
+	ErrNoCommitSubject = errors.New("LLM returned no usable commit subject")
+)
 
 type CommitOptions struct {
 	AddAll     bool
@@ -64,12 +67,12 @@ func (f *CommitFlow) Run(fileArgs []string) error {
 		return err
 	}
 
-	diff, changedFiles, err := f.getStagedChanges()
+	changes, err := f.getStagedChanges()
 	if err != nil {
 		return err
 	}
 
-	return f.runCommitLoop(diff, changedFiles, f.performCommit)
+	return f.runCommitLoop(changes, f.performCommit)
 }
 
 func (f *CommitFlow) handleBranchCreation() error {
@@ -102,27 +105,33 @@ func (f *CommitFlow) handleStaging() error {
 	return nil
 }
 
-func (f *CommitFlow) getStagedChanges() (string, []string, error) {
+type stagedChanges struct {
+	Diff  string
+	Stats string
+	Files []string
+}
+
+func (f *CommitFlow) getStagedChanges() (stagedChanges, error) {
 	diff, err := f.git.GetStagedDiff()
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to get git diff: %w", err)
+		return stagedChanges{}, fmt.Errorf("failed to get git diff: %w", err)
 	}
 
 	if diff == "" {
-		return "", nil, ErrNoChanges
+		return stagedChanges{}, ErrNoChanges
 	}
 
 	stats, err := f.git.GetStagedDiffStats()
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to get git diff stats: %w", err)
+		return stagedChanges{}, fmt.Errorf("failed to get git diff stats: %w", err)
 	}
 
 	changedFiles, err := f.git.ParseStagedFiles()
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to parse staged files: %w", err)
+		return stagedChanges{}, fmt.Errorf("failed to parse staged files: %w", err)
 	}
 
-	return diff + "\n" + formatter.DiffStatsSeparator + "\n" + stats, changedFiles, nil
+	return stagedChanges{Diff: diff, Stats: stats, Files: changedFiles}, nil
 }
 
 func (f *CommitFlow) handleSelectiveCommit(fileArgs []string) error {
@@ -174,7 +183,7 @@ func (f *CommitFlow) stageAndCommitFiles(files []string) error {
 		return ErrNoChanges
 	}
 
-	return f.runCommitLoop(diff, allFiles, func(msg string) error {
+	return f.runCommitLoop(stagedChanges{Diff: diff, Files: allFiles}, func(msg string) error {
 		return f.performSelectiveCommit(msg, allFiles)
 	})
 }
@@ -199,14 +208,14 @@ func (f *CommitFlow) commitStagedFiles(files []string) error {
 		return ErrNoChanges
 	}
 
-	return f.runCommitLoop(diff, staged, func(msg string) error {
+	return f.runCommitLoop(stagedChanges{Diff: diff, Files: staged}, func(msg string) error {
 		return f.performSelectiveCommit(msg, staged)
 	})
 }
 
-func (f *CommitFlow) runCommitLoop(diff string, files []string, commitFn func(string) error) error {
+func (f *CommitFlow) runCommitLoop(changes stagedChanges, commitFn func(string) error) error {
 	for {
-		message, err := f.generateCommitMessage(files, diff)
+		message, err := f.generateCommitMessage(changes)
 		if err != nil {
 			return err
 		}
@@ -234,8 +243,8 @@ func (f *CommitFlow) runCommitLoop(diff string, files []string, commitFn func(st
 	}
 }
 
-func (f *CommitFlow) generateCommitMessage(changedFiles []string, diff string) (string, error) {
-	prompt := formatter.BuildPromptWithConfig(f.cfg, changedFiles, diff, f.opts.UserPrompt)
+func (f *CommitFlow) generateCommitMessage(changes stagedChanges) (string, error) {
+	prompt := formatter.BuildPromptWithConfig(f.cfg, changes.Files, changes.Diff, changes.Stats, f.opts.UserPrompt)
 
 	sp := ui.NewSpinner("Generating commit message...")
 	sp.Start()
@@ -247,6 +256,9 @@ func (f *CommitFlow) generateCommitMessage(changedFiles []string, diff string) (
 	}
 
 	formattedMessage := formatter.FormatCommitMessageWithConfig(f.cfg, message)
+	if formattedMessage == "" {
+		return "", ErrNoCommitSubject
+	}
 	formattedMessage = f.applyIssueSuffix(formattedMessage)
 
 	fmt.Fprintln(f.opts.ErrWriter, "\nGenerated Commit Message:")

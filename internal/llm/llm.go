@@ -104,11 +104,30 @@ func (c *Client) GenerateCommitMessage(prompt string, model string) (string, err
 		return "", fmt.Errorf("failed to call LLM: %w (%w)", err, ErrLLM)
 	}
 
+	content, err := firstChoiceContent(resp)
+	if err != nil {
+		return "", err
+	}
+
+	return content, nil
+}
+
+func firstChoiceContent(resp openai.ChatCompletionResponse) (string, error) {
 	if len(resp.Choices) == 0 {
 		return "", fmt.Errorf("LLM returned empty response: %w", ErrLLM)
 	}
 
-	return strings.TrimSpace(resp.Choices[0].Message.Content), nil
+	choice := resp.Choices[0]
+	if choice.FinishReason == openai.FinishReasonLength {
+		return "", fmt.Errorf("LLM response was cut off by the token limit: %w", ErrLLM)
+	}
+
+	content := strings.TrimSpace(choice.Message.Content)
+	if content == "" {
+		return "", fmt.Errorf("LLM returned an empty message: %w", ErrLLM)
+	}
+
+	return content, nil
 }
 
 func (c *Client) SuggestVersion(baseVersion string, commits []string, model string) (string, string, error) {
@@ -148,13 +167,14 @@ func (c *Client) SuggestVersion(baseVersion string, commits []string, model stri
 		return "", "", fmt.Errorf("failed to call LLM: %w (%w)", err, ErrLLM)
 	}
 
-	if len(resp.Choices) == 0 {
-		return "", "", fmt.Errorf("LLM returned empty response: %w", ErrLLM)
-	}
-
-	version, reason, err := parseVersionSuggestion(resp.Choices[0].Message.Content)
+	content, err := firstChoiceContent(resp)
 	if err != nil {
 		return "", "", err
+	}
+
+	version, reason, err := parseVersionSuggestion(content)
+	if err != nil {
+		return "", "", fmt.Errorf("%w (%w)", err, ErrLLM)
 	}
 
 	return version, reason, nil
@@ -184,11 +204,11 @@ func (c *Client) TestConnection(model string) error {
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("failed to call LLM: %w", err)
+		return fmt.Errorf("failed to call LLM: %w (%w)", err, ErrLLM)
 	}
 
 	if len(resp.Choices) == 0 {
-		return errors.New("LLM returned empty response")
+		return fmt.Errorf("LLM returned empty response: %w", ErrLLM)
 	}
 
 	return nil

@@ -15,8 +15,9 @@ import (
 )
 
 var (
-	ErrNotFound  = errors.New("task not found")
-	ErrNoAttempt = errors.New("attempt not found")
+	ErrNotFound      = errors.New("task not found")
+	ErrNoAttempt     = errors.New("attempt not found")
+	ErrInvalidTaskID = errors.New("invalid task id")
 )
 
 type Store struct {
@@ -43,28 +44,47 @@ func (s *Store) taskRoot() string {
 	return filepath.Join(s.root, "tasks")
 }
 
-func (s *Store) taskDir(taskID string) string {
-	return filepath.Join(s.taskRoot(), taskID)
+func (s *Store) taskDir(taskID string) (string, error) {
+	root := s.taskRoot()
+	dir := filepath.Join(root, filepath.FromSlash(taskID))
+
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%w: %q", ErrInvalidTaskID, taskID)
+	}
+	return dir, nil
 }
 
 func (s *Store) CreateTask(rec Record) error {
-	if err := os.MkdirAll(s.taskDir(rec.ID), 0o755); err != nil {
+	dir, err := s.taskDir(rec.ID)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	return s.writeTask(rec)
 }
 
 func (s *Store) writeTask(rec Record) error {
+	dir, err := s.taskDir(rec.ID)
+	if err != nil {
+		return err
+	}
 	rec.UpdatedAt = time.Now().UTC()
 	if rec.CreatedAt.IsZero() {
 		rec.CreatedAt = rec.UpdatedAt
 	}
-	return writeYAML(filepath.Join(s.taskDir(rec.ID), "task.yaml"), rec)
+	return writeYAML(filepath.Join(dir, "task.yaml"), rec)
 }
 
 func (s *Store) LoadTask(taskID string) (Record, error) {
+	dir, err := s.taskDir(taskID)
+	if err != nil {
+		return Record{}, err
+	}
 	var rec Record
-	if err := readYAML(filepath.Join(s.taskDir(taskID), "task.yaml"), &rec); err != nil {
+	if err := readYAML(filepath.Join(dir, "task.yaml"), &rec); err != nil {
 		if os.IsNotExist(err) {
 			return Record{}, fmt.Errorf("%w: %s", ErrNotFound, taskID)
 		}
@@ -92,19 +112,27 @@ func (s *Store) ListTaskIDs() ([]string, error) {
 }
 
 func (s *Store) SaveAttempt(rec AttemptRecord) error {
-	if err := os.MkdirAll(s.taskDir(rec.TaskID), 0o755); err != nil {
+	dir, err := s.taskDir(rec.TaskID)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	rec.UpdatedAt = time.Now().UTC()
 	if rec.CreatedAt.IsZero() {
 		rec.CreatedAt = rec.UpdatedAt
 	}
-	return writeYAML(filepath.Join(s.taskDir(rec.TaskID), "attempt.yaml"), rec)
+	return writeYAML(filepath.Join(dir, "attempt.yaml"), rec)
 }
 
 func (s *Store) LoadAttempt(taskID string) (AttemptRecord, error) {
+	dir, err := s.taskDir(taskID)
+	if err != nil {
+		return AttemptRecord{}, err
+	}
 	var rec AttemptRecord
-	if err := readYAML(filepath.Join(s.taskDir(taskID), "attempt.yaml"), &rec); err != nil {
+	if err := readYAML(filepath.Join(dir, "attempt.yaml"), &rec); err != nil {
 		if os.IsNotExist(err) {
 			return AttemptRecord{}, fmt.Errorf("%w: %s", ErrNoAttempt, taskID)
 		}
@@ -151,6 +179,8 @@ func (s *Store) ResolveTaskID(ref string) (string, error) {
 	}
 	if _, err := s.LoadTask(ref); err == nil {
 		return ref, nil
+	} else if errors.Is(err, ErrInvalidTaskID) {
+		return "", err
 	}
 	ids, err := s.ListTaskIDs()
 	if err != nil {
@@ -182,10 +212,14 @@ func (s *Store) ResolveTaskID(ref string) (string, error) {
 }
 
 func (s *Store) RemoveTask(taskID string) error {
-	if _, err := os.Stat(s.taskDir(taskID)); os.IsNotExist(err) {
+	dir, err := s.taskDir(taskID)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		return fmt.Errorf("%w: %s", ErrNotFound, taskID)
 	}
-	return os.RemoveAll(s.taskDir(taskID))
+	return os.RemoveAll(dir)
 }
 
 func readYAML(path string, dest any) error {
