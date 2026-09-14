@@ -142,7 +142,9 @@ func (c *Client) collectPruneCandidates(root, baseBranch string, report *Report)
 	return candidates, repoDir, nil
 }
 
-func (c *Client) collectOrphanBranchCandidates(repoDir, baseBranch string, existing []pruneCandidate) ([]pruneCandidate, error) {
+func (c *Client) collectOrphanBranchCandidates(
+	repoDir, baseBranch string, existing []pruneCandidate,
+) ([]pruneCandidate, error) {
 	worktrees, err := c.ListCached()
 	if err != nil {
 		return nil, err
