@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strings"
 )
 
 var (
@@ -52,4 +53,13 @@ func printJSON(w io.Writer, v any) error {
 	}
 	_, err = w.Write(append(data, '\n'))
 	return err
+}
+
+func sanitizeForTerminal(value string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, value)
 }

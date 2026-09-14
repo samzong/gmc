@@ -104,7 +104,35 @@ Do not assume legacy paths or removed config keys.
 2. `GMC_CONFIG` env var
 3. `$XDG_CONFIG_HOME/gmc/config.yaml` (default: `~/.config/gmc/config.yaml`)
 4. `~/.gmc.yaml` (legacy fallback)
-5. Project-level `.gmc.yaml` overrides global when present
+
+**Value precedence** (highest first):
+
+1. `GMC_*` environment variables
+2. The file chosen above — when it was named explicitly (`--config` / `GMC_CONFIG`), a
+   project-level `.gmc.yaml` is ignored entirely, and gmc says so on stderr
+3. Project-level `.gmc.yaml`, but only when the config file was not named explicitly
+4. The resolved user config file
+5. Built-in defaults
+
+**Project-level `.gmc.yaml` is untrusted input.** It may only set keys from the
+allowlist `role`, `model` and `enable_emoji` (`repoAllowedKeys` in
+`internal/config/config.go`). Everything else is ignored with a warning on stderr.
+
+An allowlist, not a denylist, is deliberate: a new config key must be opted in
+rather than silently becoming repository-controllable. The three keys left out are
+left out because a repository must not be able to reach the user's machine or
+credentials:
+
+- `api_key` and `api_base` decide which secret is used and where it is sent.
+- `prompt_template` is a **path gmc reads and forwards to the model provider**, so a
+  repository could turn any local file into prompt text — `prompt_template: ~/id_rsa`
+  was enough to put a private key in the request body.
+
+Those three are read only from the user's own config or `GMC_*` variables. Do not
+route repository values through `viper.Set`: that writes to viper's override layer,
+which outranks environment variables and is also what `SaveConfig` persists, so a
+repository file could both mask explicit user input and be copied into the user's
+config file.
 
 **Config keys** (`internal/config/config.go`): `role`, `model`, `api_key`, `api_base`, `prompt_template`, `enable_emoji`.
 

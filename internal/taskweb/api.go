@@ -3,6 +3,7 @@ package taskweb
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -37,7 +38,7 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	var req createTaskRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -71,14 +72,13 @@ func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleStartTask(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req startTaskRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	sum, err := s.engine.Start(task.StartOptions{
 		TaskID:     id,
 		Agent:      req.Agent,
-		Command:    req.Command,
 		BaseBranch: req.BaseBranch,
 	})
 	if err != nil {
@@ -91,7 +91,7 @@ func (s *Server) handleStartTask(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMoveTask(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req moveTaskRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -110,7 +110,7 @@ func (s *Server) handleMoveTask(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAttachTask(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req attachTaskRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -146,7 +146,7 @@ func (s *Server) handleRemoveTask(w http.ResponseWriter, r *http.Request) {
 	force := false
 	if r.ContentLength > 0 {
 		var req removeTaskRequest
-		if err := decodeJSON(r, &req); err != nil {
+		if err := decodeJSON(w, r, &req); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -159,9 +159,16 @@ func (s *Server) handleRemoveTask(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"task_id": id, "action": "removed"})
 }
 
-func decodeJSON(r *http.Request, dst any) error {
+const maxRequestBody = 1 << 20
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	defer r.Body.Close()
-	dec := json.NewDecoder(r.Body)
+
+	if contentType := r.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "application/json") {
+		return fmt.Errorf("Content-Type must be application/json, got %q", contentType)
+	}
+
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBody))
 	dec.DisallowUnknownFields()
 	err := dec.Decode(dst)
 	if errors.Is(err, io.EOF) {
@@ -182,6 +189,8 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 
 func writeAPIError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, task.ErrInvalidTaskID):
+		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, task.ErrNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, task.ErrNoAttempt):

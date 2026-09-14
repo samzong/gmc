@@ -235,7 +235,6 @@ func runConfigGet() error {
 	}
 
 	if configOutputJSON || outputFormat() == "json" {
-		// JSON output to stdout for machine consumption
 		output := configJSONOutput{
 			Role:           cfg.Role,
 			Model:          cfg.Model,
@@ -249,17 +248,16 @@ func runConfigGet() error {
 		return encoder.Encode(output)
 	}
 
-	// Human-readable output to stdout (main data output)
 	fmt.Fprintln(outWriter(), "Current Configuration:")
-	fmt.Fprintf(outWriter(), "Role: %s\n", cfg.Role)
-	fmt.Fprintf(outWriter(), "Model: %s\n", cfg.Model)
+	fmt.Fprintf(outWriter(), "Role: %s\n", sanitizeForTerminal(cfg.Role))
+	fmt.Fprintf(outWriter(), "Model: %s\n", sanitizeForTerminal(cfg.Model))
 	fmt.Fprintln(outWriter(), "API Key: ********")
 	if cfg.APIBase != "" {
-		fmt.Fprintf(outWriter(), "API Base URL: %s\n", cfg.APIBase)
+		fmt.Fprintf(outWriter(), "API Base URL: %s\n", sanitizeForTerminal(cfg.APIBase))
 	} else {
 		fmt.Fprintln(outWriter(), "API Base URL: <Not Set>")
 	}
-	fmt.Fprintf(outWriter(), "Prompt Template: %s\n", cfg.PromptTemplate)
+	fmt.Fprintf(outWriter(), "Prompt Template: %s\n", sanitizeForTerminal(cfg.PromptTemplate))
 	fmt.Fprintf(outWriter(), "Enable Emoji: %v\n", cfg.EnableEmoji)
 	return nil
 }

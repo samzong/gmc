@@ -1,7 +1,6 @@
 package taskweb
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,6 +37,35 @@ func newTestServer(t *testing.T) (*Server, string) {
 	srv, err := New(engine, root, testServerOptions())
 	require.NoError(t, err)
 	return srv, root
+}
+
+func apiRequest(t *testing.T, srv *Server, method, url, body string) *http.Response {
+	t.Helper()
+
+	var reader io.Reader
+	if body != "" {
+		reader = strings.NewReader(body)
+	}
+	req, err := http.NewRequest(method, url, reader)
+	require.NoError(t, err)
+	req.Header.Set(tokenHeader, srv.token)
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	return resp
+}
+
+func apiGet(t *testing.T, srv *Server, url string) *http.Response {
+	t.Helper()
+	return apiRequest(t, srv, http.MethodGet, url, "")
+}
+
+func apiPost(t *testing.T, srv *Server, url, body string) *http.Response {
+	t.Helper()
+	return apiRequest(t, srv, http.MethodPost, url, body)
 }
 
 func writeAttempt(t *testing.T, storeRoot, taskID string, attempt task.AttemptRecord) {
@@ -125,8 +154,7 @@ func TestAPIProjectAndWorkflow(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 
-	resp, err := http.Get(ts.URL + "/api/v1/project")
-	require.NoError(t, err)
+	resp := apiGet(t, srv, ts.URL+"/api/v1/project")
 	t.Cleanup(func() { _ = resp.Body.Close() })
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -135,8 +163,7 @@ func TestAPIProjectAndWorkflow(t *testing.T) {
 	assert.NotEmpty(t, project.Path)
 	assert.Equal(t, "ghostty", project.SuggestedTerminal)
 
-	resp2, err := http.Get(ts.URL + "/api/v1/workflow")
-	require.NoError(t, err)
+	resp2 := apiGet(t, srv, ts.URL+"/api/v1/workflow")
 	t.Cleanup(func() { _ = resp2.Body.Close() })
 	require.Equal(t, http.StatusOK, resp2.StatusCode)
 
@@ -151,17 +178,15 @@ func TestAPITaskCRUD(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 
-	createBody := bytes.NewBufferString(`{"source":"webui task"}`)
-	resp, err := http.Post(ts.URL+"/api/v1/tasks", "application/json", createBody)
-	require.NoError(t, err)
+	createBody := `{"source":"webui task"}`
+	resp := apiPost(t, srv, ts.URL+"/api/v1/tasks", createBody)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
 	var created task.Record
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
 	require.NoError(t, resp.Body.Close())
 
-	resp, err = http.Get(ts.URL + "/api/v1/tasks")
-	require.NoError(t, err)
+	resp = apiGet(t, srv, ts.URL+"/api/v1/tasks")
 	var cards []TaskCard
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&cards))
 	require.NoError(t, resp.Body.Close())
@@ -169,17 +194,13 @@ func TestAPITaskCRUD(t *testing.T) {
 	assert.Equal(t, 1, cards[0].Index)
 	assert.Equal(t, "webui task", cards[0].Title)
 
-	resp, err = http.Get(ts.URL + "/api/v1/tasks/" + created.ID)
-	require.NoError(t, err)
+	resp = apiGet(t, srv, ts.URL+"/api/v1/tasks/"+created.ID)
 	var detail TaskDetail
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&detail))
 	require.NoError(t, resp.Body.Close())
 	assert.Equal(t, "webui task", detail.Source)
 
-	req, err := http.NewRequest(http.MethodDelete, ts.URL+"/api/v1/tasks/"+created.ID, nil)
-	require.NoError(t, err)
-	resp, err = http.DefaultClient.Do(req)
-	require.NoError(t, err)
+	resp = apiRequest(t, srv, http.MethodDelete, ts.URL+"/api/v1/tasks/"+created.ID, "")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.NoError(t, resp.Body.Close())
 }
@@ -189,23 +210,17 @@ func TestAPIAttachValidation(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 
-	createBody := bytes.NewBufferString(`{"source":"attach test"}`)
-	resp, err := http.Post(ts.URL+"/api/v1/tasks", "application/json", createBody)
-	require.NoError(t, err)
+	resp := apiPost(t, srv, ts.URL+"/api/v1/tasks", `{"source":"attach test"}`)
 	var created task.Record
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
 	require.NoError(t, resp.Body.Close())
 
-	body := bytes.NewBufferString(`{"terminal":"iterm2"}`)
-	resp, err = http.Post(ts.URL+"/api/v1/tasks/"+created.ID+"/attach", "application/json", body)
-	require.NoError(t, err)
+	resp = apiPost(t, srv, ts.URL+"/api/v1/tasks/"+created.ID+"/attach", `{"terminal":"iterm2"}`)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	require.NoError(t, resp.Body.Close())
 
 	writeAttempt(t, root, created.ID, task.AttemptRecord{TmuxSession: "sess-demo", TmuxSocket: "gmc-task"})
-	body = bytes.NewBufferString(`{"terminal":"ghostty"}`)
-	resp, err = http.Post(ts.URL+"/api/v1/tasks/"+created.ID+"/attach", "application/json", body)
-	require.NoError(t, err)
+	resp = apiPost(t, srv, ts.URL+"/api/v1/tasks/"+created.ID+"/attach", `{"terminal":"ghostty"}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	var attach AttachResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&attach))
@@ -228,12 +243,11 @@ func TestAPIAttachWithLauncher(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	createBody := bytes.NewBufferString(`{"source":"launch"}`)
+	createBody := `{"source":"launch"}`
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 
-	resp, err := http.Post(ts.URL+"/api/v1/tasks", "application/json", createBody)
-	require.NoError(t, err)
+	resp := apiPost(t, srv, ts.URL+"/api/v1/tasks", createBody)
 	var created task.Record
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
 	require.NoError(t, resp.Body.Close())
@@ -244,9 +258,7 @@ func TestAPIAttachWithLauncher(t *testing.T) {
 		TmuxSocket:  "gmc-task",
 	})
 
-	body := bytes.NewBufferString(`{"terminal":"ghostty"}`)
-	resp, err = http.Post(ts.URL+"/api/v1/tasks/"+created.ID+"/attach", "application/json", body)
-	require.NoError(t, err)
+	resp = apiPost(t, srv, ts.URL+"/api/v1/tasks/"+created.ID+"/attach", `{"terminal":"ghostty"}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	var attach AttachResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&attach))
@@ -261,9 +273,8 @@ func TestAPIMoveRejectsUnknownNode(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 
-	createBody := bytes.NewBufferString(`{"source":"move test"}`)
-	resp, err := http.Post(ts.URL+"/api/v1/tasks", "application/json", createBody)
-	require.NoError(t, err)
+	createBody := `{"source":"move test"}`
+	resp := apiPost(t, srv, ts.URL+"/api/v1/tasks", createBody)
 	var created task.Record
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
 	require.NoError(t, resp.Body.Close())
@@ -271,9 +282,7 @@ func TestAPIMoveRejectsUnknownNode(t *testing.T) {
 	writeTaskState(t, root, task.Record{ID: created.ID, State: "plan", CurrentNode: "plan"})
 	writeAttempt(t, root, created.ID, task.AttemptRecord{})
 
-	body := bytes.NewBufferString(`{"to":"missing-node"}`)
-	resp, err = http.Post(ts.URL+"/api/v1/tasks/"+created.ID+"/move", "application/json", body)
-	require.NoError(t, err)
+	resp = apiPost(t, srv, ts.URL+"/api/v1/tasks/"+created.ID+"/move", `{"to":"missing-node"}`)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	require.NoError(t, resp.Body.Close())
 }

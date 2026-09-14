@@ -54,10 +54,12 @@ func init() {
 	initTemplateParts()
 }
 
-// buildDefaultTemplateContent builds the default template content based on enable_emoji configuration
 func buildDefaultTemplateContent() string {
-	cfg := config.MustGetConfig()
-	enableEmoji := cfg.EnableEmoji
+	return buildDefaultTemplateContentWith(config.MustGetConfig())
+}
+
+func buildDefaultTemplateContentWith(cfg *config.Config) string {
+	enableEmoji := cfg != nil && cfg.EnableEmoji
 
 	formatMsg := templateParts.Format
 	emojiInstruction := ""
@@ -87,19 +89,23 @@ Select the most fitting type from: %s.
 	)
 }
 
-// readTemplateFile reads and parses a template file.
-// Returns the template content if successful, or an error if the file cannot be read.
-// If YAML parsing fails, returns the raw content as plain text.
 func readTemplateFile(filePath string) (string, error) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return "", fmt.Errorf("unable to read template file %s: %w", filePath, err)
 	}
 
+	if strings.TrimSpace(string(content)) == "" {
+		return "", fmt.Errorf("prompt template file is empty: %s", filePath)
+	}
+
 	var tpl PromptTemplate
 	if err := yaml.Unmarshal(content, &tpl); err != nil {
-		// If YAML parsing fails, treat as plain text template
 		return string(content), nil //nolint:nilerr // Intentional fallback to plain text
+	}
+
+	if strings.TrimSpace(tpl.Template) == "" {
+		return "", fmt.Errorf("prompt template file has no template body: %s", filePath)
 	}
 
 	return tpl.Template, nil

@@ -99,6 +99,31 @@ func init() {
 
 func initConfig() {
 	configErr = config.InitConfig(cfgFile)
+	if configErr != nil {
+		return
+	}
+	warnRepoConfig()
+}
+
+func warnRepoConfig() {
+	info := config.RepoConfig()
+
+	switch {
+	case info.Err != nil:
+		fmt.Fprintf(errWriter(), "gmc: %v\n", info.Err)
+	case info.Skipped:
+		fmt.Fprintf(errWriter(),
+			"gmc: ignoring project config %s because an explicit config file was given\n",
+			sanitizeForTerminal(info.Path))
+	case len(info.Ignored) > 0:
+		keys := strings.Join(info.Ignored, ", ")
+		if info.IgnoredTotal > len(info.Ignored) {
+			keys += fmt.Sprintf(", and %d more", info.IgnoredTotal-len(info.Ignored))
+		}
+		fmt.Fprintf(errWriter(),
+			"gmc: ignoring %s from project config %s; only your own config or GMC_* variables can set these\n",
+			keys, sanitizeForTerminal(info.Path))
+	}
 }
 
 func runRoot(cmd *cobra.Command, args []string) error {
@@ -132,7 +157,7 @@ func classifyError(err error) *exitcode.Error {
 	if errors.Is(err, git.ErrNotGitRepo) {
 		return exitcode.New(exitcode.NotGitRepo, err.Error(), err)
 	}
-	if errors.Is(err, llm.ErrLLM) {
+	if errors.Is(err, llm.ErrLLM) || errors.Is(err, workflow.ErrNoCommitSubject) {
 		return exitcode.New(exitcode.LLMError, err.Error(), err)
 	}
 	return nil
@@ -239,7 +264,7 @@ func handleStdinDiff(in io.Reader, llmClient *llm.Client) error {
 func generateStdinMessage(
 	llmClient *llm.Client, cfg *config.Config, changedFiles []string, diff string,
 ) (string, error) {
-	prompt := formatter.BuildPromptWithConfig(cfg, changedFiles, diff, userPrompt)
+	prompt := formatter.BuildPromptWithConfig(cfg, changedFiles, diff, "", userPrompt)
 
 	sp := ui.NewSpinner("Generating commit message...")
 	sp.Start()
@@ -251,6 +276,9 @@ func generateStdinMessage(
 	}
 
 	formattedMessage := formatter.FormatCommitMessageWithConfig(cfg, message)
+	if formattedMessage == "" {
+		return "", workflow.ErrNoCommitSubject
+	}
 	if issueNum != "" {
 		formattedMessage = fmt.Sprintf("%s (#%s)", formattedMessage, issueNum)
 	}
