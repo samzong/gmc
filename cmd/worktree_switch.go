@@ -13,12 +13,8 @@ import (
 var wtSwitchCmd = &cobra.Command{
 	Use:   "switch",
 	Short: "Interactively switch to another worktree",
-	Long: `Interactively select a worktree and switch to it.
-
-Requires shell integration. If not set up, run:
-  eval "$(gmc wt init zsh)"  # or bash/fish
-
-Without shell integration, this command will only print the path.`,
+	Long: `Interactively select a worktree and change into it.
+Requires the shell integration from 'gmc wt init'; without it only the path is printed.`,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		wtClient := newWorktreeClient()
 		return runWorktreeSwitch(wtClient)

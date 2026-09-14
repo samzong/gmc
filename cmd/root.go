@@ -35,13 +35,12 @@ var (
 	debug          bool
 	rootCmd        = &cobra.Command{
 		Use:   "gmc",
-		Short: "Parallel git worktrees for AI agents, plus AI commit messages.",
-		Long: `gmc runs parallel git worktrees for parallel AI coding agents, built on the ` +
-			`bare-repo (.bare) + worktree pattern with helpers like 'gmc wt dup' and ` +
-			`'gmc wt share' for conflict-free multi-agent development.
-
-As a secondary workflow, gmc also generates Conventional Commits messages from staged ` +
-			`diffs via an LLM, so the same tool that isolates your agents also ships their work.`,
+		Short: "Parallel git worktrees and AI commit messages",
+		Long: `gmc manages sibling git worktrees on a bare (.bare) clone so parallel AI coding agents each get an isolated working tree.
+Run 'gmc' with no arguments to generate a Conventional Commits message from the staged diff and commit it.`,
+		Example: `  gmc
+  gmc -a -y
+  gmc wt add feature-login`,
 		Version:       fmt.Sprintf("%s (built at %s)", Version, BuildTime),
 		Args:          cobra.ArbitraryArgs,
 		RunE:          runRoot,
@@ -85,7 +84,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&noSignoff, "no-signoff", false, "Skip signing the commit (DCO signoff)")
 	rootCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Generate message only, do not commit")
 	rootCmd.Flags().BoolVarP(&addAll, "all", "a", false,
-		"Stage files before committing (all files if none specified, or only specified files)")
+		"Stage all files, or only the given paths, before committing")
 	rootCmd.Flags().StringVar(&issueNum, "issue", "", "Optional issue number")
 	rootCmd.Flags().BoolVarP(&autoYes, "yes", "y", false, "Automatically confirm the commit message")
 	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed git command output")

@@ -20,7 +20,6 @@ var (
 	configCmd = &cobra.Command{
 		Use:   "config",
 		Short: "Manage gmc configuration",
-		Long:  `Manage gmc configuration, including setting roles and LLM models, etc.`,
 	}
 
 	configSetCmd = &cobra.Command{
@@ -33,7 +32,7 @@ var (
 
 	configSetRoleCmd = &cobra.Command{
 		Use:   "role [Role Name]",
-		Short: "Set Current Role",
+		Short: "Set the current role",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return runConfigSetRole(args)
@@ -42,7 +41,7 @@ var (
 
 	configSetModelCmd = &cobra.Command{
 		Use:   "model [Model Name]",
-		Short: "Set up the LLM model",
+		Short: "Set the LLM model",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return runConfigSetModel(args)
@@ -51,15 +50,9 @@ var (
 
 	configSetAPIKeyCmd = &cobra.Command{
 		Use:   "apikey",
-		Short: "Set OpenAI API Key (interactive, hidden input)",
-		Long: `Set OpenAI API Key securely with hidden input.
-
-For security, the key must be entered interactively (input is hidden).
-This command requires a terminal.
-
-Usage:
-  gmc config set apikey`,
-		Args: cobra.NoArgs,
+		Short: "Set the OpenAI API key (hidden input)",
+		Long:  `Read the OpenAI API key from a hidden interactive prompt. A terminal is required.`,
+		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return runConfigSetAPIKey()
 		},
@@ -67,7 +60,7 @@ Usage:
 
 	configSetAPIBaseCmd = &cobra.Command{
 		Use:   "apibase [API Base URL]",
-		Short: "Set OpenAI API Base URL",
+		Short: "Set the OpenAI API base URL",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return runConfigSetAPIBase(args)
@@ -76,7 +69,7 @@ Usage:
 
 	configSetPromptTemplateCmd = &cobra.Command{
 		Use:   "prompt_template [Template Path]",
-		Short: "Set Prompt Template",
+		Short: "Set the prompt template path",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return runConfigSetPromptTemplate(args)
@@ -94,7 +87,7 @@ Usage:
 
 	configGetCmd = &cobra.Command{
 		Use:   "get",
-		Short: "Get Current Configuration",
+		Short: "Show current configuration",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return runConfigGet()
 		},

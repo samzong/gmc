@@ -25,9 +25,7 @@ var taskCmd = &cobra.Command{
 	Short:   "Manage local AI coding tasks",
 	GroupID: "worktree",
 	Long: `Manage local AI coding tasks backed by a repo-family ledger.
-
-Minimal flow: add -> start -> advance -> attach/show/list -> rm.
-Workflow nodes come from ~/.config/gmc/workflow.yaml or ~/.gmc/workflow.yaml.`,
+Workflow nodes come from ~/.config/gmc/workflow.yaml.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return cmd.Help()

@@ -16,15 +16,10 @@ var (
 )
 
 var wtPruneCmd = &cobra.Command{
-	Use:   "prune",
-	Short: "Remove worktrees whose branches are merged",
-	Long: `Remove worktrees whose branches are already merged into the base branch.
-
-This command uses pure git ancestry checks to decide which worktrees are safe to remove.
-By default it removes both the worktree directory and the local branch.
-
-Use --pr-aware to check GitHub PR state (via gh CLI) before deciding whether
-to remove each worktree. Only worktrees with MERGED PRs are removed.`,
+	Use:     "prune",
+	Short:   "Remove worktrees whose branches are merged",
+	Long:    `By default the local branch is deleted along with the worktree.`,
+	Example: `  gmc wt prune --dry-run`,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		wtClient := newWorktreeClient()
 		return runWorktreePrune(wtClient)

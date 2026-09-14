@@ -34,14 +34,8 @@ var wtCmd = &cobra.Command{
 	Use:     "wt",
 	Aliases: []string{"worktree"},
 	Short:   "Manage worktrees for parallel AI agents",
-	Long: `Manage git worktrees for running AI coding agents in parallel.
-
-Uses a bare repository (.bare) + sibling worktree layout so each agent
-(Claude Code, Codex, Copilot, ...) gets its own isolated working tree.
-Use 'dup' to fan out N worktrees for parallel agents, 'share' to keep
-.env / node_modules consistent across them, 'sync' to refresh against
-the base branch, and 'promote' to keep the winning solution.
-`,
+	Long: `Manage sibling worktrees on a bare (.bare) clone so each AI agent gets an isolated working tree.
+Run without a subcommand to list worktrees.`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		wtClient := newWorktreeClient()
 		return runWorktreeDefault(wtClient, cmd)
@@ -51,20 +45,10 @@ the base branch, and 'promote' to keep the winning solution.
 var wtAddCmd = &cobra.Command{
 	Use:   "add [name...]",
 	Short: "Create new worktrees with new branches",
-	Long: `Create one or more worktrees with new branches.
-
-The branch name will be the same as the worktree directory name.
-When no name is given but -b is set, the worktree name is derived from
-the base branch (useful for checking out an existing branch).
-
-Examples:
-  gmc wt add feature-login                    # Create one worktree
-  gmc wt add feat-a feat-b feat-c             # Create multiple worktrees
-  gmc wt add feature-login -b main            # Create based on main branch
-  gmc wt add feature-login --sync             # Sync base branch before add
-  gmc wt add --pr 1065                        # Create a worktree from a pull request
-  gmc wt add hotfix-bug123 -b release
-  gmc wt add -b feat/existing-branch          # Name derived from -b`,
+	Long: `Create one or more worktrees, each on a new branch named after its directory.
+With -b and no name, the worktree name is derived from the base branch.`,
+	Example: `  gmc wt add feature-login
+  gmc wt add -b feat/existing-branch`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if addPRMode(cmd) {
 			if wtAddPR <= 0 {
@@ -98,8 +82,7 @@ Examples:
 var wtListCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
-	Short:   "List all worktrees (alias: ls)",
-	Long:    `List all worktrees in the current repository.`,
+	Short:   "List all worktrees",
 	RunE: func(_ *cobra.Command, _ []string) error {
 		wtClient := newWorktreeClient()
 		return runWorktreeList(wtClient)
@@ -109,19 +92,10 @@ var wtListCmd = &cobra.Command{
 var wtRemoveCmd = &cobra.Command{
 	Use:     "remove [name...]",
 	Aliases: []string{"rm"},
-	Short:   "Remove worktrees (alias: rm)",
-	Long: `Remove one or more worktrees.
-
-By default, only removes the worktree directory, keeping the branch.
-Use -D to also delete the branch. Use --all to remove all non-protected worktrees.
-
-Examples:
-  gmc wt remove feature-login           # Remove one worktree
-  gmc wt rm feat-a feat-b feat-c        # Remove multiple worktrees
-  gmc wt rm feature-login -D            # Remove worktree and delete branch
-  gmc wt rm feature-login -f            # Force remove (ignore dirty state)
-  gmc wt rm feature-login --dry-run     # Preview what would be removed
-  gmc wt rm --all -D                    # Remove all non-protected worktrees and branches`,
+	Short:   "Remove worktrees",
+	Long:    `Remove one or more worktrees. The branch is kept unless -D is given.`,
+	Example: `  gmc wt remove feature-login
+  gmc wt rm --all --dry-run`,
 	Args: func(_ *cobra.Command, args []string) error {
 		if wtAll && len(args) > 0 {
 			return errors.New("--all and positional arguments are mutually exclusive")
@@ -140,28 +114,9 @@ Examples:
 var wtCloneCmd = &cobra.Command{
 	Use:   "clone <url>",
 	Short: "Clone a repo into bare + worktree layout",
-	Long: `Clone a repository into the bare (.bare) + worktree layout that the rest
-of 'gmc wt' expects. This is the starting point for running parallel AI
-agents: clone once, then 'gmc wt dup' to fan out.
-
-Creates a .bare directory containing the bare repository and a worktree
-for the default branch. For fork workflows, use --upstream to register
-the original upstream repo alongside your fork.
-
-Examples:
-  # Basic clone into bare + worktree layout
-  gmc wt clone https://github.com/user/repo.git
-
-  # Custom project directory name
-  gmc wt clone https://github.com/user/repo.git --name my-project
-
-  # Fork workflow: clone your fork, register upstream, work in main/
-  gmc wt clone https://github.com/me/fork.git \
-    --upstream https://github.com/org/repo.git \
-    --name upstream-repo
-
-  # Typical next step: fan out worktrees for parallel AI agents
-  cd upstream-repo && gmc wt dup 3`,
+	Long:  `Clone a repository into a .bare directory plus a worktree for the default branch.`,
+	Example: `  gmc wt clone https://github.com/user/repo.git
+  gmc wt clone https://github.com/me/fork.git --upstream https://github.com/org/repo.git --name repo`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		wtClient := newWorktreeClient()
@@ -172,35 +127,11 @@ Examples:
 var wtDupCmd = &cobra.Command{
 	Use:   "dup [count]",
 	Short: "Fan out worktrees for parallel AI agents",
-	Long: `Fan out N sibling worktrees so multiple AI coding agents can work in parallel.
-
-Each worktree gets a temporary branch (_dup/<base>/<timestamp>-<n>). Point a
-different agent (Claude Code, Codex, Copilot, ...) at each one, compare the
-results, then promote the winner back into the current parent worktree with
-'gmc wt promote'.
-
-Use --task to copy task context files from the parent worktree into each
-candidate. Task files are ordinary files after they are copied.
-
-Examples:
-  # Fan out 3 sibling worktrees based on main
+	Long: `Create N sibling worktrees on temporary branches (_dup/<base>/<timestamp>-<n>) for parallel agents.
+Defaults to 2 worktrees from the current branch. Promote the winner with 'gmc wt promote'.`,
+	Example: `  gmc wt dup
   gmc wt dup 3 -b main
-
-  # Fan out candidates with a copied task file
-  gmc wt dup 3 --task todo.md
-
-  # Typical parallel workflow with Claude Code / Codex / Copilot
-  gmc wt dup 3
-  cd ../.dup-1 && claude    # agent 1
-  cd ../.dup-2 && codex     # agent 2
-  cd ../.dup-3 && copilot   # agent 3
-
-  # When one agent's solution wins, promote it into the current worktree:
-  gmc wt promote .dup-1
-
-  # Defaults: count=2, base=current branch
-  gmc wt dup
-  gmc wt dup -b dev`,
+  gmc wt dup 3 --task todo.md`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		wtClient := newWorktreeClient()
@@ -211,16 +142,10 @@ Examples:
 var wtPromoteCmd = &cobra.Command{
 	Use:   "promote <candidate>",
 	Short: "Apply a candidate back into the current worktree",
-	Long: `Apply a candidate worktree's changes back into the current parent worktree.
-
-Run this from the parent worktree that should receive the winning candidate.
-The result is left as uncommitted working tree changes. This command never
-commits, pushes, opens PRs, or deletes candidate worktrees.
-
-Examples:
-  gmc wt promote .dup-2 --dry-run
-  gmc wt promote .dup-2
-  gmc wt promote ../.dup-1`,
+	Long: `Apply a candidate's changes into the current parent worktree as uncommitted changes.
+It never commits, pushes, opens PRs, or deletes the candidate.`,
+	Example: `  gmc wt promote .dup-2 --dry-run
+  gmc wt promote .dup-2`,
 	Args: func(_ *cobra.Command, args []string) error {
 		if len(args) == 2 {
 			return errors.New(
@@ -242,12 +167,8 @@ Examples:
 var wtPrReviewCmd = &cobra.Command{
 	Use:   "pr-review <PR_NUMBER>",
 	Short: "Create a worktree from a GitHub Pull Request",
-	Long: `Create a worktree from a GitHub Pull Request for code review.
-
-Automatically detects remote (upstream > origin > single remote).
-
-Examples:
-  gmc wt pr-review 1065`,
+	Long: `Create a worktree from a GitHub pull request for review.
+The remote is detected automatically (upstream, then origin, then the single remote).`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		prNumber, err := strconv.Atoi(args[0])

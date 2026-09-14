@@ -20,10 +20,8 @@ var (
 var wtShareCmd = &cobra.Command{
 	Use:   "share",
 	Short: "Manage shared resources for worktrees",
-	Long: `Manage resources prepared before hooks run in new worktrees.
-
-Global defaults live under worktree in the selected gmc config file.
-Repository rules in the git common dir's gmc-share.yml override global paths.
+	Long: `Manage files and directories prepared in new worktrees before hooks run.
+Global rules live under worktree in the gmc config file; repository rules in gmc-share.yml override them.
 Run without arguments for interactive repository management.`,
 	Example: "  gmc wt share discover\n  gmc wt share list --global",
 	Args:    cobra.NoArgs,
@@ -35,17 +33,8 @@ Run without arguments for interactive repository management.`,
 var wtShareAddCmd = &cobra.Command{
 	Use:   "add <path>",
 	Short: "Add or update a shared resource",
-	Long: `Add a file or directory shared across worktrees in each repository.
-
-copy creates an independent copy; link shares a writable source through a symlink.
-Global defaults apply when creating worktrees. Adding a global rule does not sync
-existing worktrees. Run share sync in a repository to apply its effective rules.
-Global and pattern rules use the primary worktree as their source, never a
-directory found only in another linked worktree.
-
-Quote patterns such as '**/.local' to match nested project paths. Pattern scans
-skip dependency, build, and .local directory interiors. Linking dependency environments
-shares writable state across branches; prefer package-manager caches where possible.`,
+	Long: `Add a rule that shares a path with worktrees: copy makes an independent copy, link symlinks the primary worktree's source so writes are shared.
+Global rules apply only to new worktrees; run 'gmc wt share sync' to apply them to existing ones.`,
 	Example: "  gmc wt share add .env --strategy copy\n" +
 		"  gmc wt share add .local --strategy link --global\n" +
 		"  gmc wt share add '**/node_modules' --strategy link --global",
@@ -77,8 +66,8 @@ var wtShareRemoveCmd = &cobra.Command{
 	Aliases: []string{"rm"},
 	Short:   "Remove or disable a shared resource",
 	Long: `Remove a repository rule and disable any inherited global rule for that path.
-Use --global to remove a global default. Existing files are preserved.`,
-	Example:           "  gmc wt share remove .local\n  gmc wt share remove .local --global",
+Existing files are preserved.`,
+	Example:           "  gmc wt share remove .local",
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completeSharedResources,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -137,24 +126,10 @@ var wtShareListCmd = &cobra.Command{
 }
 
 var wtShareDiscoverCmd = &cobra.Command{
-	Use:   "discover",
-	Short: "Inspect sharing and dependency hotspots",
-	Long: `Inspect nested projects, shared resources, and dependency directories across repository worktrees.
-
-The preview lists directories first, largest first, with readable sizes and sharing
-status. Project manifests are summarized instead of listed as resources.
-Use --output json for full source paths, matched rules, and per-resource guidance.
-
-The preview includes effective hooks, which run after sharing only during worktree
-creation. Dependency environments and build outputs are reported with guidance;
-only safe configuration-file candidates are automatically added. Size estimates
-are apparent bytes, not exclusive disk usage or guaranteed savings.
-Sources outside the primary worktree are inspected but not propagated by global
-or pattern rules.
-
-Use --auto to add candidates and sync effective rules to existing worktrees.
-Hooks are not executed by discover or share sync.`,
-	Example:           "  gmc wt share discover\n  gmc wt share discover --output json\n  gmc wt share discover --auto",
+	Use:               "discover",
+	Short:             "Inspect sharing and dependency hotspots",
+	Long:              `Preview nested projects, shared resources, and dependency directories across worktrees, largest first.`,
+	Example:           "  gmc wt share discover",
 	Args:              cobra.NoArgs,
 	ValidArgsFunction: cobra.NoFileCompletions,
 	RunE:              runWorktreeShareDiscover,
@@ -207,7 +182,6 @@ var wtShareSyncCmd = &cobra.Command{
 	Short: "Sync effective resources to all worktrees",
 	Long: "Sync global and repository rules to existing worktrees without running hooks " +
 		"or replacing existing directories.",
-	Example:           "  gmc wt share sync",
 	Args:              cobra.NoArgs,
 	ValidArgsFunction: cobra.NoFileCompletions,
 	RunE: func(_ *cobra.Command, _ []string) error {

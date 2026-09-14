@@ -28,13 +28,9 @@ var (
 
 	tagCmd = &cobra.Command{
 		Use:   "tag",
-		Short: "Suggest and create a semantic version tag based on commits since the last release",
-		Long: `Analyze commits since the latest git tag, recommend the next semantic version, ` +
-			`and optionally create the tag when confirmed.
-
-Examples:
-  gmc tag          # Analyze commits and interactively create a tag
-  gmc tag --yes    # Auto-confirm tag creation with the suggested version`,
+		Short: "Suggest and create the next semver tag",
+		Example: `  gmc tag
+  gmc tag --yes`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return runTagCommand()
 		},

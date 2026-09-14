@@ -10,20 +10,10 @@ import (
 var wtInitCmd = &cobra.Command{
 	Use:   "init <bash|zsh|fish>",
 	Short: "Generate shell integration script",
-	Long: `Generate a shell integration script for gmc.
-
-Add the following to your shell's rc file:
-
-  # For bash (~/.bashrc)
-  eval "$(gmc wt init bash)"
-
-  # For zsh (~/.zshrc)
+	Long:  `Generate a shell wrapper that lets 'gmc wt switch' change the current directory.`,
+	Example: `  eval "$(gmc wt init bash)"
   eval "$(gmc wt init zsh)"
-
-  # For fish (~/.config/fish/config.fish)
-  gmc wt init fish | source
-
-After this, 'gmc wt switch' will be able to change your working directory.`,
+  gmc wt init fish | source`,
 	ValidArgs: []string{"bash", "zsh", "fish"},
 	Args:      cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 	RunE: func(_ *cobra.Command, args []string) error {

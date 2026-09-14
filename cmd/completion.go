@@ -9,21 +9,8 @@ import (
 var completionCmd = &cobra.Command{
 	Use:   "completion [bash|zsh|fish|powershell]",
 	Short: "Generate shell completion script",
-	Long: `Generate shell completion script for gmc.
-
-Add the following to your shell's rc file:
-
-  # Bash (~/.bashrc)
-  source <(gmc completion bash)
-
-  # Zsh (~/.zshrc)
-  source <(gmc completion zsh)
-
-  # Fish (~/.config/fish/config.fish)
-  gmc completion fish | source
-
-  # PowerShell
-  gmc completion powershell | Out-String | Invoke-Expression`,
+	Example: `  source <(gmc completion bash)
+  gmc completion fish | source`,
 	ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
 	Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 	DisableFlagsInUseLine: true,

@@ -180,7 +180,6 @@ func TestConfigCommandStructure(t *testing.T) {
 	assert.NotNil(t, configCmd)
 	assert.Equal(t, "config", configCmd.Use)
 	assert.Equal(t, "Manage gmc configuration", configCmd.Short)
-	assert.Contains(t, configCmd.Long, "Manage gmc configuration")
 }
 
 func TestStringTrimming(t *testing.T) {
@@ -262,7 +261,7 @@ func TestConfigCommands(t *testing.T) {
 
 	assert.NotNil(t, configSetRoleCmd)
 	assert.Equal(t, "role [Role Name]", configSetRoleCmd.Use)
-	assert.Equal(t, "Set Current Role", configSetRoleCmd.Short)
+	assert.Equal(t, "Set the current role", configSetRoleCmd.Short)
 
 	assert.NotNil(t, configSetModelCmd)
 	assert.Equal(t, "model [Model Name]", configSetModelCmd.Use)

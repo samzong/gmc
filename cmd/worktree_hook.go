@@ -14,9 +14,8 @@ var wtHookCmd = &cobra.Command{
 	Short: "Manage hooks after worktree creation",
 	Long: `Manage commands run in a new worktree after shared resources are prepared.
 
-Global defaults live under worktree.hooks in the selected gmc config file.
-Repository hooks live alongside shared resources in gmc-share.yml. Give a hook an
-ID to replace or disable it in a repository. Hooks run in effective list order.`,
+Global hooks live under worktree.hooks in the gmc config file; repository hooks in gmc-share.yml
+replace or disable a global hook with the same ID. Hooks run in effective list order.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return runHookListCommand(cmd, newWorktreeClient())
@@ -27,9 +26,7 @@ var wtHookAddCmd = &cobra.Command{
 	Use:   "add <command>",
 	Short: "Add or replace a worktree hook",
 	Long: `Configure a command executed after sharing during worktree creation.
-
-A repository hook with the same ID replaces an inherited global hook. Global
-commands run in every repository; use shell conditions for project-specific work.
+A repository hook with the same ID replaces an inherited global hook.
 Adding a hook does not execute it.`,
 	Example: "  gmc wt hook add 'pnpm install' --id install --desc 'Install dependencies'\n" +
 		"  gmc wt hook add 'test ! -f uv.lock || uv sync' --id python --global",
@@ -57,10 +54,8 @@ var wtHookRemoveCmd = &cobra.Command{
 	Aliases: []string{"rm"},
 	Short:   "Remove or disable a hook",
 	Long: `Remove a hook by its ID or the one-based index shown by hook list.
-
-Repository removal also disables an inherited global hook. With --global, use
-the index from hook list --global to remove a global default.`,
-	Example:           "  gmc wt hook remove install\n  gmc wt hook remove 1 --global",
+Repository removal also disables an inherited global hook.`,
+	Example:           "  gmc wt hook remove install",
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completeHooks,
 	RunE: func(cmd *cobra.Command, args []string) error {

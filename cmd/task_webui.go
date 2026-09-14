@@ -15,11 +15,7 @@ import (
 var taskWebuiCmd = &cobra.Command{
 	Use:   "webui",
 	Short: "Start local kanban WebUI for tasks",
-	Long: `Start a local HTTP server with a kanban WebUI for managing tasks in the current repository.
-
-Opens your browser to a drag-and-drop task board. Attach uses Ghostty, iTerm2, or Terminal.app on macOS.`,
-	Args:    cobra.NoArgs,
-	Example: `  gmc task webui`,
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return startTaskWebUI(taskweb.Options{})
 	},
