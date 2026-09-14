@@ -36,11 +36,12 @@ var (
 	rootCmd        = &cobra.Command{
 		Use:   "gmc",
 		Short: "Parallel git worktrees and AI commit messages",
-		Long: `gmc manages sibling git worktrees on a bare (.bare) clone so parallel AI coding agents each get an isolated working tree.
+		Long: `gmc manages sibling git worktrees on a bare (.bare) clone so parallel AI coding agents ` +
+			`each get an isolated working tree.
 Run 'gmc' with no arguments to generate a Conventional Commits message from the staged diff and commit it.`,
-		Example: `  gmc
-  gmc -a -y
-  gmc wt add feature-login`,
+		Example: `  gmc -a -y
+  gmc wt add feature-login
+  gmc`,
 		Version:       fmt.Sprintf("%s (built at %s)", Version, BuildTime),
 		Args:          cobra.ArbitraryArgs,
 		RunE:          runRoot,

@@ -33,7 +33,8 @@ Run without arguments for interactive repository management.`,
 var wtShareAddCmd = &cobra.Command{
 	Use:   "add <path>",
 	Short: "Add or update a shared resource",
-	Long: `Add a rule that shares a path with worktrees: copy makes an independent copy, link symlinks the primary worktree's source so writes are shared.
+	Long: `Add a rule that shares a path with worktrees: copy makes an independent copy, ` +
+		`link symlinks the primary worktree's source so writes are shared.
 Global rules apply only to new worktrees; run 'gmc wt share sync' to apply them to existing ones.`,
 	Example: "  gmc wt share add .env --strategy copy\n" +
 		"  gmc wt share add .local --strategy link --global\n" +
@@ -126,9 +127,10 @@ var wtShareListCmd = &cobra.Command{
 }
 
 var wtShareDiscoverCmd = &cobra.Command{
-	Use:               "discover",
-	Short:             "Inspect sharing and dependency hotspots",
-	Long:              `Preview nested projects, shared resources, and dependency directories across worktrees, largest first.`,
+	Use:   "discover",
+	Short: "Inspect sharing and dependency hotspots",
+	Long: `Preview nested projects, shared resources, and dependency directories across worktrees, ` +
+		`largest first.`,
 	Example:           "  gmc wt share discover",
 	Args:              cobra.NoArgs,
 	ValidArgsFunction: cobra.NoFileCompletions,

@@ -33,7 +33,8 @@ func init() {
 	typePrefixPattern = regexp.MustCompile(`(?i)^(` + typePattern + `)(\([^\)]+\))?:`)
 
 	preamblePattern = regexp.MustCompile(
-		`(?i)^(?:sure|ok(?:ay)?|certainly|here(?:'s| is| are)?|this is|the commit message|commit message|message|output|result|suggestion)\b[^:\n]*:`)
+		`(?i)^(?:sure|ok(?:ay)?|certainly|here(?:'s| is| are)?|this is|the commit message|` +
+			`commit message|message|output|result|suggestion)\b[^:\n]*:`)
 	wrapperLabelPattern = regexp.MustCompile(
 		`(?i)^(?:here(?:'s| is)?\s+(?:your\s+)?)?(?:(?:the|proposed|suggested|my)\s+)?` +
 			`(?:commit\s+message|commit|message|output|result|suggestion)s?$`)

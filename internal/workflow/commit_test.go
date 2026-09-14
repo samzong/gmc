@@ -124,7 +124,7 @@ func bigDiff() (diff, stats string) {
 	for _, name := range []string{"main.go", "go.sum"} {
 		b.WriteString("diff --git a/" + name + " b/" + name + "\n")
 		b.WriteString("@@ -1,40 +1,40 @@\n")
-		for i := 0; i < 40; i++ {
+		for range 40 {
 			b.WriteString("-old line that is long enough to add up quickly\n")
 			b.WriteString("+new line that is long enough to add up quickly\n")
 		}
