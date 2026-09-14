@@ -17,6 +17,7 @@ type PruneOptions struct {
 	Force      bool
 	DryRun     bool
 	PRAware    bool
+	Branches   bool
 }
 
 type PruneEntry struct {
@@ -43,6 +44,10 @@ type PruneResult struct {
 type pruneCandidate struct {
 	wt   Info
 	name string
+}
+
+func (p pruneCandidate) hasWorktree() bool {
+	return p.wt.Path != ""
 }
 
 var ghRunFunc = ghRunDefault
@@ -74,6 +79,13 @@ func (c *Client) Prune(opts PruneOptions) (PruneResult, error) {
 	candidates, repoDir, err := c.collectPruneCandidates(c.worktreeRoot, baseBranch, &result.Report)
 	if err != nil {
 		return result, err
+	}
+	if opts.Branches {
+		orphans, err := c.collectOrphanBranchCandidates(repoDir, baseBranch, candidates)
+		if err != nil {
+			return result, err
+		}
+		candidates = append(candidates, orphans...)
 	}
 
 	if opts.PRAware {
@@ -128,6 +140,45 @@ func (c *Client) collectPruneCandidates(root, baseBranch string, report *Report)
 	}
 
 	return candidates, repoDir, nil
+}
+
+func (c *Client) collectOrphanBranchCandidates(repoDir, baseBranch string, existing []pruneCandidate) ([]pruneCandidate, error) {
+	worktrees, err := c.ListCached()
+	if err != nil {
+		return nil, err
+	}
+	pp, err := c.NewProtectionPolicy()
+	if err != nil {
+		return nil, err
+	}
+
+	claimed := make(map[string]struct{}, len(worktrees)+len(existing)+2)
+	claimed[localBranchName(baseBranch)] = struct{}{}
+	claimed[pp.MainBranch] = struct{}{}
+	for _, wt := range worktrees {
+		claimed[wt.Branch] = struct{}{}
+	}
+	for _, cand := range existing {
+		claimed[cand.wt.Branch] = struct{}{}
+	}
+
+	result, err := c.runner.Run("-C", repoDir, "branch", "--format=%(refname:short)")
+	if err != nil {
+		return nil, gitutil.WrapGitError("failed to list branches", result, err)
+	}
+
+	var orphans []pruneCandidate
+	for _, branch := range strings.Split(result.StdoutString(true), "\n") {
+		branch = strings.TrimSpace(branch)
+		if branch == "" {
+			continue
+		}
+		if _, ok := claimed[branch]; ok {
+			continue
+		}
+		orphans = append(orphans, pruneCandidate{wt: Info{Branch: branch}})
+	}
+	return orphans, nil
 }
 
 type ghPRInfo struct {
@@ -190,12 +241,14 @@ func (c *Client) prunePRAware(
 
 		switch {
 		case hasPR && pr.State == "MERGED":
-			status := c.GetWorktreeStatus(cand.wt.Path)
-			if status != "clean" && !opts.Force {
-				entry.Action = "skipped"
-				entry.Reason = "PR merged but worktree has uncommitted changes"
-				result.PruneEntries = append(result.PruneEntries, entry)
-				continue
+			if cand.hasWorktree() {
+				status := c.GetWorktreeStatus(cand.wt.Path)
+				if status != "clean" && !opts.Force {
+					entry.Action = "skipped"
+					entry.Reason = "PR merged but worktree has uncommitted changes"
+					result.PruneEntries = append(result.PruneEntries, entry)
+					continue
+				}
 			}
 			if opts.DryRun {
 				entry.Action = "would_remove"
@@ -203,7 +256,7 @@ func (c *Client) prunePRAware(
 				result.PruneEntries = append(result.PruneEntries, entry)
 				continue
 			}
-			if err := c.removeWorktreeAndBranch(repoDir, cand.wt.Path, cand.wt.Branch, opts.Force, &result.Report); err != nil {
+			if err := c.pruneCandidateRefs(repoDir, cand, opts.Force, &result.Report); err != nil {
 				return result, err
 			}
 			entry.Action = "removed"
@@ -244,25 +297,30 @@ func (c *Client) pruneClassic(
 			continue
 		}
 
-		status := c.GetWorktreeStatus(cand.wt.Path)
-		if status != "clean" && !opts.Force {
-			result.Warn(fmt.Sprintf("Skipped %s: worktree has uncommitted changes (use --force)", cand.name))
-			continue
+		var status string
+		if cand.hasWorktree() {
+			status = c.GetWorktreeStatus(cand.wt.Path)
+			if status != "clean" && !opts.Force {
+				result.Warn(fmt.Sprintf("Skipped %s: worktree has uncommitted changes (use --force)", cand.name))
+				continue
+			}
 		}
 
 		candidate := PruneCandidate{Name: cand.name, Branch: cand.wt.Branch, Status: status}
 
 		if opts.DryRun {
-			result.Warn("Would remove worktree: " + cand.wt.Path)
-			result.Warn("  Branch: " + cand.wt.Branch)
-			result.Warn("  Status: " + status)
+			if cand.hasWorktree() {
+				result.Warn("Would remove worktree: " + cand.wt.Path)
+				result.Warn("  Branch: " + cand.wt.Branch)
+				result.Warn("  Status: " + status)
+			}
 			result.Warn("Would delete branch: " + cand.wt.Branch)
 			result.Candidates = append(result.Candidates, candidate)
 			prunedAny = true
 			continue
 		}
 
-		if err := c.removeWorktreeAndBranch(repoDir, cand.wt.Path, cand.wt.Branch, opts.Force, &result.Report); err != nil {
+		if err := c.pruneCandidateRefs(repoDir, cand, opts.Force, &result.Report); err != nil {
 			return result, err
 		}
 		result.Candidates = append(result.Candidates, candidate)
@@ -276,8 +334,16 @@ func (c *Client) pruneClassic(
 	return result, nil
 }
 
-func (c *Client) removeWorktreeAndBranch(repoDir, wtPath, branch string, force bool, report *Report) error {
-	name := filepath.Base(wtPath)
+func (c *Client) pruneCandidateRefs(repoDir string, cand pruneCandidate, force bool, report *Report) error {
+	if cand.hasWorktree() {
+		if err := c.removePrunedWorktree(repoDir, cand.wt.Path, force, report); err != nil {
+			return err
+		}
+	}
+	return c.deletePrunedBranch(repoDir, cand.wt.Branch, report)
+}
+
+func (c *Client) removePrunedWorktree(repoDir, wtPath string, force bool, report *Report) error {
 	args := []string{"-C", repoDir, "worktree", "remove"}
 	if force {
 		args = append(args, "--force")
@@ -288,9 +354,12 @@ func (c *Client) removeWorktreeAndBranch(repoDir, wtPath, branch string, force b
 	if err != nil {
 		return gitutil.WrapGitError("failed to remove worktree", gitResult, err)
 	}
-	report.Warn(fmt.Sprintf("Removed worktree '%s'", name))
+	report.Warn(fmt.Sprintf("Removed worktree '%s'", filepath.Base(wtPath)))
+	return nil
+}
 
-	gitResult, err = c.runner.RunLogged("-C", repoDir, "branch", "-D", branch)
+func (c *Client) deletePrunedBranch(repoDir, branch string, report *Report) error {
+	gitResult, err := c.runner.RunLogged("-C", repoDir, "branch", "-D", branch)
 	if err != nil {
 		return gitutil.WrapGitError("failed to delete branch", gitResult, err)
 	}

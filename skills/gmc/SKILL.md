@@ -86,6 +86,7 @@ Copy this checklist and check off items as you complete them:
 
 - Run `gmc wt prune --dry-run` first to preview
 - Use `gmc wt prune --pr-aware` to check PR state before pruning
+- Use `gmc wt prune --branches` when the user wants stale local branches without worktrees cleaned too
 - Ask before actual removal
 - Use `--force` only with explicit user approval
 

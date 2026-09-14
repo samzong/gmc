@@ -23,6 +23,17 @@ gmc wt prune --dry-run
 gmc wt prune --pr-aware
 ```
 
+## Stale local branches
+
+Merged branches that no longer have a worktree are left alone by default. Add
+`--branches` to delete them as well; combine with `--pr-aware` when the repository
+uses squash merges, since ancestry checks cannot see those.
+
+```bash
+gmc wt prune --branches --pr-aware --dry-run
+gmc wt prune --branches --pr-aware
+```
+
 ## Base branch
 
 ```bash

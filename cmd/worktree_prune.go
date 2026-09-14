@@ -9,17 +9,22 @@ import (
 )
 
 var (
-	wtPruneBase    string
-	wtPruneForce   bool
-	wtPruneDryRun  bool
-	wtPrunePRAware bool
+	wtPruneBase     string
+	wtPruneForce    bool
+	wtPruneDryRun   bool
+	wtPrunePRAware  bool
+	wtPruneBranches bool
 )
 
 var wtPruneCmd = &cobra.Command{
-	Use:     "prune",
-	Short:   "Remove worktrees whose branches are merged",
-	Long:    `By default the local branch is deleted along with the worktree.`,
-	Example: `  gmc wt prune --dry-run`,
+	Use:   "prune",
+	Short: "Remove worktrees whose branches are merged",
+	Long: `By default the local branch is deleted along with the worktree.
+
+With --branches, merged local branches that have no worktree are deleted too,
+so long-lived clones stop accumulating stale branches.`,
+	Example: `  gmc wt prune --dry-run
+  gmc wt prune --branches --pr-aware --dry-run`,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		wtClient := newWorktreeClient()
 		return runWorktreePrune(wtClient)
@@ -39,6 +44,7 @@ func runWorktreePrune(wtClient *worktree.Client) error {
 		Force:      wtPruneForce,
 		DryRun:     wtPruneDryRun,
 		PRAware:    wtPrunePRAware,
+		Branches:   wtPruneBranches,
 	}
 	result, err := wtClient.Prune(opts)
 	if err != nil {
@@ -76,6 +82,10 @@ func printPruneTable(entries []worktree.PruneEntry) {
 	w := tabwriter.NewWriter(outWriter(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "NAME\tBRANCH\tPR\tSTATE\tACTION\tREASON")
 	for _, e := range entries {
+		name := e.Name
+		if name == "" {
+			name = "-"
+		}
 		pr := "-"
 		if e.PRNum > 0 {
 			pr = fmt.Sprintf("#%d", e.PRNum)
@@ -84,7 +94,7 @@ func printPruneTable(entries []worktree.PruneEntry) {
 		if state == "" {
 			state = "none"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", e.Name, e.Branch, pr, state, e.Action, e.Reason)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", name, e.Branch, pr, state, e.Action, e.Reason)
 	}
 	w.Flush()
 }
