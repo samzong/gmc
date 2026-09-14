@@ -221,6 +221,8 @@ func init() {
 	wtPruneCmd.Flags().BoolVar(&wtPruneDryRun, "dry-run", false, "Preview what would be removed without making changes")
 	wtPruneCmd.Flags().BoolVar(&wtPrunePRAware, "pr-aware", false,
 		"Check GitHub PR state before pruning (requires gh CLI)")
+	wtPruneCmd.Flags().BoolVar(&wtPruneBranches, "branches", false,
+		"Also delete merged local branches that have no worktree")
 
 	wtCmd.Flags().BoolVar(&wtShowPR, "pr", false,
 		"Show review request status for each branch (requires gh or glab CLI)")

@@ -270,3 +270,148 @@ func TestPrunePRAware_ForceRemovesDirty(t *testing.T) {
 		t.Error("expected branch to be deleted")
 	}
 }
+
+func branchExists(t *testing.T, client *Client, repoDir, branch string) bool {
+	t.Helper()
+	_, err := client.runner.Run("-C", repoDir, "rev-parse", "--verify", "refs/heads/"+branch)
+	return err == nil
+}
+
+func setupOrphanBranchRepo(t *testing.T) string {
+	t.Helper()
+	repoDir := initTestRepo(t)
+
+	runGit(t, repoDir, "branch", "orphan-merged", "main")
+	runGit(t, repoDir, "checkout", "-q", "orphan-merged")
+	writeFile(t, filepath.Join(repoDir, "merged.txt"), "merged")
+	runGit(t, repoDir, "add", ".")
+	runGit(t, repoDir, "commit", "-m", "merged work")
+	runGit(t, repoDir, "checkout", "-q", "main")
+	runGit(t, repoDir, "merge", "--no-ff", "-m", "merge orphan", "orphan-merged")
+
+	runGit(t, repoDir, "branch", "orphan-unmerged", "main")
+	runGit(t, repoDir, "checkout", "-q", "orphan-unmerged")
+	writeFile(t, filepath.Join(repoDir, "unmerged.txt"), "unmerged")
+	runGit(t, repoDir, "add", ".")
+	runGit(t, repoDir, "commit", "-m", "unmerged work")
+	runGit(t, repoDir, "checkout", "-q", "main")
+
+	return repoDir
+}
+
+func TestPruneBranches_ClassicDeletesMergedOrphanOnly(t *testing.T) {
+	repoDir := setupOrphanBranchRepo(t)
+
+	cwd, _ := os.Getwd()
+	defer func() { _ = os.Chdir(cwd) }()
+	_ = os.Chdir(repoDir)
+
+	client := NewClient(Options{})
+	result, err := client.Prune(PruneOptions{Branches: true})
+	if err != nil {
+		t.Fatalf("Prune() error = %v", err)
+	}
+
+	if len(result.Candidates) != 1 || result.Candidates[0].Branch != "orphan-merged" {
+		t.Fatalf("candidates = %+v, want only orphan-merged", result.Candidates)
+	}
+	if result.Candidates[0].Name != "" {
+		t.Errorf("orphan candidate name = %q, want empty", result.Candidates[0].Name)
+	}
+	if branchExists(t, client, repoDir, "orphan-merged") {
+		t.Error("orphan-merged should have been deleted")
+	}
+	if !branchExists(t, client, repoDir, "orphan-unmerged") {
+		t.Error("orphan-unmerged should be kept")
+	}
+	if !branchExists(t, client, repoDir, "main") {
+		t.Error("main should be kept")
+	}
+}
+
+func TestPruneBranches_ClassicDryRunKeepsBranches(t *testing.T) {
+	repoDir := setupOrphanBranchRepo(t)
+
+	cwd, _ := os.Getwd()
+	defer func() { _ = os.Chdir(cwd) }()
+	_ = os.Chdir(repoDir)
+
+	client := NewClient(Options{})
+	result, err := client.Prune(PruneOptions{Branches: true, DryRun: true})
+	if err != nil {
+		t.Fatalf("Prune() error = %v", err)
+	}
+
+	if len(result.Candidates) != 1 || result.Candidates[0].Branch != "orphan-merged" {
+		t.Fatalf("candidates = %+v, want only orphan-merged", result.Candidates)
+	}
+	if !branchExists(t, client, repoDir, "orphan-merged") {
+		t.Error("dry-run must not delete orphan-merged")
+	}
+}
+
+func TestPrune_WithoutBranchesFlagIgnoresOrphans(t *testing.T) {
+	repoDir := setupOrphanBranchRepo(t)
+
+	cwd, _ := os.Getwd()
+	defer func() { _ = os.Chdir(cwd) }()
+	_ = os.Chdir(repoDir)
+
+	client := NewClient(Options{})
+	result, err := client.Prune(PruneOptions{})
+	if err != nil {
+		t.Fatalf("Prune() error = %v", err)
+	}
+
+	if len(result.Candidates) != 0 {
+		t.Fatalf("candidates = %+v, want none", result.Candidates)
+	}
+	if !branchExists(t, client, repoDir, "orphan-merged") {
+		t.Error("orphan-merged must survive prune without --branches")
+	}
+}
+
+func TestPruneBranches_PRAwareDeletesMergedOrphan(t *testing.T) {
+	repoDir := setupOrphanBranchRepo(t)
+
+	wtDir := filepath.Join(repoDir, "feat-wt")
+	runGit(t, repoDir, "worktree", "add", "-b", "feat-wt", wtDir, "main")
+
+	data, _ := json.Marshal([]ghPRInfo{
+		{Number: 20, State: "MERGED", HeadRefName: "orphan-unmerged"},
+		{Number: 21, State: "OPEN", HeadRefName: "feat-wt"},
+	})
+	orig := ghRunFunc
+	defer func() { ghRunFunc = orig }()
+	ghRunFunc = func(string, ...string) ([]byte, error) { return data, nil }
+
+	cwd, _ := os.Getwd()
+	defer func() { _ = os.Chdir(cwd) }()
+	_ = os.Chdir(repoDir)
+
+	client := NewClient(Options{})
+	result, err := client.Prune(PruneOptions{Branches: true, PRAware: true})
+	if err != nil {
+		t.Fatalf("Prune() error = %v", err)
+	}
+
+	entries := make(map[string]PruneEntry)
+	for _, e := range result.PruneEntries {
+		entries[e.Branch] = e
+	}
+	if e := entries["orphan-unmerged"]; e.Action != "removed" || e.Name != "" {
+		t.Errorf("orphan-unmerged entry = %+v, want removed with empty name", e)
+	}
+	if e := entries["orphan-merged"]; e.Action != "skipped" || e.Reason != "no PR found" {
+		t.Errorf("orphan-merged entry = %+v, want skipped (no PR found)", e)
+	}
+	if e := entries["feat-wt"]; e.Action != "skipped" || e.Name != "feat-wt" {
+		t.Errorf("feat-wt entry = %+v, want skipped with worktree name", e)
+	}
+	if branchExists(t, client, repoDir, "orphan-unmerged") {
+		t.Error("orphan-unmerged should have been deleted via PR MERGED")
+	}
+	if !branchExists(t, client, repoDir, "orphan-merged") {
+		t.Error("orphan-merged has no PR and must be kept in pr-aware mode")
+	}
+}

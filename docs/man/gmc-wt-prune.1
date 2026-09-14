@@ -12,10 +12,18 @@ gmc-wt-prune - Remove worktrees whose branches are merged
 .SH DESCRIPTION
 By default the local branch is deleted along with the worktree.
 
+.PP
+With --branches, merged local branches that have no worktree are deleted too,
+so long-lived clones stop accumulating stale branches.
+
 
 .SH OPTIONS
 \fB-b\fP, \fB--base\fP=""
 	Base branch to check merge status against
+
+.PP
+\fB--branches\fP[=false]
+	Also delete merged local branches that have no worktree
 
 .PP
 \fB--dry-run\fP[=false]
@@ -50,6 +58,7 @@ By default the local branch is deleted along with the worktree.
 .SH EXAMPLE
 .EX
   gmc wt prune --dry-run
+  gmc wt prune --branches --pr-aware --dry-run
 .EE
 
 
