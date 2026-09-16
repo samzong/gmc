@@ -9,15 +9,6 @@ import (
 	"github.com/samzong/gmc/internal/git"
 )
 
-type BumpType string
-
-const (
-	BumpNone  BumpType = "none"
-	BumpPatch BumpType = "patch"
-	BumpMinor BumpType = "minor"
-	BumpMajor BumpType = "major"
-)
-
 type SemVer struct {
 	Major int
 	Minor int
@@ -77,11 +68,8 @@ type RuleStats struct {
 }
 
 type RuleResult struct {
-	BaseVersion SemVer
 	NextVersion SemVer
-	BumpType    BumpType
 	Reason      string
-	Stats       RuleStats
 }
 
 var commitTypePattern = regexp.MustCompile(`^(?P<type>[a-z]+)(?:\([^)]+\))?(?P<breaking>!)?:`)
@@ -117,25 +105,20 @@ func SuggestWithRules(base SemVer, commits []git.CommitInfo) RuleResult {
 	}
 
 	result := RuleResult{
-		BaseVersion: base,
 		NextVersion: base,
-		BumpType:    BumpNone,
-		Stats:       stats,
 		Reason:      "Only documentation, style, test, or chore changes detected",
 	}
 
 	for _, change := range []struct {
 		messages []string
-		bump     BumpType
 		next     SemVer
 		label    string
 	}{
-		{stats.Breaking, BumpMajor, SemVer{Major: base.Major + 1}, "breaking change"},
-		{stats.Features, BumpMinor, SemVer{Major: base.Major, Minor: base.Minor + 1}, "feature"},
-		{stats.Patches, BumpPatch, SemVer{Major: base.Major, Minor: base.Minor, Patch: base.Patch + 1}, "fix/refactor"},
+		{stats.Breaking, SemVer{Major: base.Major + 1}, "breaking change"},
+		{stats.Features, SemVer{Major: base.Major, Minor: base.Minor + 1}, "feature"},
+		{stats.Patches, SemVer{Major: base.Major, Minor: base.Minor, Patch: base.Patch + 1}, "fix/refactor"},
 	} {
 		if len(change.messages) > 0 {
-			result.BumpType = change.bump
 			result.NextVersion = change.next
 			result.Reason = fmt.Sprintf("Detected %d %s commit(s) since %s, e.g. %s",
 				len(change.messages), change.label, base.String(), describeMessages(change.messages))
@@ -201,24 +184,12 @@ func containsBreakingChange(message, body string) bool {
 }
 
 func describeMessages(messages []string) string {
-	if len(messages) == 0 {
-		return ""
-	}
-
 	const maxExamples = 2
 	examples := messages[:min(len(messages), maxExamples)]
 
 	quoted := make([]string, 0, len(examples))
 	for _, msg := range examples {
-		trimmed := strings.TrimSpace(msg)
-		if trimmed == "" {
-			continue
-		}
-		quoted = append(quoted, fmt.Sprintf("%q", trimmed))
-	}
-
-	if len(quoted) == 0 {
-		return "recent commits"
+		quoted = append(quoted, fmt.Sprintf("%q", msg))
 	}
 
 	if len(messages) > maxExamples {

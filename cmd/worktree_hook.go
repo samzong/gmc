@@ -37,13 +37,7 @@ Adding a hook does not execute it.`,
 		id, _ := cmd.Flags().GetString("id")
 		hook := worktree.Hook{ID: id, Cmd: args[0], Desc: hookDesc}
 		global, _ := cmd.Flags().GetBool("global")
-		var report worktree.Report
-		var err error
-		if global {
-			report, err = client.AddGlobalHook(hook)
-		} else {
-			report, err = client.AddHook(hook)
-		}
+		report, err := client.AddHook(hook, global)
 		printPreparationReport(report)
 		return err
 	},
@@ -67,10 +61,8 @@ Repository removal also disables an inherited global hook.`,
 		var err error
 		if parseErr != nil {
 			report, err = client.RemoveHookByID(value, global)
-		} else if global {
-			report, err = client.RemoveGlobalHook(index - 1)
 		} else {
-			report, err = client.RemoveHook(index - 1)
+			report, err = client.RemoveHook(index-1, global)
 		}
 		printPreparationReport(report)
 		return err

@@ -161,14 +161,12 @@ func matchSharedSegments(pattern, candidate []string) bool {
 	return err == nil && matched && matchSharedSegments(pattern[1:], candidate[1:])
 }
 
-func sharedRuleForPath(rules []SharedResource, candidate string, includeParents bool) (SharedResource, bool) {
+func sharedRuleForPath(rules []SharedResource, candidate string) (SharedResource, bool) {
 	var chosen SharedResource
 	found := false
 	for _, rule := range rules {
-		matches := MatchSharedPath(rule.Path, candidate)
-		if includeParents {
-			matches = matches || MatchSharedPath(strings.TrimSuffix(rule.Path, "/")+"/**", candidate)
-		}
+		matches := MatchSharedPath(rule.Path, candidate) ||
+			MatchSharedPath(strings.TrimSuffix(rule.Path, "/")+"/**", candidate)
 		if !matches {
 			continue
 		}
@@ -201,7 +199,7 @@ func sharedExcludedChild(rules []SharedResource, parent SharedResource, paths []
 		if !strings.HasPrefix(candidate, parent.Path+"/") {
 			continue
 		}
-		if rule, found := sharedRuleForPath(rules, candidate, true); found && rule.Disabled {
+		if rule, found := sharedRuleForPath(rules, candidate); found && rule.Disabled {
 			return rule.Path
 		}
 	}
@@ -306,7 +304,7 @@ func (c *Client) expandSharedResources(rules []SharedResource) ([]SharedResource
 	sort.Strings(ordered)
 	var resources []SharedResource
 	for _, resourcePath := range ordered {
-		rule, found := sharedRuleForPath(rules, resourcePath, true)
+		rule, found := sharedRuleForPath(rules, resourcePath)
 		if !found || rule.Disabled || !MatchSharedPath(rule.Path, resourcePath) {
 			continue
 		}

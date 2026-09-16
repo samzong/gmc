@@ -246,7 +246,7 @@ func TestDiscover_ExplicitResourceInsidePrunedDirectoryAndInheritedManager(t *te
 		require.NoError(t, os.WriteFile(full, []byte(content), 0644))
 	}
 	client := NewClient(Options{})
-	_, err := client.AddSharedResource(".local/reports/latest.json", StrategyCopy)
+	_, err := client.AddSharedResource(".local/reports/latest.json", StrategyCopy, false)
 	require.NoError(t, err)
 	results, err := client.Discover(DiscoverOptions{MainWorktreePath: root, IncludeConfigured: true})
 	require.NoError(t, err)
@@ -258,7 +258,7 @@ func TestDiscover_ExplicitResourceInsidePrunedDirectoryAndInheritedManager(t *te
 	assert.Equal(t, filepath.Join(root, ".local/reports/latest.json"), byPath[".local/reports/latest.json"].Source)
 	assert.Equal(t, "pnpm", byPath["apps/web/node_modules"].PackageManager)
 	assert.Equal(t, "pnpm", byPath["apps/web/package.json"].PackageManager)
-	_, err = client.AddSharedResource("**/node_modules", StrategySymlink)
+	_, err = client.AddSharedResource("**/node_modules", StrategySymlink, false)
 	require.NoError(t, err)
 	results, err = client.Discover(DiscoverOptions{MainWorktreePath: root, IncludeConfigured: true})
 	require.NoError(t, err)

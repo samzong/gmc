@@ -91,7 +91,7 @@ func (c *Client) Discover(opts DiscoverOptions) ([]DiscoverResult, error) {
 			if project, ok := nearestShareProject(entry.Path, projects); ok {
 				entry.Project, entry.Ecosystem, entry.PackageManager = project.Project, project.Ecosystem, project.PackageManager
 			}
-			if rule, ok := discoverCoveringRule(cfg.Resources, entry.Path); ok {
+			if rule, ok := sharedRuleForPath(cfg.Resources, entry.Path); ok {
 				entry.ConfiguredBy = rule.Path
 				entry.Strategy = rule.Strategy
 				entry.Status = "configured"
@@ -162,10 +162,6 @@ func (c *Client) Discover(opts DiscoverOptions) ([]DiscoverResult, error) {
 	return results, nil
 }
 
-func discoverCoveringRule(resources []SharedResource, path string) (SharedResource, bool) {
-	return sharedRuleForPath(resources, path, true)
-}
-
 func discoverTrackedPaths(root string) ([]string, error) {
 	if _, err := os.Lstat(filepath.Join(root, ".git")); os.IsNotExist(err) {
 		return nil, nil
@@ -229,7 +225,7 @@ func (c *Client) AddDiscoveredResources(results []DiscoverResult) (Report, error
 		if r.Strategy != StrategyCopy && r.Strategy != StrategySymlink {
 			continue
 		}
-		if _, covered := discoverCoveringRule(effective.Resources, r.Path); covered {
+		if _, covered := sharedRuleForPath(effective.Resources, r.Path); covered {
 			continue
 		}
 		resource := SharedResource{Path: r.Path, Strategy: r.Strategy}

@@ -87,7 +87,7 @@ func promptAddResource(c *worktree.Client, reader *bufio.Reader) {
 
 	strategy := promptStrategy(reader)
 
-	report, err := c.AddSharedResource(path, strategy)
+	report, err := c.AddSharedResource(path, strategy, false)
 	printPreparationReport(report)
 	if err != nil {
 		fmt.Fprintf(errWriter(), "Error adding resource: %v\n", err)
@@ -118,7 +118,7 @@ func promptRemoveResource(c *worktree.Client, reader *bufio.Reader, cfg *worktre
 	}
 
 	res := cfg.Resources[num-1]
-	report, err := c.RemoveSharedResource(res.Path)
+	report, err := c.RemoveSharedResource(res.Path, false)
 	printPreparationReport(report)
 	if err != nil {
 		fmt.Fprintf(errWriter(), "Error removing resource: %v\n", err)

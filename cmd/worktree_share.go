@@ -47,14 +47,9 @@ Global rules apply only to new worktrees; run 'gmc wt share sync' to apply them 
 			strategy = promptStrategy(bufio.NewReader(os.Stdin))
 		}
 		global, _ := cmd.Flags().GetBool("global")
-		if global {
-			report, err := client.AddGlobalSharedResource(args[0], strategy)
-			printPreparationReport(report)
-			return err
-		}
-		report, err := client.AddSharedResource(args[0], strategy)
+		report, err := client.AddSharedResource(args[0], strategy, global)
 		printPreparationReport(report)
-		if err != nil {
+		if err != nil || global {
 			return err
 		}
 		return syncSharedResources(client)
@@ -73,13 +68,7 @@ Existing files are preserved.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client := newWorktreeClient()
 		global, _ := cmd.Flags().GetBool("global")
-		var report worktree.Report
-		var err error
-		if global {
-			report, err = client.RemoveGlobalSharedResource(args[0])
-		} else {
-			report, err = client.RemoveSharedResource(args[0])
-		}
+		report, err := client.RemoveSharedResource(args[0], global)
 		printPreparationReport(report)
 		if err == nil {
 			fmt.Fprintln(errWriter(), "Existing files are preserved.")

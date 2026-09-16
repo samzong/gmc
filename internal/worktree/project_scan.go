@@ -58,11 +58,7 @@ func scanShareProjects(root string, rules []SharedResource) ([]DiscoverResult, [
 				}
 			}
 		}
-		if _, covered := discoverCoveringRule(rules, rel); covered {
-			if candidate.Strategy != "" || candidate.Status != "" || shareRuleMatches(rules, rel) {
-				resources = append(resources, candidate)
-			}
-		} else if candidate.Strategy != "" || candidate.Status != "" {
+		if candidate.Strategy != "" || candidate.Status != "" || shareRuleMatches(rules, rel) {
 			resources = append(resources, candidate)
 		}
 		if entry.IsDir() {

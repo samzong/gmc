@@ -103,7 +103,7 @@ func TestHookListIndicesMatchEffectiveRemoval(t *testing.T) {
 	require.Len(t, hooks, 2)
 	assert.True(t, hooks[0].Disabled)
 	assert.Equal(t, "setup", hooks[1].ID)
-	_, err := client.RemoveHook(hooks[1].Index - 1)
+	_, err := client.RemoveHook(hooks[1].Index-1, false)
 	require.NoError(t, err)
 	cfg, err := client.LoadEffectiveSharedConfig()
 	require.NoError(t, err)

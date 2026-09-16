@@ -7,22 +7,6 @@ import (
 	"slices"
 )
 
-func (c *Client) AddSharedResource(path string, strategy ResourceStrategy) (Report, error) {
-	return c.addSharedResource(path, strategy, false)
-}
-
-func (c *Client) RemoveSharedResource(path string) (Report, error) {
-	return c.removeSharedResource(path, false)
-}
-
-func (c *Client) AddHook(hook Hook) (Report, error) {
-	return c.addHook(hook, false)
-}
-
-func (c *Client) RemoveHook(index int) (Report, error) {
-	return c.removeHook(index, false)
-}
-
 func (c *Client) loadSharedScope(global bool) (*SharedConfig, string, error) {
 	if global {
 		return c.LoadGlobalSharedConfig()
@@ -40,11 +24,7 @@ func (c *Client) saveSharedScope(cfg *SharedConfig, path string, global bool) er
 	return c.SaveSharedConfig(cfg, path)
 }
 
-func (c *Client) AddGlobalSharedResource(path string, strategy ResourceStrategy) (Report, error) {
-	return c.addSharedResource(path, strategy, true)
-}
-
-func (c *Client) addSharedResource(path string, strategy ResourceStrategy, global bool) (Report, error) {
+func (c *Client) AddSharedResource(path string, strategy ResourceStrategy, global bool) (Report, error) {
 	var report Report
 	if global && filepath.IsAbs(path) {
 		return report, errors.New("global shared paths must be worktree-relative")
@@ -73,11 +53,7 @@ func (c *Client) addSharedResource(path string, strategy ResourceStrategy, globa
 	return report, nil
 }
 
-func (c *Client) RemoveGlobalSharedResource(path string) (Report, error) {
-	return c.removeSharedResource(path, true)
-}
-
-func (c *Client) removeSharedResource(path string, global bool) (Report, error) {
+func (c *Client) RemoveSharedResource(path string, global bool) (Report, error) {
 	var report Report
 	path, err := c.NormalizeSharedResourcePath(path)
 	if err != nil {
@@ -121,11 +97,7 @@ func (c *Client) removeSharedResource(path string, global bool) (Report, error) 
 	return report, nil
 }
 
-func (c *Client) AddGlobalHook(hook Hook) (Report, error) {
-	return c.addHook(hook, true)
-}
-
-func (c *Client) addHook(hook Hook, global bool) (Report, error) {
+func (c *Client) AddHook(hook Hook, global bool) (Report, error) {
 	var report Report
 	cfg, configPath, err := c.loadSharedScope(global)
 	if err != nil {
@@ -148,10 +120,6 @@ func (c *Client) addHook(hook Hook, global bool) (Report, error) {
 	return report, nil
 }
 
-func (c *Client) RemoveGlobalHook(index int) (Report, error) {
-	return c.removeHook(index, true)
-}
-
 func (c *Client) hookList(global bool) (*SharedConfig, error) {
 	if global {
 		cfg, _, err := c.LoadGlobalSharedConfig()
@@ -168,13 +136,13 @@ func (c *Client) RemoveHookByID(id string, global bool) (Report, error) {
 	}
 	for i, hook := range cfg.Hooks {
 		if hook.ID == id {
-			return c.removeHook(i, global)
+			return c.RemoveHook(i, global)
 		}
 	}
 	return report, fmt.Errorf("hook id not found: %s", id)
 }
 
-func (c *Client) removeHook(index int, global bool) (Report, error) {
+func (c *Client) RemoveHook(index int, global bool) (Report, error) {
 	var report Report
 	visible, err := c.hookList(global)
 	if err != nil {

@@ -26,7 +26,6 @@ type CommitOptions struct {
 	DryRun     bool
 	IssueNum   string
 	AutoYes    bool
-	Verbose    bool
 	BranchDesc string
 	UserPrompt string
 	ErrWriter  io.Writer
@@ -207,24 +206,31 @@ func (f *CommitFlow) runCommitLoop(changes stagedChanges, commitFn func(string) 
 
 func (f *CommitFlow) generateCommitMessage(changes stagedChanges) (string, error) {
 	prompt := formatter.BuildPromptWithConfig(f.cfg, changes.Files, changes.Diff, changes.Stats, f.opts.UserPrompt)
+	message, err := GenerateMessage(f.llm, f.cfg, prompt)
+	if err != nil {
+		return "", err
+	}
+	message = f.applyIssueSuffix(message)
 
+	fmt.Fprintln(f.opts.ErrWriter, "\nGenerated Commit Message:")
+	fmt.Fprintln(f.opts.OutWriter, message)
+	return message, nil
+}
+
+func GenerateMessage(llm LLMClient, cfg *config.Config, prompt string) (string, error) {
 	sp := ui.NewSpinner("Generating commit message...")
 	sp.Start()
-	message, err := f.llm.GenerateCommitMessage(prompt, f.cfg.Model)
+	message, err := llm.GenerateCommitMessage(prompt, cfg.Model)
 	sp.Stop()
 
 	if err != nil {
 		return "", fmt.Errorf("failed to generate commit message: %w", err)
 	}
 
-	formattedMessage := formatter.FormatCommitMessageWithConfig(f.cfg, message)
+	formattedMessage := formatter.FormatCommitMessageWithConfig(cfg, message)
 	if formattedMessage == "" {
 		return "", ErrNoCommitSubject
 	}
-	formattedMessage = f.applyIssueSuffix(formattedMessage)
-
-	fmt.Fprintln(f.opts.ErrWriter, "\nGenerated Commit Message:")
-	fmt.Fprintln(f.opts.OutWriter, formattedMessage)
 	return formattedMessage, nil
 }
 
