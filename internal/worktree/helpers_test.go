@@ -77,7 +77,7 @@ func initBareLayoutRepo(t testing.TB) string {
 	tmpDir := physicalTempDir(t)
 
 	bareDir := filepath.Join(tmpDir, ".bare")
-	runGit(t, tmpDir, "init", "--bare", bareDir)
+	runGit(t, tmpDir, "init", "--bare", "-b", "main", bareDir)
 	runGit(t, bareDir, "config", "user.name", "Test User")
 	runGit(t, bareDir, "config", "user.email", "test@example.com")
 
