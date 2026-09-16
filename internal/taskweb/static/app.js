@@ -25,10 +25,14 @@ const state = {
 
 const els = {};
 
-function request(path, init = {}) {
+function request(path, data, method = "POST") {
   const headers = { "X-GMC-Token": TOKEN };
-  if (init.body) headers["Content-Type"] = "application/json";
-  return fetch(API + path, { headers, ...init }).then(async (res) => {
+  const init = { headers };
+  if (data !== undefined) {
+    headers["Content-Type"] = "application/json";
+    Object.assign(init, { method, body: JSON.stringify(data) });
+  }
+  return fetch(API + path, init).then(async (res) => {
     const body = await res.text();
     let data = null;
     if (body) {
@@ -46,6 +50,15 @@ function request(path, init = {}) {
     }
     return data;
   });
+}
+
+function taskPath(taskId, action = "") {
+  return "/tasks/" + encodeURIComponent(taskId) + action;
+}
+
+async function refreshTaskDetail(taskId) {
+  state.details[taskId] = await request(taskPath(taskId));
+  renderBoard();
 }
 
 function create(tag, attrs = {}, children = []) {
@@ -115,11 +128,7 @@ function dragTask() {
 }
 
 function canDrop(task, targetColumn) {
-  if (!task) return false;
-  if (targetColumn === "__add__") return false;
-  if (isDone(task)) return false;
-  if (columnForTask(task) === targetColumn) return false;
-  return true;
+  return Boolean(task) && targetColumn !== "__add__" && !isDone(task) && columnForTask(task) !== targetColumn;
 }
 
 function showToast(message) {
@@ -174,10 +183,7 @@ function openRemoveDialog(task) {
 }
 
 function handleBoardClick(event) {
-  if (!state.selectedId) return;
-  const target = event.target;
-  if (target.closest(".task-card")) return;
-  if (target.closest("dialog")) return;
+  if (!state.selectedId || event.target.closest(".task-card, dialog")) return;
   state.selectedId = null;
   renderBoard();
 }
@@ -187,8 +193,7 @@ async function selectTask(taskId) {
   renderBoard();
   if (state.selectedId && !state.details[taskId]) {
     try {
-      state.details[taskId] = await request("/tasks/" + encodeURIComponent(taskId));
-      renderBoard();
+      await refreshTaskDetail(taskId);
     } catch (err) {
       showToast(err.message);
     }
@@ -199,10 +204,7 @@ async function addTask() {
   const source = els.addSource.value.trim();
   if (!source) return;
   try {
-    await request("/tasks", {
-      method: "POST",
-      body: JSON.stringify({ source }),
-    });
+    await request("/tasks", { source });
     els.addDialog.close();
     showToast("Task added");
     await refreshTasks();
@@ -214,25 +216,20 @@ async function addTask() {
 async function startTask() {
   if (!state.workflow) return;
   try {
-    await request("/tasks/" + encodeURIComponent(state.startTaskId) + "/start", {
-      method: "POST",
-      body: JSON.stringify({
-        agent: els.startAgent.value.trim(),
-        base_branch: els.startBase.value.trim(),
-      }),
+    await request(taskPath(state.startTaskId, "/start"), {
+      agent: els.startAgent.value.trim(),
+      base_branch: els.startBase.value.trim(),
     });
     if (state.startTarget && state.startTarget !== state.workflow.start) {
-      await request("/tasks/" + encodeURIComponent(state.startTaskId) + "/move", {
-        method: "POST",
-        body: JSON.stringify({ to: state.startTarget === "__done__" ? "done" : state.startTarget }),
+      await request(taskPath(state.startTaskId, "/move"), {
+        to: state.startTarget === "__done__" ? "done" : state.startTarget,
       });
     }
     els.startDialog.close();
     showToast("Task started");
     await refreshTasks();
     state.selectedId = state.startTaskId;
-    state.details[state.startTaskId] = await request("/tasks/" + encodeURIComponent(state.startTaskId));
-    renderBoard();
+    await refreshTaskDetail(state.startTaskId);
   } catch (err) {
     showToast(err.message);
   }
@@ -241,15 +238,11 @@ async function startTask() {
 async function moveTask(taskId, targetColumn) {
   const to = targetColumn === "__done__" ? "done" : targetColumn;
   try {
-    await request("/tasks/" + encodeURIComponent(taskId) + "/move", {
-      method: "POST",
-      body: JSON.stringify({ to }),
-    });
+    await request(taskPath(taskId, "/move"), { to });
     showToast("Moved to " + labelFor(to));
     await refreshTasks();
     if (state.selectedId === taskId) {
-      state.details[taskId] = await request("/tasks/" + encodeURIComponent(taskId));
-      renderBoard();
+      await refreshTaskDetail(taskId);
     }
   } catch (err) {
     showToast(err.message);
@@ -260,10 +253,7 @@ async function runAttach(taskId, terminal, fromDialog = false) {
   localStorage.setItem(TERMINAL_KEY, terminal);
   els.attachTerminal.value = terminal;
   try {
-    const resp = await request("/tasks/" + encodeURIComponent(taskId) + "/attach", {
-      method: "POST",
-      body: JSON.stringify({ terminal }),
-    });
+    const resp = await request(taskPath(taskId, "/attach"), { terminal });
     if (resp.opened) {
       if (fromDialog) els.attachDialog.close();
       showToast("Attached");
@@ -285,10 +275,7 @@ function attachTask() {
 
 async function removeTask() {
   try {
-    await request("/tasks/" + encodeURIComponent(state.removeTaskId), {
-      method: "DELETE",
-      body: JSON.stringify({ force: els.removeForce.checked }),
-    });
+    await request(taskPath(state.removeTaskId), { force: els.removeForce.checked }, "DELETE");
     els.removeDialog.close();
     state.selectedId = null;
     delete state.details[state.removeTaskId];
@@ -315,7 +302,7 @@ async function refreshAll() {
   try {
     await refreshTasks();
     if (state.selectedId) {
-      state.details[state.selectedId] = await request("/tasks/" + encodeURIComponent(state.selectedId));
+      state.details[state.selectedId] = await request(taskPath(state.selectedId));
       renderBoard();
     }
   } catch (err) {
@@ -346,17 +333,13 @@ function handleDrop(event, columnId) {
   const taskId = event.dataTransfer?.getData("text/plain") || state.dragTaskId;
   state.dragTaskId = null;
   const task = state.tasks.find((item) => item.id === taskId);
-  if (!task || !canDrop(task, columnId)) {
-    renderBoard();
-    return;
-  }
-  if (columnForTask(task) === "__add__") {
-    renderBoard();
-    openStartDialog(task, columnId);
-    return;
-  }
   renderBoard();
-  moveTask(task.id, columnId);
+  if (!canDrop(task, columnId)) return;
+  if (columnForTask(task) === "__add__") {
+    openStartDialog(task, columnId);
+  } else {
+    moveTask(task.id, columnId);
+  }
 }
 
 function handleShortcut(event) {

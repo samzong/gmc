@@ -14,7 +14,6 @@ import (
 	"github.com/samzong/gmc/internal/formatter"
 	"github.com/samzong/gmc/internal/git"
 	"github.com/samzong/gmc/internal/llm"
-	"github.com/samzong/gmc/internal/ui"
 	"github.com/samzong/gmc/internal/workflow"
 	"github.com/spf13/cobra"
 )
@@ -94,8 +93,7 @@ func init() {
 		"Additional context or instructions for commit message generation")
 	rootCmd.Flags().IntVar(&timeoutSeconds, "timeout", 30, "LLM request timeout in seconds")
 
-	rootCmd.AddCommand(configCmd)
-	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(configCmd, initCmd)
 }
 
 func initConfig() {
@@ -200,7 +198,6 @@ func generateAndCommit(in io.Reader, fileArgs []string) error {
 		DryRun:     dryRun,
 		IssueNum:   issueNum,
 		AutoYes:    autoYes,
-		Verbose:    verbose,
 		BranchDesc: branchDesc,
 		UserPrompt: userPrompt,
 		ErrWriter:  errWriter(),
@@ -266,19 +263,9 @@ func generateStdinMessage(
 	llmClient *llm.Client, cfg *config.Config, changedFiles []string, diff string,
 ) (string, error) {
 	prompt := formatter.BuildPromptWithConfig(cfg, changedFiles, diff, "", userPrompt)
-
-	sp := ui.NewSpinner("Generating commit message...")
-	sp.Start()
-	message, err := llmClient.GenerateCommitMessage(prompt, cfg.Model)
-	sp.Stop()
-
+	formattedMessage, err := workflow.GenerateMessage(llmClient, cfg, prompt)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate commit message: %w", err)
-	}
-
-	formattedMessage := formatter.FormatCommitMessageWithConfig(cfg, message)
-	if formattedMessage == "" {
-		return "", workflow.ErrNoCommitSubject
+		return "", err
 	}
 	if issueNum != "" {
 		formattedMessage = fmt.Sprintf("%s (#%s)", formattedMessage, issueNum)

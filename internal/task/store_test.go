@@ -21,7 +21,7 @@ func TestStoreCreateAndLoadSummary(t *testing.T) {
 
 	assert.Equal(t, TaskNew, sum.Task.State)
 	assert.Nil(t, sum.Attempt)
-	assert.FileExists(t, filepath.Join(store.Root(), "tasks", "t-demo", "task.yaml"))
+	assert.FileExists(t, filepath.Join(store.root, "tasks", "t-demo", "task.yaml"))
 }
 
 func TestStoreResolveTaskID(t *testing.T) {

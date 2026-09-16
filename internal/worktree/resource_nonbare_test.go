@@ -2,6 +2,7 @@ package worktree
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,19 +22,19 @@ func TestGlobalPreparationPreservesConfigAndRepositoryOverrides(t *testing.T) {
 	require.NoError(t, os.WriteFile(configTarget, globalYAML, 0o600))
 	require.NoError(t, os.Symlink(configTarget, globalPath))
 	client := NewClient(Options{GlobalConfigPath: globalPath})
-	_, err := client.AddGlobalSharedResource("**/node_modules", StrategySymlink)
+	_, err := client.AddSharedResource("**/node_modules", StrategySymlink, true)
 	require.NoError(t, err)
-	_, err = client.AddGlobalSharedResource(".local", StrategySymlink)
+	_, err = client.AddSharedResource(".local", StrategySymlink, true)
 	require.NoError(t, err)
-	_, err = client.AddGlobalHook(Hook{ID: "prepare", Cmd: "test -L .local && printf global > prepared"})
+	_, err = client.AddHook(Hook{ID: "prepare", Cmd: "test -L .local && printf global > prepared"}, true)
 	require.NoError(t, err)
-	_, err = client.AddGlobalHook(Hook{ID: "disabled", Cmd: "touch must-not-exist"})
+	_, err = client.AddHook(Hook{ID: "disabled", Cmd: "touch must-not-exist"}, true)
 	require.NoError(t, err)
-	_, err = client.AddHook(Hook{ID: "prepare", Cmd: "test -L .local && printf local > prepared"})
+	_, err = client.AddHook(Hook{ID: "prepare", Cmd: "test -L .local && printf local > prepared"}, false)
 	require.NoError(t, err)
 	_, err = client.RemoveHookByID("disabled", false)
 	require.NoError(t, err)
-	_, err = client.RemoveSharedResource("web/node_modules")
+	_, err = client.RemoveSharedResource("web/node_modules", false)
 	require.NoError(t, err)
 	for _, dir := range []string{".local", "web/node_modules", "other/node_modules"} {
 		require.NoError(t, os.MkdirAll(filepath.Join(repoDir, dir), 0o755))
@@ -67,7 +68,7 @@ func TestGlobalPreparationPreservesConfigAndRepositoryOverrides(t *testing.T) {
 	require.Len(t, local.Resources, 1)
 	assert.True(t, local.Resources[0].Disabled)
 	assert.Equal(t, "web/node_modules", local.Resources[0].Path)
-	_, err = client.RemoveSharedResource("**/node_modules")
+	_, err = client.RemoveSharedResource("**/node_modules", false)
 	require.NoError(t, err)
 	exemptTarget := t.TempDir()
 	_, err = client.syncSharedResourcesToPath(exemptTarget, false)
@@ -75,9 +76,9 @@ func TestGlobalPreparationPreservesConfigAndRepositoryOverrides(t *testing.T) {
 	linked, err := os.Lstat(filepath.Join(exemptTarget, ".local"))
 	require.NoError(t, err)
 	assert.NotZero(t, linked.Mode()&os.ModeSymlink)
-	_, err = client.RemoveGlobalSharedResource(".local")
+	_, err = client.RemoveSharedResource(".local", true)
 	require.NoError(t, err)
-	_, err = client.RemoveGlobalHook(1)
+	_, err = client.RemoveHook(1, true)
 	require.NoError(t, err)
 	global, _, err := client.LoadGlobalSharedConfig()
 	require.NoError(t, err)
@@ -116,7 +117,7 @@ func TestPreparationKeepsIndependentAndBrokenResources(t *testing.T) {
 	t.Chdir(repoDir)
 	client := NewClient(Options{})
 	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, "node_modules"), 0o755))
-	_, err := client.AddSharedResource("node_modules", StrategySymlink)
+	_, err := client.AddSharedResource("node_modules", StrategySymlink, false)
 	require.NoError(t, err)
 	target := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(target, "node_modules"), 0o755))
@@ -162,23 +163,23 @@ func TestGlobalConfigInvalidEditDoesNotChangeFile(t *testing.T) {
 	original := []byte("model: preserve\nworktree:\n  hooks:\n    - id: setup\n      cmd: echo ok\n")
 	require.NoError(t, os.WriteFile(globalPath, original, 0o600))
 	client := NewClient(Options{GlobalConfigPath: globalPath})
-	_, err := client.AddGlobalSharedResource(".git/config", StrategySymlink)
+	_, err := client.AddSharedResource(".git/config", StrategySymlink, true)
 	require.Error(t, err)
-	_, err = client.AddGlobalHook(Hook{ID: "2", Cmd: "echo no"})
+	_, err = client.AddHook(Hook{ID: "2", Cmd: "echo no"}, true)
 	require.Error(t, err)
 	after, err := os.ReadFile(globalPath)
 	require.NoError(t, err)
 	assert.True(t, bytes.Equal(original, after))
 	anchored := []byte("worktree:\n  hooks:\n    - &saved\n      id: saved\n      cmd: true\nother: *saved\n")
 	require.NoError(t, os.WriteFile(globalPath, anchored, 0o600))
-	_, err = client.AddGlobalSharedResource(".local", StrategySymlink)
+	_, err = client.AddSharedResource(".local", StrategySymlink, true)
 	require.Error(t, err)
 	unchanged, err := os.ReadFile(globalPath)
 	require.NoError(t, err)
 	assert.Equal(t, anchored, unchanged)
 	multiple := []byte("worktree: {}\n---\nother: preserve\n")
 	require.NoError(t, os.WriteFile(globalPath, multiple, 0o600))
-	_, err = client.AddGlobalSharedResource(".local", StrategySymlink)
+	_, err = client.AddSharedResource(".local", StrategySymlink, true)
 	require.Error(t, err)
 	unchanged, err = os.ReadFile(globalPath)
 	require.NoError(t, err)
@@ -191,10 +192,7 @@ func TestLoadSharedConfig_UsesGitCommonDirInNonBareWorktree(t *testing.T) {
 	runGit(t, repoDir, "worktree", "add", "-b", "feature/test-share-config", linkedWt, "main")
 
 	client := NewClient(Options{})
-	oldCwd, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() { _ = os.Chdir(oldCwd) }()
-	require.NoError(t, os.Chdir(linkedWt))
+	t.Chdir(linkedWt)
 
 	cfg, configPath, err := client.LoadSharedConfig()
 	require.NoError(t, err)
@@ -206,53 +204,21 @@ func TestLoadSharedConfig_UsesGitCommonDirInNonBareWorktree(t *testing.T) {
 	assert.Equal(t, filepath.Join(expectedCommonDir, "gmc-share.yml"), configPath)
 }
 
-func TestSyncAllSharedResources_WorksFromNonBareWorktreeRepo(t *testing.T) {
-	repoDir := initTestRepo(t)
-	linkedWt := filepath.Join(t.TempDir(), "feature-wt")
-	runGit(t, repoDir, "worktree", "add", "-b", "feature/test-sync-share", linkedWt, "main")
-
-	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".env"), []byte("SECRET=123"), 0o644))
-	config := []byte("shared:\n  - path: .env\n    strategy: copy\n")
-	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".git", "gmc-share.yml"), config, 0o644))
-
-	client := NewClient(Options{})
-	oldCwd, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() { _ = os.Chdir(oldCwd) }()
-	require.NoError(t, os.Chdir(linkedWt))
-
-	_, err = client.SyncAllSharedResources()
-	require.NoError(t, err)
-
-	data, err := os.ReadFile(filepath.Join(linkedWt, ".env"))
-	require.NoError(t, err)
-	assert.Equal(t, "SECRET=123", string(data))
-}
-
-func TestSyncAllSharedResources_DoesNotRunHooks(t *testing.T) {
-	repoDir := initTestRepo(t)
-	linkedWt := filepath.Join(t.TempDir(), "feature-wt")
-	runGit(t, repoDir, "worktree", "add", "-b", "feature/test-sync-hooks", linkedWt, "main")
-
-	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".env"), []byte("SECRET=123"), 0o644))
-	config := []byte("shared:\n  - path: .env\n    strategy: copy\nhooks:\n  - cmd: printf 'hook-ran' > hook.txt\n")
-	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".git", "gmc-share.yml"), config, 0o644))
-
-	client := NewClient(Options{})
-	oldCwd, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() { _ = os.Chdir(oldCwd) }()
-	require.NoError(t, os.Chdir(linkedWt))
-
-	_, err = client.SyncAllSharedResources()
-	require.NoError(t, err)
-
-	data, err := os.ReadFile(filepath.Join(linkedWt, ".env"))
-	require.NoError(t, err)
-	assert.Equal(t, "SECRET=123", string(data))
-
-	_, err = os.Stat(filepath.Join(linkedWt, "hook.txt"))
-	assert.True(t, os.IsNotExist(err))
+func TestSyncAllSharedResources_FromLinkedWorktree(t *testing.T) {
+	for _, hook := range []string{"", "hooks:\n  - cmd: printf 'hook-ran' > hook.txt\n"} {
+		t.Run(fmt.Sprintf("hook=%t", hook != ""), func(t *testing.T) {
+			repo := initTestRepo(t)
+			linked := filepath.Join(t.TempDir(), "feature-wt")
+			runGit(t, repo, "worktree", "add", "-b", "feature/test-sync", linked, "main")
+			writeFile(t, filepath.Join(repo, ".env"), "SECRET=123")
+			writeFile(t, filepath.Join(repo, ".git", "gmc-share.yml"), "shared:\n  - path: .env\n    strategy: copy\n"+hook)
+			t.Chdir(linked)
+			_, err := NewClient(Options{}).SyncAllSharedResources()
+			require.NoError(t, err)
+			assertFileContent(t, filepath.Join(linked, ".env"), "SECRET=123")
+			assertMissing(t, filepath.Join(linked, "hook.txt"))
+		})
+	}
 }
 
 func TestLoadSharedConfig_FallsBackToLegacyRepoRootConfig(t *testing.T) {
@@ -261,10 +227,7 @@ func TestLoadSharedConfig_FallsBackToLegacyRepoRootConfig(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(repoDir, legacySharedConfigYML), config, 0o644))
 
 	client := NewClient(Options{})
-	oldCwd, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() { _ = os.Chdir(oldCwd) }()
-	require.NoError(t, os.Chdir(repoDir))
+	t.Chdir(repoDir)
 
 	cfg, configPath, err := client.LoadSharedConfig()
 	require.NoError(t, err)
@@ -279,27 +242,21 @@ func TestLoadSharedConfig_FallsBackToLegacyRepoRootConfig(t *testing.T) {
 func TestNormalizeSharedResourcePath_RejectsAbsolutePathOutsideWorktree(t *testing.T) {
 	repoDir := initTestRepo(t)
 	client := NewClient(Options{})
-	oldCwd, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() { _ = os.Chdir(oldCwd) }()
-	require.NoError(t, os.Chdir(repoDir))
+	t.Chdir(repoDir)
 
-	_, err = client.NormalizeSharedResourcePath(filepath.Join(t.TempDir(), "outside.env"))
+	_, err := client.NormalizeSharedResourcePath(filepath.Join(t.TempDir(), "outside.env"))
 	require.Error(t, err)
 }
 
 func TestRemoveSharedResource_NormalizesPath(t *testing.T) {
 	repoDir := initTestRepo(t)
 	client := NewClient(Options{})
-	oldCwd, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() { _ = os.Chdir(oldCwd) }()
-	require.NoError(t, os.Chdir(repoDir))
+	t.Chdir(repoDir)
 
 	config := []byte("shared:\n  - path: config/.env\n    strategy: copy\n")
 	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".git", "gmc-share.yml"), config, 0o644))
 
-	_, err = client.RemoveSharedResource("config/../config/.env")
+	_, err := client.RemoveSharedResource("config/../config/.env", false)
 	require.NoError(t, err)
 
 	cfg, _, err := client.LoadSharedConfig()
@@ -317,12 +274,9 @@ func TestResolveWorktreePath_ErrorsOnAmbiguousBasename(t *testing.T) {
 	runGit(t, repoDir, "worktree", "add", "-b", "feature/dup-2", wt2, "main")
 
 	client := NewClient(Options{})
-	oldCwd, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() { _ = os.Chdir(oldCwd) }()
-	require.NoError(t, os.Chdir(repoDir))
+	t.Chdir(repoDir)
 
-	_, err = client.resolveWorktreePath("dup")
+	_, err := client.resolveWorktreePath("dup")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ambiguous worktree")
 }
@@ -345,7 +299,7 @@ func TestPreparationPreservesNestedPathsMatchingWorktreeNames(t *testing.T) {
 	relative := filepath.Join(filepath.Base(target), "node_modules")
 	require.NoError(t, os.MkdirAll(filepath.Join(repo, relative), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(repo, relative, "package"), []byte("nested"), 0o644))
-	_, err = client.AddSharedResource("**/node_modules", StrategySymlink)
+	_, err = client.AddSharedResource("**/node_modules", StrategySymlink, false)
 	require.NoError(t, err)
 	_, err = client.SyncAllSharedResources()
 	require.NoError(t, err)
@@ -354,9 +308,9 @@ func TestPreparationPreservesNestedPathsMatchingWorktreeNames(t *testing.T) {
 	assert.Equal(t, "nested", string(data))
 	_, err = os.Lstat(filepath.Join(target, "node_modules"))
 	assert.True(t, os.IsNotExist(err))
-	_, err = client.RemoveSharedResource("**/node_modules")
+	_, err = client.RemoveSharedResource("**/node_modules", false)
 	require.NoError(t, err)
-	_, err = client.AddSharedResource(relative, StrategySymlink)
+	_, err = client.AddSharedResource(relative, StrategySymlink, false)
 	require.NoError(t, err)
 	_, err = client.SyncAllSharedResources()
 	require.NoError(t, err)
@@ -368,7 +322,7 @@ func TestDiscoverReportsBrokenSourceLink(t *testing.T) {
 	repo := initTestRepo(t)
 	t.Chdir(repo)
 	client := NewClient(Options{})
-	_, err := client.AddSharedResource(".local", StrategySymlink)
+	_, err := client.AddSharedResource(".local", StrategySymlink, false)
 	require.NoError(t, err)
 	require.NoError(t, os.Symlink("missing", filepath.Join(repo, ".local")))
 	results, err := client.Discover(DiscoverOptions{IncludeConfigured: true})
@@ -400,9 +354,9 @@ func TestAutomaticSharingDoesNotBorrowTransientSources(t *testing.T) {
 	for _, relative := range []string{"pkg/node_modules", ".local"} {
 		require.NoError(t, os.MkdirAll(filepath.Join(feature, relative), 0o755))
 	}
-	_, err = client.AddGlobalSharedResource("**/node_modules", StrategySymlink)
+	_, err = client.AddSharedResource("**/node_modules", StrategySymlink, true)
 	require.NoError(t, err)
-	_, err = client.AddGlobalSharedResource(".local", StrategySymlink)
+	_, err = client.AddSharedResource(".local", StrategySymlink, true)
 	require.NoError(t, err)
 	_, err = client.SyncAllSharedResources()
 	require.NoError(t, err)

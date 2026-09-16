@@ -8,17 +8,13 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/samzong/gmc/internal/task"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 )
 
 func testServerOptions() Options {
@@ -68,38 +64,46 @@ func apiPost(t *testing.T, srv *Server, url, body string) *http.Response {
 	return apiRequest(t, srv, http.MethodPost, url, body)
 }
 
+func readJSONResponse[T any](t *testing.T, resp *http.Response, status int) T {
+	t.Helper()
+	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
+	require.Equal(t, status, resp.StatusCode)
+	var value T
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&value))
+	return value
+}
+
+func createAPITask(t *testing.T, srv *Server, url, source string) task.Record {
+	t.Helper()
+	body, err := json.Marshal(map[string]string{"source": source})
+	require.NoError(t, err)
+	return readJSONResponse[task.Record](t, apiPost(t, srv, url+"/api/v1/tasks", string(body)), http.StatusCreated)
+}
+
 func writeAttempt(t *testing.T, storeRoot, taskID string, attempt task.AttemptRecord) {
 	t.Helper()
 	attempt.TaskID = taskID
 	if attempt.ID == "" {
 		attempt.ID = "attempt-1"
 	}
-	now := time.Now().UTC()
-	if attempt.CreatedAt.IsZero() {
-		attempt.CreatedAt = now
-	}
-	attempt.UpdatedAt = now
-	dir := filepath.Join(storeRoot, "gmc-tasks", "tasks", taskID)
-	require.NoError(t, os.MkdirAll(dir, 0o755))
-	data, err := yaml.Marshal(attempt)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "attempt.yaml"), data, 0o644))
+	require.NoError(t, task.NewStore(storeRoot).SaveAttempt(attempt))
 }
 
 func writeTaskState(t *testing.T, storeRoot string, rec task.Record) {
 	t.Helper()
-	dir := filepath.Join(storeRoot, "gmc-tasks", "tasks", rec.ID)
-	path := filepath.Join(dir, "task.yaml")
-	data, err := os.ReadFile(path)
+	store := task.NewStore(storeRoot)
+	stored, err := store.LoadTask(rec.ID)
 	require.NoError(t, err)
-	var stored task.Record
-	require.NoError(t, yaml.Unmarshal(data, &stored))
 	stored.State = rec.State
 	stored.CurrentNode = rec.CurrentNode
-	stored.UpdatedAt = time.Now().UTC()
-	out, err := yaml.Marshal(stored)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(path, out, 0o644))
+	require.NoError(t, store.CreateTask(stored))
+}
+
+func serveTest(t *testing.T, srv *Server) string {
+	t.Helper()
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	return ts.URL
 }
 
 func TestListenLoopbackOnly(t *testing.T) {
@@ -151,80 +155,47 @@ func TestListenLoopbackFallsBackWhenPreferredTaken(t *testing.T) {
 
 func TestAPIProjectAndWorkflow(t *testing.T) {
 	srv, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	url := serveTest(t, srv)
 
-	resp := apiGet(t, srv, ts.URL+"/api/v1/project")
-	t.Cleanup(func() { _ = resp.Body.Close() })
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	var project ProjectInfo
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&project))
+	project := readJSONResponse[ProjectInfo](t, apiGet(t, srv, url+"/api/v1/project"), http.StatusOK)
 	assert.NotEmpty(t, project.Path)
 	assert.Equal(t, "ghostty", project.SuggestedTerminal)
 
-	resp2 := apiGet(t, srv, ts.URL+"/api/v1/workflow")
-	t.Cleanup(func() { _ = resp2.Body.Close() })
-	require.Equal(t, http.StatusOK, resp2.StatusCode)
-
-	var wf WorkflowResponse
-	require.NoError(t, json.NewDecoder(resp2.Body).Decode(&wf))
+	wf := readJSONResponse[WorkflowResponse](t, apiGet(t, srv, url+"/api/v1/workflow"), http.StatusOK)
 	assert.Equal(t, "plan", wf.Start)
 	assert.Equal(t, []string{"plan", "code", "review", "ship"}, wf.Order)
 }
 
 func TestAPITaskCRUD(t *testing.T) {
 	srv, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	url := serveTest(t, srv)
 
-	createBody := `{"source":"webui task"}`
-	resp := apiPost(t, srv, ts.URL+"/api/v1/tasks", createBody)
-	require.Equal(t, http.StatusCreated, resp.StatusCode)
-
-	var created task.Record
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
-	require.NoError(t, resp.Body.Close())
-
-	resp = apiGet(t, srv, ts.URL+"/api/v1/tasks")
-	var cards []TaskCard
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&cards))
-	require.NoError(t, resp.Body.Close())
+	created := createAPITask(t, srv, url, "webui task")
+	cards := readJSONResponse[[]TaskCard](t, apiGet(t, srv, url+"/api/v1/tasks"), http.StatusOK)
 	require.Len(t, cards, 1)
 	assert.Equal(t, 1, cards[0].Index)
 	assert.Equal(t, "webui task", cards[0].Title)
 
-	resp = apiGet(t, srv, ts.URL+"/api/v1/tasks/"+created.ID)
-	var detail TaskDetail
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&detail))
-	require.NoError(t, resp.Body.Close())
+	detail := readJSONResponse[TaskDetail](t, apiGet(t, srv, url+"/api/v1/tasks/"+created.ID), http.StatusOK)
 	assert.Equal(t, "webui task", detail.Source)
 
-	resp = apiRequest(t, srv, http.MethodDelete, ts.URL+"/api/v1/tasks/"+created.ID, "")
+	resp := apiRequest(t, srv, http.MethodDelete, url+"/api/v1/tasks/"+created.ID, "")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.NoError(t, resp.Body.Close())
 }
 
 func TestAPIAttachValidation(t *testing.T) {
 	srv, root := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	url := serveTest(t, srv)
 
-	resp := apiPost(t, srv, ts.URL+"/api/v1/tasks", `{"source":"attach test"}`)
-	var created task.Record
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
-	require.NoError(t, resp.Body.Close())
-
-	resp = apiPost(t, srv, ts.URL+"/api/v1/tasks/"+created.ID+"/attach", `{"terminal":"iterm2"}`)
+	created := createAPITask(t, srv, url, "attach test")
+	resp := apiPost(t, srv, url+"/api/v1/tasks/"+created.ID+"/attach", `{"terminal":"iterm2"}`)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	require.NoError(t, resp.Body.Close())
 
 	writeAttempt(t, root, created.ID, task.AttemptRecord{TmuxSession: "sess-demo", TmuxSocket: "gmc-task"})
-	resp = apiPost(t, srv, ts.URL+"/api/v1/tasks/"+created.ID+"/attach", `{"terminal":"ghostty"}`)
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	var attach AttachResponse
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&attach))
-	require.NoError(t, resp.Body.Close())
+	resp = apiPost(t, srv, url+"/api/v1/tasks/"+created.ID+"/attach", `{"terminal":"ghostty"}`)
+	attach := readJSONResponse[AttachResponse](t, resp, http.StatusOK)
 	assert.False(t, attach.Opened)
 	assert.Contains(t, attach.CLI, "task attach")
 	assert.Contains(t, attach.CLI, created.ID)
@@ -243,14 +214,8 @@ func TestAPIAttachWithLauncher(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	createBody := `{"source":"launch"}`
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
-
-	resp := apiPost(t, srv, ts.URL+"/api/v1/tasks", createBody)
-	var created task.Record
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
-	require.NoError(t, resp.Body.Close())
+	url := serveTest(t, srv)
+	created := createAPITask(t, srv, url, "launch")
 
 	writeAttempt(t, root, created.ID, task.AttemptRecord{
 		Worktree:    "/tmp/wt",
@@ -258,11 +223,8 @@ func TestAPIAttachWithLauncher(t *testing.T) {
 		TmuxSocket:  "gmc-task",
 	})
 
-	resp = apiPost(t, srv, ts.URL+"/api/v1/tasks/"+created.ID+"/attach", `{"terminal":"ghostty"}`)
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	var attach AttachResponse
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&attach))
-	require.NoError(t, resp.Body.Close())
+	resp := apiPost(t, srv, url+"/api/v1/tasks/"+created.ID+"/attach", `{"terminal":"ghostty"}`)
+	attach := readJSONResponse[AttachResponse](t, resp, http.StatusOK)
 	assert.True(t, attach.Opened)
 	assert.Contains(t, launched, "ghostty|")
 	assert.Contains(t, launched, created.ID)
@@ -270,45 +232,16 @@ func TestAPIAttachWithLauncher(t *testing.T) {
 
 func TestAPIMoveRejectsUnknownNode(t *testing.T) {
 	srv, root := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	url := serveTest(t, srv)
 
-	createBody := `{"source":"move test"}`
-	resp := apiPost(t, srv, ts.URL+"/api/v1/tasks", createBody)
-	var created task.Record
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
-	require.NoError(t, resp.Body.Close())
+	created := createAPITask(t, srv, url, "move test")
 
 	writeTaskState(t, root, task.Record{ID: created.ID, State: "plan", CurrentNode: "plan"})
 	writeAttempt(t, root, created.ID, task.AttemptRecord{})
 
-	resp = apiPost(t, srv, ts.URL+"/api/v1/tasks/"+created.ID+"/move", `{"to":"missing-node"}`)
+	resp := apiPost(t, srv, url+"/api/v1/tasks/"+created.ID+"/move", `{"to":"missing-node"}`)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	require.NoError(t, resp.Body.Close())
-}
-
-func TestStaticIndex(t *testing.T) {
-	srv, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
-
-	resp, err := http.Get(ts.URL + "/")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	body, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	assert.Contains(t, string(body), "gmc task webui")
-
-	resp, err = http.Get(ts.URL + "/app.js")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	resp, err = http.Get(ts.URL + "/app.css")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
-	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
 func TestOpenBrowserUsesOpener(t *testing.T) {

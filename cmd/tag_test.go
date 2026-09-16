@@ -5,71 +5,33 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestConfirmTagCreationAutoYes(t *testing.T) {
-	original := tagAutoYes
-	defer func() { tagAutoYes = original }()
-
-	tagAutoYes = true
-	confirmed, err := confirmTagCreation("v1.2.3")
-	assert.NoError(t, err)
-	assert.True(t, confirmed)
-}
-
-func TestConfirmTagCreationUserInput(t *testing.T) {
-	original := tagAutoYes
-	defer func() { tagAutoYes = original }()
-
-	originalIsStdinTerminal := isStdinTerminal
-	defer func() { isStdinTerminal = originalIsStdinTerminal }()
-	isStdinTerminal = func() bool { return true }
-
-	tagAutoYes = false
-
-	// Mock stdin with affirmative answer
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("failed to create pipe: %v", err)
+func TestConfirmTagCreation(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		auto  bool
+		input string
+		want  bool
+	}{
+		{"auto yes", true, "", true},
+		{"accept", false, "y\n", true},
+		{"decline", false, "n\n", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			setTestValue(t, &tagAutoYes, test.auto)
+			setTestValue(t, &isStdinTerminal, func() bool { return true })
+			reader, writer, err := os.Pipe()
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = reader.Close() })
+			_, err = writer.WriteString(test.input)
+			require.NoError(t, err)
+			require.NoError(t, writer.Close())
+			setTestValue(t, &os.Stdin, reader)
+			confirmed, err := confirmTagCreation("v1.2.3")
+			assert.NoError(t, err)
+			assert.Equal(t, test.want, confirmed)
+		})
 	}
-	defer reader.Close()
-
-	_, _ = writer.WriteString("y\n")
-	writer.Close()
-
-	originalStdin := os.Stdin
-	defer func() { os.Stdin = originalStdin }()
-	os.Stdin = reader
-
-	confirmed, err := confirmTagCreation("v1.2.3")
-	assert.NoError(t, err)
-	assert.True(t, confirmed)
-}
-
-func TestConfirmTagCreationDecline(t *testing.T) {
-	original := tagAutoYes
-	defer func() { tagAutoYes = original }()
-
-	originalIsStdinTerminal := isStdinTerminal
-	defer func() { isStdinTerminal = originalIsStdinTerminal }()
-	isStdinTerminal = func() bool { return true }
-
-	tagAutoYes = false
-
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("failed to create pipe: %v", err)
-	}
-	defer reader.Close()
-
-	_, _ = writer.WriteString("n\n")
-	writer.Close()
-
-	originalStdin := os.Stdin
-	defer func() { os.Stdin = originalStdin }()
-	os.Stdin = reader
-
-	confirmed, err := confirmTagCreation("v1.2.3")
-	assert.NoError(t, err)
-	assert.False(t, confirmed)
 }

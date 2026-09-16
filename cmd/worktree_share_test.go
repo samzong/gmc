@@ -15,9 +15,7 @@ import (
 )
 
 func TestDiscoverRejectsExplicitDryRunWithAutoBeforeLoadingConfig(t *testing.T) {
-	previousAuto := discoverAuto
-	t.Cleanup(func() { discoverAuto = previousAuto })
-	discoverAuto = true
+	setTestValue(t, &discoverAuto, true)
 	for _, value := range []string{"true", "false"} {
 		t.Run(value, func(t *testing.T) {
 			command := &cobra.Command{Use: "discover"}
@@ -41,13 +39,8 @@ func TestDiscoverPreviewDoesNotConfigureOrRunHooks(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(repo, "apps", "web", "node_modules"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(repo, "apps", "web", "package.json"), []byte("{}"), 0o600))
 
-	previousAuto, previousOutput := discoverAuto, outputFlag.value
-	t.Cleanup(func() {
-		discoverAuto = previousAuto
-		outputFlag.value = previousOutput
-	})
-	discoverAuto = false
-	outputFlag.value = "json"
+	setTestValue(t, &discoverAuto, false)
+	setTestValue(t, &outputFlag.value, "json")
 	command := &cobra.Command{Use: "discover"}
 	command.Flags().Bool("dry-run", true, "")
 	require.NoError(t, command.Flags().Set("dry-run", "false"))
@@ -99,9 +92,7 @@ func TestHookListIndicesMatchEffectiveRemoval(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(repo, ".git", "gmc-share.yml"),
 		[]byte("hooks:\n  - id: install\n    disabled: true\n"), 0o600))
 	client := worktree.NewClient(worktree.Options{GlobalConfigPath: globalPath})
-	previousOutput := outputFlag.value
-	t.Cleanup(func() { outputFlag.value = previousOutput })
-	outputFlag.value = "json"
+	setTestValue(t, &outputFlag.value, "json")
 	command := &cobra.Command{Use: "list"}
 	command.Flags().Bool("global", false, "")
 	var output bytes.Buffer
@@ -112,7 +103,7 @@ func TestHookListIndicesMatchEffectiveRemoval(t *testing.T) {
 	require.Len(t, hooks, 2)
 	assert.True(t, hooks[0].Disabled)
 	assert.Equal(t, "setup", hooks[1].ID)
-	_, err := client.RemoveHook(hooks[1].Index - 1)
+	_, err := client.RemoveHook(hooks[1].Index-1, false)
 	require.NoError(t, err)
 	cfg, err := client.LoadEffectiveSharedConfig()
 	require.NoError(t, err)

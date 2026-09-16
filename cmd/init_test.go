@@ -11,131 +11,77 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestRunInitWizard_RequiresAPIKeyAndUsesDefaults(t *testing.T) {
-	t.Setenv("SHELL", "/bin/zsh")
-	input := strings.NewReader("\nkey123\n\nhttps://proxy.example/v1\nn\nn\n")
-	var output bytes.Buffer
-
-	cfg := &config.Config{
-		Model:   "gpt-4.1-mini",
-		APIBase: "",
-		APIKey:  "",
+func TestRunInitWizard(t *testing.T) {
+	for _, test := range []struct {
+		name, input         string
+		current, want       config.Config
+		testedModel, output string
+	}{
+		{
+			name: "requires key and uses defaults", input: "\nkey123\n\nhttps://proxy.example/v1\nn\n" + "n\n",
+			current: config.Config{Model: "gpt-4.1-mini"},
+			want:    config.Config{APIKey: "key123", Model: "gpt-4.1-mini", APIBase: "https://proxy.example/v1"},
+			output:  "API key is required",
+		},
+		{
+			name: "keeps key and tests connection", input: "\ngpt-4.2\n\ny\nn\n",
+			current:     config.Config{APIKey: "existing-key", Model: "gpt-4.1-mini", APIBase: "https://proxy.example/v1"},
+			want:        config.Config{APIKey: "existing-key", Model: "gpt-4.2", APIBase: "https://proxy.example/v1"},
+			testedModel: "gpt-4.2",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("SHELL", "/bin/zsh")
+			var saved config.Config
+			setTestValue(t, &saveConfigValues, func(apiKey, model, apiBase string) error {
+				saved = config.Config{APIKey: apiKey, Model: model, APIBase: apiBase}
+				return nil
+			})
+			var testedModel string
+			var testCalled bool
+			setTestValue(t, &testLLMConnection, func(model string) error {
+				testedModel = model
+				testCalled = true
+				return nil
+			})
+			var output bytes.Buffer
+			assert.NoError(t, runInitWizard(strings.NewReader(test.input), &output, &test.current))
+			assert.Equal(t, test.want, saved)
+			assert.Equal(t, test.testedModel, testedModel)
+			assert.Equal(t, test.testedModel != "", testCalled)
+			assert.Contains(t, output.String(), test.output)
+		})
 	}
-
-	var savedAPIKey, savedModel, savedBase string
-	origSave := saveConfigValues
-	origTest := testLLMConnection
-	defer func() {
-		saveConfigValues = origSave
-		testLLMConnection = origTest
-	}()
-
-	saveConfigValues = func(apiKey, model, apiBase string) error {
-		savedAPIKey = apiKey
-		savedModel = model
-		savedBase = apiBase
-		return nil
-	}
-
-	var testCalled bool
-	testLLMConnection = func(_ string) error {
-		testCalled = true
-		return nil
-	}
-
-	err := runInitWizard(input, &output, cfg)
-	assert.NoError(t, err)
-	assert.Equal(t, "key123", savedAPIKey)
-	assert.Equal(t, "gpt-4.1-mini", savedModel)
-	assert.Equal(t, "https://proxy.example/v1", savedBase)
-	assert.False(t, testCalled)
-	assert.Contains(t, output.String(), "API key is required")
 }
 
-func TestRunInitWizard_KeepExistingKeyAndTestConnection(t *testing.T) {
-	t.Setenv("SHELL", "/bin/zsh")
-	input := strings.NewReader("\ngpt-4.2\n\ny\nn\n")
-	var output bytes.Buffer
-
-	cfg := &config.Config{
-		Model:   "gpt-4.1-mini",
-		APIBase: "https://proxy.example/v1",
-		APIKey:  "existing-key",
+func TestEnsureLLMConfigured(t *testing.T) {
+	expectedErr := errors.New("init failed")
+	for _, test := range []struct {
+		name, key, input    string
+		proceed, initCalled bool
+		err                 error
+	}{
+		{"configured", "set", "n\n", true, false, nil},
+		{"decline", "", "n\n", false, false, nil},
+		{"accept", "", "y\n", true, true, nil},
+		{"init error", "", "y\n", false, true, expectedErr},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			var initCalled bool
+			proceed, err := ensureLLMConfigured(&config.Config{APIKey: test.key}, strings.NewReader(test.input), &output,
+				func(_ io.Reader, _ io.Writer, _ *config.Config) error {
+					initCalled = true
+					return test.err
+				})
+			assert.ErrorIs(t, err, test.err)
+			assert.Equal(t, test.proceed, proceed)
+			assert.Equal(t, test.initCalled, initCalled)
+			if test.key == "" {
+				assert.Contains(t, output.String(), "gmc init")
+			}
+		})
 	}
-
-	var savedAPIKey, savedModel, savedBase string
-	origSave := saveConfigValues
-	origTest := testLLMConnection
-	defer func() {
-		saveConfigValues = origSave
-		testLLMConnection = origTest
-	}()
-
-	saveConfigValues = func(apiKey, model, apiBase string) error {
-		savedAPIKey = apiKey
-		savedModel = model
-		savedBase = apiBase
-		return nil
-	}
-
-	var testedModel string
-	testLLMConnection = func(model string) error {
-		testedModel = model
-		return nil
-	}
-
-	err := runInitWizard(input, &output, cfg)
-	assert.NoError(t, err)
-	assert.Equal(t, "existing-key", savedAPIKey)
-	assert.Equal(t, "gpt-4.2", savedModel)
-	assert.Equal(t, "https://proxy.example/v1", savedBase)
-	assert.Equal(t, "gpt-4.2", testedModel)
-}
-
-func TestEnsureLLMConfigured_WithAPIKey(t *testing.T) {
-	cfg := &config.Config{APIKey: "set"}
-	input := strings.NewReader("n\n")
-	var output bytes.Buffer
-
-	var initCalled bool
-	proceed, err := ensureLLMConfigured(cfg, input, &output, func(_ io.Reader, _ io.Writer, _ *config.Config) error {
-		initCalled = true
-		return nil
-	})
-	assert.NoError(t, err)
-	assert.True(t, proceed)
-	assert.False(t, initCalled)
-}
-
-func TestEnsureLLMConfigured_MissingKeyDecline(t *testing.T) {
-	cfg := &config.Config{APIKey: ""}
-	input := strings.NewReader("n\n")
-	var output bytes.Buffer
-
-	var initCalled bool
-	proceed, err := ensureLLMConfigured(cfg, input, &output, func(_ io.Reader, _ io.Writer, _ *config.Config) error {
-		initCalled = true
-		return nil
-	})
-	assert.NoError(t, err)
-	assert.False(t, proceed)
-	assert.False(t, initCalled)
-	assert.Contains(t, output.String(), "gmc init")
-}
-
-func TestEnsureLLMConfigured_MissingKeyAccept(t *testing.T) {
-	cfg := &config.Config{APIKey: ""}
-	input := strings.NewReader("y\n")
-	var output bytes.Buffer
-
-	var initCalled bool
-	proceed, err := ensureLLMConfigured(cfg, input, &output, func(_ io.Reader, _ io.Writer, _ *config.Config) error {
-		initCalled = true
-		return nil
-	})
-	assert.NoError(t, err)
-	assert.True(t, proceed)
-	assert.True(t, initCalled)
 }
 
 func TestDetectShell(t *testing.T) {
@@ -146,51 +92,32 @@ func TestDetectShell(t *testing.T) {
 	assert.Equal(t, "", detectShell("/bin/tcsh"))
 }
 
-func TestMaybeShellIntegration_AcceptZsh(t *testing.T) {
-	input := strings.NewReader("y\n")
-	var output bytes.Buffer
-	readLine := newTrimmedLineReader(input)
-
-	err := maybeShellIntegration(&output, readLine, "/bin/zsh")
-	assert.NoError(t, err)
-	got := output.String()
-	assert.Contains(t, got, "Shell integration")
-	assert.Contains(t, got, "~/.zshrc")
-	assert.Contains(t, got, `eval "$(gmc wt init zsh)"`)
-}
-
-func TestMaybeShellIntegration_DeclineFish(t *testing.T) {
-	input := strings.NewReader("n\n")
-	var output bytes.Buffer
-	readLine := newTrimmedLineReader(input)
-
-	err := maybeShellIntegration(&output, readLine, "/usr/bin/fish")
-	assert.NoError(t, err)
-	got := output.String()
-	assert.Contains(t, got, "Set up shell integration for fish")
-	assert.Contains(t, got, "gmc wt init --help")
-	assert.NotContains(t, got, "Add this to your")
-}
-
-func TestMaybeShellIntegration_UnknownShellEOF(t *testing.T) {
-	input := strings.NewReader("")
-	var output bytes.Buffer
-	readLine := newTrimmedLineReader(input)
-
-	err := maybeShellIntegration(&output, readLine, "")
-	assert.NoError(t, err)
-	assert.Contains(t, output.String(), "gmc wt init --help")
-}
-
-func TestEnsureLLMConfigured_InitError(t *testing.T) {
-	cfg := &config.Config{APIKey: ""}
-	input := strings.NewReader("y\n")
-	var output bytes.Buffer
-
-	expectedErr := errors.New("init failed")
-	proceed, err := ensureLLMConfigured(cfg, input, &output, func(_ io.Reader, _ io.Writer, _ *config.Config) error {
-		return expectedErr
-	})
-	assert.ErrorIs(t, err, expectedErr)
-	assert.False(t, proceed)
+func TestMaybeShellIntegration(t *testing.T) {
+	for _, test := range []struct {
+		name, shell, input string
+		contains, excludes []string
+	}{
+		{
+			name: "accept zsh", shell: "/bin/zsh", input: "y\n",
+			contains: []string{"Shell integration", "~/.zshrc", `eval "$(gmc wt init zsh)"`},
+		},
+		{
+			name: "decline fish", shell: "/usr/bin/fish", input: "n\n",
+			contains: []string{"Set up shell integration for fish", "gmc wt init --help"},
+			excludes: []string{"Add this to your"},
+		},
+		{name: "unknown shell EOF", contains: []string{"gmc wt init --help"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			readLine := newTrimmedLineReader(strings.NewReader(test.input))
+			assert.NoError(t, maybeShellIntegration(&output, readLine, test.shell))
+			for _, text := range test.contains {
+				assert.Contains(t, output.String(), text)
+			}
+			for _, text := range test.excludes {
+				assert.NotContains(t, output.String(), text)
+			}
+		})
+	}
 }

@@ -1,7 +1,6 @@
 package task
 
 import (
-	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -68,10 +67,7 @@ func TestEngineStartCommandOverride(t *testing.T) {
 func newTestEngineWithGit(t *testing.T) (*Engine, *Store) {
 	t.Helper()
 	dir := t.TempDir()
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = os.Chdir(wd) })
-	require.NoError(t, os.Chdir(dir))
+	t.Chdir(dir)
 	runGit(t, "init")
 	runGit(t, "config", "user.email", "test@test")
 	runGit(t, "config", "user.name", "test")

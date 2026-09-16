@@ -83,10 +83,6 @@ func isAddrInUse(err error) bool {
 	if errors.Is(err, syscall.EADDRINUSE) {
 		return true
 	}
-	var opErr *net.OpError
-	if errors.As(err, &opErr) && opErr.Err != nil && errors.Is(opErr.Err, syscall.EADDRINUSE) {
-		return true
-	}
 	return strings.Contains(strings.ToLower(err.Error()), "address already in use")
 }
 

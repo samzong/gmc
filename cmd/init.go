@@ -61,11 +61,15 @@ func runInitWizard(in io.Reader, out io.Writer, current *config.Config) error {
 	if err != nil {
 		return err
 	}
-	model, err := promptModel(out, cfg, readLine)
+	modelDefault := cfg.Model
+	if modelDefault == "" {
+		modelDefault = config.DefaultModel
+	}
+	model, err := promptDefault(out, "Model", modelDefault, readLine)
 	if err != nil {
 		return err
 	}
-	apiBase, err := promptAPIBase(out, cfg, readLine)
+	apiBase, err := promptDefault(out, "API Base URL", cfg.APIBase, readLine)
 	if err != nil {
 		return err
 	}
@@ -125,36 +129,18 @@ func promptAPIKey(out io.Writer, cfg *config.Config, readLine func() (string, er
 	}
 }
 
-func promptModel(out io.Writer, cfg *config.Config, readLine func() (string, error)) (string, error) {
-	modelDefault := cfg.Model
-	if modelDefault == "" {
-		modelDefault = config.DefaultModel
+func promptDefault(out io.Writer, label, fallback string, readLine func() (string, error)) (string, error) {
+	display := fallback
+	if display == "" {
+		display = "<empty>"
 	}
-	fmt.Fprintf(out, "Model (default: %s): ", modelDefault)
-
+	fmt.Fprintf(out, "%s (default: %s): ", label, display)
 	line, err := readLine()
 	if err != nil {
 		return "", err
 	}
 	if line == "" {
-		return modelDefault, nil
-	}
-	return line, nil
-}
-
-func promptAPIBase(out io.Writer, cfg *config.Config, readLine func() (string, error)) (string, error) {
-	apiBaseLabel := cfg.APIBase
-	if apiBaseLabel == "" {
-		apiBaseLabel = "<empty>"
-	}
-	fmt.Fprintf(out, "API Base URL (default: %s): ", apiBaseLabel)
-
-	line, err := readLine()
-	if err != nil {
-		return "", err
-	}
-	if line == "" {
-		return cfg.APIBase, nil
+		line = fallback
 	}
 	return line, nil
 }

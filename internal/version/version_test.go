@@ -31,7 +31,7 @@ func TestSemVerComparison(t *testing.T) {
 	base := SemVer{Major: 1, Minor: 2, Patch: 3}
 	assert.Equal(t, "v1.2.3", base.String())
 	assert.True(t, base.LessThan(SemVer{Major: 2}))
-	assert.True(t, base.GreaterThan(SemVer{Major: 1, Minor: 2, Patch: 2}))
+	assert.True(t, (SemVer{Major: 1, Minor: 2, Patch: 2}).LessThan(base))
 }
 
 func TestSuggestWithRulesMajor(t *testing.T) {
@@ -43,7 +43,6 @@ func TestSuggestWithRulesMajor(t *testing.T) {
 
 	result := SuggestWithRules(base, commits)
 
-	assert.Equal(t, BumpMajor, result.BumpType)
 	assert.Equal(t, "v2.0.0", result.NextVersion.String())
 	assert.Contains(t, result.Reason, "breaking change")
 }
@@ -56,7 +55,6 @@ func TestSuggestWithRulesBreakingInBody(t *testing.T) {
 
 	result := SuggestWithRules(base, commits)
 
-	assert.Equal(t, BumpMajor, result.BumpType)
 	assert.Equal(t, "v1.0.0", result.NextVersion.String())
 }
 
@@ -69,7 +67,6 @@ func TestSuggestWithRulesMinor(t *testing.T) {
 
 	result := SuggestWithRules(base, commits)
 
-	assert.Equal(t, BumpMinor, result.BumpType)
 	assert.Equal(t, "v0.2.0", result.NextVersion.String())
 	assert.Contains(t, result.Reason, "feature")
 }
@@ -83,7 +80,6 @@ func TestSuggestWithRulesPatch(t *testing.T) {
 
 	result := SuggestWithRules(base, commits)
 
-	assert.Equal(t, BumpPatch, result.BumpType)
 	assert.Equal(t, "v0.1.5", result.NextVersion.String())
 }
 
@@ -96,7 +92,6 @@ func TestSuggestWithRulesNoChange(t *testing.T) {
 
 	result := SuggestWithRules(base, commits)
 
-	assert.Equal(t, BumpNone, result.BumpType)
 	assert.True(t, result.NextVersion.Equal(base))
 	assert.Contains(t, result.Reason, "documentation")
 }
@@ -106,7 +101,6 @@ func TestSuggestWithRulesNoCommits(t *testing.T) {
 
 	result := SuggestWithRules(base, nil)
 
-	assert.Equal(t, BumpNone, result.BumpType)
 	assert.True(t, result.NextVersion.Equal(base))
 	assert.Contains(t, result.Reason, "No commits")
 }

@@ -2,13 +2,13 @@ package cmd
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/samzong/gmc/skills"
 	kitup "github.com/samzong/kitup/go"
 	kitupcobra "github.com/samzong/kitup/go-cobra"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSkillCommandInstallsBundledSkill(t *testing.T) {
@@ -22,11 +22,6 @@ func TestSkillCommandInstallsBundledSkill(t *testing.T) {
 	})
 	cmd.SetArgs([]string{"install", "--agent", "codex", "--yes"})
 
-	if err := cmd.Execute(); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "gmc", "SKILL.md")); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, cmd.Execute())
+	require.FileExists(t, filepath.Join(home, ".agents", "skills", "gmc", "SKILL.md"))
 }

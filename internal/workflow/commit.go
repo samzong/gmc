@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/samzong/gmc/internal/branch"
@@ -25,7 +26,6 @@ type CommitOptions struct {
 	DryRun     bool
 	IssueNum   string
 	AutoYes    bool
-	Verbose    bool
 	BranchDesc string
 	UserPrompt string
 	ErrWriter  io.Writer
@@ -139,75 +139,36 @@ func (f *CommitFlow) handleSelectiveCommit(fileArgs []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to resolve files: %w", err)
 	}
-
 	if len(files) == 0 {
 		return errors.New("no valid files found")
 	}
-
-	if f.opts.AddAll {
-		return f.stageAndCommitFiles(files)
-	}
-	return f.commitStagedFiles(files)
-}
-
-func (f *CommitFlow) stageAndCommitFiles(files []string) error {
 	staged, modified, untracked, err := f.git.CheckFileStatus(files)
 	if err != nil {
 		return fmt.Errorf("failed to check file status: %w", err)
 	}
-
-	toStage := make([]string, 0, len(modified)+len(untracked))
-	toStage = append(toStage, modified...)
-	toStage = append(toStage, untracked...)
-	if len(toStage) == 0 && len(staged) == 0 {
-		return fmt.Errorf("no changes detected in specified files: %v", files)
-	}
-
-	if len(toStage) > 0 {
-		if err := f.git.StageFiles(toStage); err != nil {
-			return fmt.Errorf("failed to stage files: %w", err)
+	if f.opts.AddAll {
+		toStage := slices.Concat(modified, untracked)
+		if len(toStage) == 0 && len(staged) == 0 {
+			return fmt.Errorf("no changes detected in specified files: %v", files)
 		}
-		fmt.Fprintf(f.opts.ErrWriter, "Staged files: %v\n", toStage)
+		if len(toStage) > 0 {
+			if err := f.git.StageFiles(toStage); err != nil {
+				return fmt.Errorf("failed to stage files: %w", err)
+			}
+			fmt.Fprintf(f.opts.ErrWriter, "Staged files: %v\n", toStage)
+		}
+		staged = slices.Concat(staged, toStage)
+	} else if len(staged) == 0 {
+		return fmt.Errorf("none specified files staged: %v\nHint: Use 'gmc -a %s' to stage them first",
+			files, strings.Join(files, " "))
 	}
-
-	allFiles := make([]string, 0, len(staged)+len(toStage))
-	allFiles = append(allFiles, staged...)
-	allFiles = append(allFiles, toStage...)
-
-	diff, err := f.git.GetFilesDiff(allFiles)
-	if err != nil {
-		return fmt.Errorf("failed to get diff: %w", err)
-	}
-
-	if diff == "" {
-		return ErrNoChanges
-	}
-
-	return f.runCommitLoop(stagedChanges{Diff: diff, Files: allFiles}, func(msg string) error {
-		return f.performSelectiveCommit(msg, allFiles)
-	})
-}
-
-func (f *CommitFlow) commitStagedFiles(files []string) error {
-	staged, _, _, err := f.git.CheckFileStatus(files)
-	if err != nil {
-		return fmt.Errorf("failed to check file status: %w", err)
-	}
-
-	if len(staged) == 0 {
-		fileNames := strings.Join(files, " ")
-		return fmt.Errorf("none specified files staged: %v\nHint: Use 'gmc -a %s' to stage them first", files, fileNames)
-	}
-
 	diff, err := f.git.GetFilesDiff(staged)
 	if err != nil {
 		return fmt.Errorf("failed to get diff: %w", err)
 	}
-
 	if diff == "" {
 		return ErrNoChanges
 	}
-
 	return f.runCommitLoop(stagedChanges{Diff: diff, Files: staged}, func(msg string) error {
 		return f.performSelectiveCommit(msg, staged)
 	})
@@ -245,24 +206,31 @@ func (f *CommitFlow) runCommitLoop(changes stagedChanges, commitFn func(string) 
 
 func (f *CommitFlow) generateCommitMessage(changes stagedChanges) (string, error) {
 	prompt := formatter.BuildPromptWithConfig(f.cfg, changes.Files, changes.Diff, changes.Stats, f.opts.UserPrompt)
+	message, err := GenerateMessage(f.llm, f.cfg, prompt)
+	if err != nil {
+		return "", err
+	}
+	message = f.applyIssueSuffix(message)
 
+	fmt.Fprintln(f.opts.ErrWriter, "\nGenerated Commit Message:")
+	fmt.Fprintln(f.opts.OutWriter, message)
+	return message, nil
+}
+
+func GenerateMessage(llm LLMClient, cfg *config.Config, prompt string) (string, error) {
 	sp := ui.NewSpinner("Generating commit message...")
 	sp.Start()
-	message, err := f.llm.GenerateCommitMessage(prompt, f.cfg.Model)
+	message, err := llm.GenerateCommitMessage(prompt, cfg.Model)
 	sp.Stop()
 
 	if err != nil {
 		return "", fmt.Errorf("failed to generate commit message: %w", err)
 	}
 
-	formattedMessage := formatter.FormatCommitMessageWithConfig(f.cfg, message)
+	formattedMessage := formatter.FormatCommitMessageWithConfig(cfg, message)
 	if formattedMessage == "" {
 		return "", ErrNoCommitSubject
 	}
-	formattedMessage = f.applyIssueSuffix(formattedMessage)
-
-	fmt.Fprintln(f.opts.ErrWriter, "\nGenerated Commit Message:")
-	fmt.Fprintln(f.opts.OutWriter, formattedMessage)
 	return formattedMessage, nil
 }
 

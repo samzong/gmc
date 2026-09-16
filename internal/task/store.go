@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -34,10 +33,6 @@ func OpenStore(wt *worktree.Client) (*Store, error) {
 
 func NewStore(gitCommonDir string) *Store {
 	return &Store{root: filepath.Join(gitCommonDir, "gmc-tasks")}
-}
-
-func (s *Store) Root() string {
-	return s.root
 }
 
 func (s *Store) taskRoot() string {
@@ -107,7 +102,6 @@ func (s *Store) ListTaskIDs() ([]string, error) {
 			ids = append(ids, ent.Name())
 		}
 	}
-	sort.Strings(ids)
 	return ids, nil
 }
 

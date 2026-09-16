@@ -1,7 +1,9 @@
 package formatter
 
 import (
+	"cmp"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -61,128 +63,6 @@ func truncateDiffWithStats(diff string, stats string, limit int) string {
 		return truncateToValidUTF8(diff, limit) + "...(content is too long, truncated)"
 	}
 	return result
-}
-
-func parseDiff(raw string) []DiffFile {
-	if !strings.Contains(raw, "diff --") {
-		return nil
-	}
-
-	lines := strings.Split(raw, "\n")
-	var files []DiffFile
-	var current *DiffFile
-	inHunk := false
-
-	for _, line := range lines {
-		if isDiffHeader(line) {
-			if current != nil {
-				files = append(files, *current)
-			}
-			current = &DiffFile{}
-			inHunk = false
-			current.Header = line + "\n"
-			newPath, oldPath := parseDiffHeaderPaths(line)
-			if oldPath != "" {
-				current.OldPath = oldPath
-			}
-			if newPath != "" {
-				current.Path = newPath
-			}
-			if current.OldPath != "" && current.Path != "" && current.OldPath != current.Path {
-				current.IsRename = true
-			}
-			continue
-		}
-
-		if current == nil {
-			continue
-		}
-
-		if isHunkHeader(line) {
-			inHunk = true
-			current.Hunks = append(current.Hunks, line+"\n")
-			continue
-		}
-
-		if inHunk {
-			current.Hunks[len(current.Hunks)-1] += line + "\n"
-			continue
-		}
-
-		current.Header += line + "\n"
-		applyHeaderLine(current, line)
-	}
-
-	if current != nil {
-		files = append(files, *current)
-	}
-
-	return files
-}
-
-func isDiffHeader(line string) bool {
-	return strings.HasPrefix(line, "diff --git ") ||
-		strings.HasPrefix(line, "diff --cc ") ||
-		strings.HasPrefix(line, "diff --combined ")
-}
-
-func isHunkHeader(line string) bool {
-	return strings.HasPrefix(line, "@@ ") || strings.HasPrefix(line, "@@@ ")
-}
-
-func parseDiffHeaderPaths(line string) (string, string) {
-	fields := strings.Fields(line)
-	if len(fields) < 3 {
-		return "", ""
-	}
-	if fields[1] == "--cc" || fields[1] == "--combined" {
-		path := strings.TrimSpace(fields[2])
-		path = strings.Trim(path, "\"")
-		return path, path
-	}
-	if len(fields) < 4 {
-		return "", ""
-	}
-	oldPath := normalizeDiffPath(fields[2], "a/")
-	newPath := normalizeDiffPath(fields[3], "b/")
-	return newPath, oldPath
-}
-
-func normalizeDiffPath(path string, prefix string) string {
-	path = strings.TrimSpace(path)
-	path = strings.Trim(path, "\"")
-	path = strings.TrimPrefix(path, prefix)
-	return path
-}
-
-func applyHeaderLine(file *DiffFile, line string) {
-	line = strings.TrimSpace(line)
-	if strings.HasPrefix(line, "rename from ") {
-		file.IsRename = true
-		file.OldPath = strings.TrimPrefix(line, "rename from ")
-		file.OldPath = strings.Trim(file.OldPath, "\"")
-		return
-	}
-	if strings.HasPrefix(line, "rename to ") {
-		file.IsRename = true
-		file.Path = strings.TrimPrefix(line, "rename to ")
-		file.Path = strings.Trim(file.Path, "\"")
-		return
-	}
-	if strings.HasPrefix(line, "new file mode ") {
-		file.IsNew = true
-		return
-	}
-	if strings.HasPrefix(line, "deleted file mode ") {
-		return
-	}
-	if strings.HasPrefix(line, "old mode ") || strings.HasPrefix(line, "new mode ") {
-		file.HasModeChange = true
-		return
-	}
-	if strings.HasPrefix(line, "Binary files ") || strings.HasPrefix(line, "GIT binary patch") {
-		file.IsBinary = true
-	}
 }
 
 func parseNumstat(raw string) map[string]diffStat {
@@ -291,10 +171,8 @@ func classifyFile(filePath string) int {
 	}
 	segments := strings.Split(filePath, "/")
 	for _, seg := range segments {
-		for _, dir := range lowPriorityDirs {
-			if seg == dir {
-				return 2
-			}
+		if slices.Contains(lowPriorityDirs, seg) {
+			return 2
 		}
 	}
 
@@ -346,45 +224,16 @@ func summarizeFile(file DiffFile) string {
 }
 
 func truncateDiff(files []DiffFile, limit int) string {
-	var high []DiffFile
-	var mid []DiffFile
-	var low []DiffFile
-	for _, file := range files {
-		switch file.Priority {
-		case 0:
-			high = append(high, file)
-		case 1:
-			mid = append(mid, file)
-		default:
-			low = append(low, file)
-		}
-	}
-
+	slices.SortStableFunc(files, func(a, b DiffFile) int { return cmp.Compare(a.Priority, b.Priority) })
 	var result strings.Builder
-	for _, file := range high {
-		if !appendFile(&result, file, limit, false) {
-			if !appendFile(&result, file, limit, true) {
-				return truncateToValidUTF8(result.String(), limit)
-			}
+	for _, file := range files {
+		if file.Priority < 2 && appendFile(&result, file, limit, false) {
+			continue
+		}
+		if !appendFile(&result, file, limit, true) {
+			break
 		}
 	}
-
-	for _, file := range mid {
-		if !appendFile(&result, file, limit, false) {
-			if !appendFile(&result, file, limit, true) {
-				return truncateToValidUTF8(result.String(), limit)
-			}
-		}
-	}
-
-	for _, file := range low {
-		summary := summarizeFile(file) + "\n"
-		if result.Len()+len(summary) > limit {
-			return truncateToValidUTF8(result.String(), limit)
-		}
-		result.WriteString(summary)
-	}
-
 	return truncateToValidUTF8(result.String(), limit)
 }
 

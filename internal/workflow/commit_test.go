@@ -18,8 +18,6 @@ type fakeGit struct {
 	commits []string
 }
 
-func (f *fakeGit) IsGitRepository() bool     { return true }
-func (f *fakeGit) CheckGitRepository() error { return nil }
 func (f *fakeGit) AddAll() error             { return nil }
 func (f *fakeGit) StageFiles([]string) error { return nil }
 

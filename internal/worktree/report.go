@@ -16,13 +16,6 @@ type Report struct {
 	Events []Event
 }
 
-func (r *Report) Add(level EventLevel, message string) {
-	r.Events = append(r.Events, Event{
-		Level:   level,
-		Message: message,
-	})
-}
-
 func (r *Report) Info(message string) {
 	r.Add(EventInfo, message)
 }
@@ -32,8 +25,12 @@ func (r *Report) Warn(message string) {
 }
 
 func (r *Report) Merge(other Report) {
-	if len(other.Events) == 0 {
-		return
-	}
 	r.Events = append(r.Events, other.Events...)
+}
+
+func (r *Report) Add(level EventLevel, message string) {
+	r.Events = append(r.Events, Event{
+		Level:   level,
+		Message: message,
+	})
 }

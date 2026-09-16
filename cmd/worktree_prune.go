@@ -26,8 +26,7 @@ so long-lived clones stop accumulating stale branches.`,
 	Example: `  gmc wt prune --dry-run
   gmc wt prune --branches --pr-aware --dry-run`,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		wtClient := newWorktreeClient()
-		return runWorktreePrune(wtClient)
+		return runWorktreePrune(newWorktreeClient())
 	},
 }
 

@@ -81,7 +81,7 @@ func (c *Client) Prune(opts PruneOptions) (PruneResult, error) {
 		return result, err
 	}
 	if opts.Branches {
-		orphans, err := c.collectOrphanBranchCandidates(repoDir, baseBranch, candidates)
+		orphans, err := c.collectOrphanBranchCandidates(repoDir, baseBranch)
 		if err != nil {
 			return result, err
 		}
@@ -91,7 +91,7 @@ func (c *Client) Prune(opts PruneOptions) (PruneResult, error) {
 	if opts.PRAware {
 		return c.prunePRAware(opts, candidates, repoDir, result)
 	}
-	return c.pruneClassic(opts, candidates, c.worktreeRoot, baseBranch, repoDir, result)
+	return c.pruneClassic(opts, candidates, c.worktreeRoot, baseBranch, result)
 }
 
 func (c *Client) collectPruneCandidates(root, baseBranch string, report *Report) ([]pruneCandidate, string, error) {
@@ -119,21 +119,15 @@ func (c *Client) collectPruneCandidates(root, baseBranch string, report *Report)
 		}
 		name := filepath.Base(wt.Path)
 		if wt.IsLocked {
-			if report != nil {
-				report.Warn(fmt.Sprintf("Skipped %s: worktree is locked", name))
-			}
+			report.Warn(fmt.Sprintf("Skipped %s: worktree is locked", name))
 			continue
 		}
 		if wt.Branch == "" || wt.Branch == "(detached)" {
-			if report != nil {
-				report.Warn(fmt.Sprintf("Skipped %s: detached HEAD", name))
-			}
+			report.Warn(fmt.Sprintf("Skipped %s: detached HEAD", name))
 			continue
 		}
 		if wt.Branch == baseBranchName {
-			if report != nil {
-				report.Warn(fmt.Sprintf("Skipped %s: base branch '%s'", name, baseBranchName))
-			}
+			report.Warn(fmt.Sprintf("Skipped %s: base branch '%s'", name, baseBranchName))
 			continue
 		}
 		candidates = append(candidates, pruneCandidate{wt: wt, name: name})
@@ -143,7 +137,7 @@ func (c *Client) collectPruneCandidates(root, baseBranch string, report *Report)
 }
 
 func (c *Client) collectOrphanBranchCandidates(
-	repoDir, baseBranch string, existing []pruneCandidate,
+	repoDir, baseBranch string,
 ) ([]pruneCandidate, error) {
 	worktrees, err := c.ListCached()
 	if err != nil {
@@ -154,14 +148,11 @@ func (c *Client) collectOrphanBranchCandidates(
 		return nil, err
 	}
 
-	claimed := make(map[string]struct{}, len(worktrees)+len(existing)+2)
+	claimed := make(map[string]struct{}, len(worktrees)+2)
 	claimed[localBranchName(baseBranch)] = struct{}{}
 	claimed[pp.MainBranch] = struct{}{}
 	for _, wt := range worktrees {
 		claimed[wt.Branch] = struct{}{}
-	}
-	for _, cand := range existing {
-		claimed[cand.wt.Branch] = struct{}{}
 	}
 
 	result, err := c.runner.Run("-C", repoDir, "branch", "--format=%(refname:short)")
@@ -229,51 +220,32 @@ func (c *Client) prunePRAware(
 	}
 
 	for _, cand := range candidates {
-		pr, hasPR := prMap[cand.wt.Branch]
-
+		pr := prMap[cand.wt.Branch]
 		entry := PruneEntry{
-			Name:   cand.name,
-			Branch: cand.wt.Branch,
+			Name: cand.name, Branch: cand.wt.Branch,
+			PRNum: pr.Number, PRState: pr.State, Action: "skipped",
 		}
-
-		if hasPR {
-			entry.PRNum = pr.Number
-			entry.PRState = pr.State
-		}
-
-		switch {
-		case hasPR && pr.State == "MERGED":
-			if cand.hasWorktree() {
-				status := c.GetWorktreeStatus(cand.wt.Path)
-				if status != "clean" && !opts.Force {
-					entry.Action = "skipped"
-					entry.Reason = "PR merged but worktree has uncommitted changes"
-					result.PruneEntries = append(result.PruneEntries, entry)
-					continue
-				}
-			}
-			if opts.DryRun {
-				entry.Action = "would_remove"
-				entry.Reason = "PR merged"
-				result.PruneEntries = append(result.PruneEntries, entry)
-				continue
-			}
-			if err := c.pruneCandidateRefs(repoDir, cand, opts.Force, &result.Report); err != nil {
-				return result, err
-			}
-			entry.Action = "removed"
+		switch pr.State {
+		case "MERGED":
 			entry.Reason = "PR merged"
-		case hasPR && pr.State == "CLOSED":
-			entry.Action = "skipped"
+			switch {
+			case cand.hasWorktree() && c.GetWorktreeStatus(cand.wt.Path) != "clean" && !opts.Force:
+				entry.Reason = "PR merged but worktree has uncommitted changes"
+			case opts.DryRun:
+				entry.Action = "would_remove"
+			default:
+				if err := c.pruneCandidateRefs(cand, opts.Force, &result.Report); err != nil {
+					return result, err
+				}
+				entry.Action = "removed"
+			}
+		case "CLOSED":
 			entry.Reason = "PR closed, not merged"
-		case hasPR && pr.State == "OPEN":
-			entry.Action = "skipped"
+		case "OPEN":
 			entry.Reason = "PR still open"
 		default:
-			entry.Action = "skipped"
 			entry.Reason = "no PR found"
 		}
-
 		result.PruneEntries = append(result.PruneEntries, entry)
 	}
 
@@ -285,10 +257,8 @@ func (c *Client) prunePRAware(
 }
 
 func (c *Client) pruneClassic(
-	opts PruneOptions, candidates []pruneCandidate, root, baseBranch, repoDir string, result PruneResult,
+	opts PruneOptions, candidates []pruneCandidate, root, baseBranch string, result PruneResult,
 ) (PruneResult, error) {
-	var prunedAny bool
-
 	for _, cand := range candidates {
 		merged, err := c.isBranchMerged(root, cand.wt.Branch, baseBranch)
 		if err != nil {
@@ -318,55 +288,29 @@ func (c *Client) pruneClassic(
 			}
 			result.Warn("Would delete branch: " + cand.wt.Branch)
 			result.Candidates = append(result.Candidates, candidate)
-			prunedAny = true
 			continue
 		}
 
-		if err := c.pruneCandidateRefs(repoDir, cand, opts.Force, &result.Report); err != nil {
+		if err := c.pruneCandidateRefs(cand, opts.Force, &result.Report); err != nil {
 			return result, err
 		}
 		result.Candidates = append(result.Candidates, candidate)
-		prunedAny = true
 	}
 
-	if !prunedAny {
+	if len(result.Candidates) == 0 {
 		result.Warn("No worktrees pruned.")
 	}
 
 	return result, nil
 }
 
-func (c *Client) pruneCandidateRefs(repoDir string, cand pruneCandidate, force bool, report *Report) error {
+func (c *Client) pruneCandidateRefs(cand pruneCandidate, force bool, report *Report) error {
 	if cand.hasWorktree() {
-		if err := c.removePrunedWorktree(repoDir, cand.wt.Path, force, report); err != nil {
+		if err := c.removeWorktree(cand.wt.Path, filepath.Base(cand.wt.Path), force, report); err != nil {
 			return err
 		}
 	}
-	return c.deletePrunedBranch(repoDir, cand.wt.Branch, report)
-}
-
-func (c *Client) removePrunedWorktree(repoDir, wtPath string, force bool, report *Report) error {
-	args := []string{"-C", repoDir, "worktree", "remove"}
-	if force {
-		args = append(args, "--force")
-	}
-	args = append(args, wtPath)
-
-	gitResult, err := c.runner.RunLogged(args...)
-	if err != nil {
-		return gitutil.WrapGitError("failed to remove worktree", gitResult, err)
-	}
-	report.Warn(fmt.Sprintf("Removed worktree '%s'", filepath.Base(wtPath)))
-	return nil
-}
-
-func (c *Client) deletePrunedBranch(repoDir, branch string, report *Report) error {
-	gitResult, err := c.runner.RunLogged("-C", repoDir, "branch", "-D", branch)
-	if err != nil {
-		return gitutil.WrapGitError("failed to delete branch", gitResult, err)
-	}
-	report.Warn(fmt.Sprintf("Deleted branch '%s'", branch))
-	return nil
+	return c.deleteBranches(report, cand.wt.Branch)
 }
 
 func (c *Client) resolveBaseBranch(root string, override string) (string, error) {

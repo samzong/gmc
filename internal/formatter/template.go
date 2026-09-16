@@ -13,80 +13,32 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type PromptTemplate struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
-	Template    string `yaml:"template"`
-}
-
 type TemplateData struct {
 	Role  string
 	Files string
 	Diff  string
 }
 
-// Common template parts that are shared between templates
-var templateParts = struct {
-	Header   string
-	Files    string
-	Content  string
-	Format   string
-	NoIssues string
-	Emoji    string
-}{
-	Header:   "{{.Role}}, craft a Conventional Commits-style summary for the changes below.",
-	Files:    "Files touched:\n{{.Files}}",
-	Content:  "Diff excerpt:\n{{.Diff}}",
-	Format:   "Use the \"type(scope): description\" syntax",
-	NoIssues: "Skip issue references; gmc appends them automatically.",
-	Emoji:    "", // Will be initialized by initTemplateParts()
-}
-
-// initTemplateParts initializes template parts with dynamic content from emoji module
-func initTemplateParts() {
-	templateParts.Emoji = fmt.Sprintf(
-		"Lead with an emoji that matches the commit type (%s).",
-		emoji.GetEmojiDescription(),
-	)
-}
-
-func init() {
-	initTemplateParts()
-}
-
-func buildDefaultTemplateContent() string {
-	return buildDefaultTemplateContentWith(config.MustGetConfig())
-}
-
 func buildDefaultTemplateContentWith(cfg *config.Config) string {
-	enableEmoji := cfg != nil && cfg.EnableEmoji
-
-	formatMsg := templateParts.Format
+	formatMsg := `Use the "type(scope): description" syntax`
 	emojiInstruction := ""
-	if enableEmoji {
+	if cfg != nil && cfg.EnableEmoji {
 		formatMsg = `Use the "emoji type(scope): description" syntax`
-		emojiInstruction = templateParts.Emoji + "\n"
+		emojiInstruction = fmt.Sprintf("Lead with an emoji that matches the commit type (%s).\n", emoji.GetEmojiDescription())
 	}
+	return fmt.Sprintf(`{{.Role}}, craft a Conventional Commits-style summary for the changes below.
 
-	return fmt.Sprintf(
-		`%s
+Files touched:
+{{.Files}}
 
-%s
-
-%s
+Diff excerpt:
+{{.Diff}}
 
 Reply with one line. %s.
 Select the most fitting type from: %s.
 %sKeep the description under 150 characters and describe the behavior change.
-%s`,
-		templateParts.Header,
-		templateParts.Files,
-		templateParts.Content,
-		formatMsg,
-		strings.Join(emoji.GetAllCommitTypes(), ", "),
-		emojiInstruction,
-		templateParts.NoIssues,
-	)
+Skip issue references; gmc appends them automatically.`,
+		formatMsg, strings.Join(emoji.GetAllCommitTypes(), ", "), emojiInstruction)
 }
 
 func readTemplateFile(filePath string) (string, error) {
@@ -99,7 +51,9 @@ func readTemplateFile(filePath string) (string, error) {
 		return "", fmt.Errorf("prompt template file is empty: %s", filePath)
 	}
 
-	var tpl PromptTemplate
+	var tpl struct {
+		Template string `yaml:"template"`
+	}
 	if err := yaml.Unmarshal(content, &tpl); err != nil {
 		return string(content), nil //nolint:nilerr // Intentional fallback to plain text
 	}
@@ -113,13 +67,9 @@ func readTemplateFile(filePath string) (string, error) {
 
 func GetPromptTemplate(templateName string) (string, error) {
 	if templateName == "" || templateName == config.DefaultPromptTemplate {
-		content := buildDefaultTemplateContent()
-		if content != "" {
-			return content, nil
-		}
+		return buildDefaultTemplateContentWith(config.MustGetConfig()), nil
 	}
 
-	// Expand ~ to home directory
 	if strings.HasPrefix(templateName, "~/") {
 		home, err := os.UserHomeDir()
 		if err == nil {

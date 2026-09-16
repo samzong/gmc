@@ -18,15 +18,7 @@ func TestDiscover_FindsCandidates(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(mainWT, ".claude"), 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(mainWT, ".claude", "CLAUDE.md"), []byte("# hi"), 0644))
 
-	repoDir := t.TempDir()
-	bareDir := filepath.Join(repoDir, ".bare")
-	require.NoError(t, os.Mkdir(bareDir, 0755))
-
-	oldCwd, _ := os.Getwd()
-	require.NoError(t, os.Chdir(repoDir))
-	defer func() { _ = os.Chdir(oldCwd) }()
-
-	client := NewClient(Options{})
+	client := sharedTestClient(t, nil)
 	results, err := client.Discover(DiscoverOptions{MainWorktreePath: mainWT})
 	require.NoError(t, err)
 
@@ -46,23 +38,7 @@ func TestDiscover_SkipsExisting(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(mainWT, ".env"), []byte("X=1"), 0644))
 	require.NoError(t, os.Mkdir(filepath.Join(mainWT, "node_modules"), 0755))
 
-	repoDir := t.TempDir()
-	bareDir := filepath.Join(repoDir, ".bare")
-	require.NoError(t, os.Mkdir(bareDir, 0755))
-
-	cfg := SharedConfig{
-		Resources: []SharedResource{
-			{Path: ".env", Strategy: StrategyCopy},
-		},
-	}
-	data, _ := yaml.Marshal(&cfg)
-	require.NoError(t, os.WriteFile(filepath.Join(bareDir, "gmc-share.yml"), data, 0644))
-
-	oldCwd, _ := os.Getwd()
-	require.NoError(t, os.Chdir(repoDir))
-	defer func() { _ = os.Chdir(oldCwd) }()
-
-	client := NewClient(Options{})
+	client := sharedTestClient(t, &SharedConfig{Resources: []SharedResource{{Path: ".env", Strategy: StrategyCopy}}})
 	results, err := client.Discover(DiscoverOptions{MainWorktreePath: mainWT})
 	require.NoError(t, err)
 
@@ -72,15 +48,7 @@ func TestDiscover_SkipsExisting(t *testing.T) {
 func TestDiscover_EmptyWorktree(t *testing.T) {
 	mainWT := t.TempDir()
 
-	repoDir := t.TempDir()
-	bareDir := filepath.Join(repoDir, ".bare")
-	require.NoError(t, os.Mkdir(bareDir, 0755))
-
-	oldCwd, _ := os.Getwd()
-	require.NoError(t, os.Chdir(repoDir))
-	defer func() { _ = os.Chdir(oldCwd) }()
-
-	client := NewClient(Options{})
+	client := sharedTestClient(t, nil)
 	results, err := client.Discover(DiscoverOptions{MainWorktreePath: mainWT})
 	require.NoError(t, err)
 
@@ -96,14 +64,7 @@ func TestDiscover_AllCopyCandidates(t *testing.T) {
 		require.NoError(t, os.WriteFile(full, []byte("data"), 0644))
 	}
 
-	repoDir := t.TempDir()
-	require.NoError(t, os.Mkdir(filepath.Join(repoDir, ".bare"), 0755))
-
-	oldCwd, _ := os.Getwd()
-	require.NoError(t, os.Chdir(repoDir))
-	defer func() { _ = os.Chdir(oldCwd) }()
-
-	client := NewClient(Options{})
+	client := sharedTestClient(t, nil)
 	results, err := client.Discover(DiscoverOptions{MainWorktreePath: mainWT})
 	require.NoError(t, err)
 
@@ -117,15 +78,7 @@ func TestDiscover_AllCopyCandidates(t *testing.T) {
 }
 
 func TestAddDiscoveredResources_Batch(t *testing.T) {
-	repoDir := t.TempDir()
-	bareDir := filepath.Join(repoDir, ".bare")
-	require.NoError(t, os.Mkdir(bareDir, 0755))
-
-	oldCwd, _ := os.Getwd()
-	require.NoError(t, os.Chdir(repoDir))
-	defer func() { _ = os.Chdir(oldCwd) }()
-
-	client := NewClient(Options{})
+	client := sharedTestClient(t, nil)
 
 	results := []DiscoverResult{
 		{Path: ".env", Strategy: StrategyCopy, Reason: "test"},
@@ -293,7 +246,7 @@ func TestDiscover_ExplicitResourceInsidePrunedDirectoryAndInheritedManager(t *te
 		require.NoError(t, os.WriteFile(full, []byte(content), 0644))
 	}
 	client := NewClient(Options{})
-	_, err := client.AddSharedResource(".local/reports/latest.json", StrategyCopy)
+	_, err := client.AddSharedResource(".local/reports/latest.json", StrategyCopy, false)
 	require.NoError(t, err)
 	results, err := client.Discover(DiscoverOptions{MainWorktreePath: root, IncludeConfigured: true})
 	require.NoError(t, err)
@@ -305,7 +258,7 @@ func TestDiscover_ExplicitResourceInsidePrunedDirectoryAndInheritedManager(t *te
 	assert.Equal(t, filepath.Join(root, ".local/reports/latest.json"), byPath[".local/reports/latest.json"].Source)
 	assert.Equal(t, "pnpm", byPath["apps/web/node_modules"].PackageManager)
 	assert.Equal(t, "pnpm", byPath["apps/web/package.json"].PackageManager)
-	_, err = client.AddSharedResource("**/node_modules", StrategySymlink)
+	_, err = client.AddSharedResource("**/node_modules", StrategySymlink, false)
 	require.NoError(t, err)
 	results, err = client.Discover(DiscoverOptions{MainWorktreePath: root, IncludeConfigured: true})
 	require.NoError(t, err)
@@ -316,4 +269,18 @@ func TestDiscover_ExplicitResourceInsidePrunedDirectoryAndInheritedManager(t *te
 			assert.Equal(t, "**/node_modules", result.ConfiguredBy)
 		}
 	}
+}
+
+func sharedTestClient(t *testing.T, cfg *SharedConfig) *Client {
+	t.Helper()
+	repo := physicalTempDir(t)
+	bare := filepath.Join(repo, ".bare")
+	require.NoError(t, os.Mkdir(bare, 0755))
+	if cfg != nil {
+		data, err := yaml.Marshal(cfg)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(bare, "gmc-share.yml"), data, 0644))
+	}
+	t.Chdir(repo)
+	return NewClient(Options{})
 }

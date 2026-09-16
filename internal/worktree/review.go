@@ -1,14 +1,12 @@
 package worktree
 
 import (
-	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -39,11 +37,6 @@ type reviewRemote struct {
 	provider string
 }
 
-type reviewTarget struct {
-	Branch string
-	Commit string
-}
-
 type reviewCandidate struct {
 	Provider   string
 	Number     int
@@ -62,6 +55,7 @@ func (e missingReviewToolError) Error() string {
 }
 
 var reviewRunFunc = reviewRunDefault
+
 var reviewCacheDirFunc = os.UserCacheDir
 
 func reviewRunDefault(repoDir string, tool string, args ...string) ([]byte, error) {
@@ -145,8 +139,8 @@ func (c *Client) detectReviewRemote() (reviewRemote, error) {
 	return reviewRemote{}, errors.New("no usable git remote found")
 }
 
-func (c *Client) reviewTargets(worktrees []Info) map[string]reviewTarget {
-	targets := make(map[string]reviewTarget)
+func (c *Client) reviewTargets(worktrees []Info) map[string]string {
+	targets := make(map[string]string)
 	mainBranch := ""
 	if branch, err := c.resolvedMainBranch(); err == nil {
 		mainBranch = branch
@@ -160,7 +154,7 @@ func (c *Client) reviewTargets(worktrees []Info) map[string]reviewTarget {
 			continue
 		}
 		if _, exists := targets[branch]; !exists {
-			targets[branch] = reviewTarget{Branch: branch, Commit: wt.Commit}
+			targets[branch] = wt.Commit
 		}
 	}
 	return targets
@@ -184,16 +178,11 @@ func (c *Client) remoteURL(remote string) (string, error) {
 
 func reviewRemoteCandidates(remotes []string) []string {
 	var candidates []string
-	add := func(name string) {
-		for _, remote := range remotes {
-			if remote == name {
-				candidates = append(candidates, remote)
-				return
-			}
+	for _, preferred := range []string{"upstream", "origin"} {
+		if slices.Contains(remotes, preferred) {
+			candidates = append(candidates, preferred)
 		}
 	}
-	add("upstream")
-	add("origin")
 	if len(candidates) == 0 && len(remotes) == 1 {
 		candidates = append(candidates, remotes[0])
 	}
@@ -238,136 +227,9 @@ func stripPort(host string) string {
 	return host
 }
 
-type githubReviewInfo struct {
-	Number      int    `json:"number"`
-	State       string `json:"state"`
-	HeadRefName string `json:"headRefName"`
-	HeadRefOid  string `json:"headRefOid"`
-	URL         string `json:"url"`
-}
-
-func githubReviewStates(
-	repoDir string,
-	repoURL string,
-	targets map[string]reviewTarget,
-) (map[string]ReviewInfo, error) {
-	out, err := cachedReviewOutput(
-		reviewProviderGitHub,
-		repoURL,
-		"me",
-		func() ([]byte, error) {
-			return reviewRunFunc(repoDir,
-				"gh",
-				"pr", "list",
-				"-R", repoURL,
-				"--author", "@me",
-				"--state", "all",
-				"--json", "number,state,headRefName,headRefOid,url",
-				"--limit", "1000",
-			)
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	var prs []githubReviewInfo
-	if err := decodeReviewJSON(out, &prs); err != nil {
-		return nil, err
-	}
-
-	candidates := make([]reviewCandidate, 0, len(prs))
-	for _, pr := range prs {
-		candidates = append(candidates, reviewCandidate{
-			Provider:   reviewProviderGitHub,
-			Number:     pr.Number,
-			State:      normalizeReviewState(pr.State),
-			HeadBranch: pr.HeadRefName,
-			HeadCommit: pr.HeadRefOid,
-			URL:        pr.URL,
-		})
-	}
-	return selectReviewCandidates(candidates, targets), nil
-}
-
-type gitlabReviewInfo struct {
-	IID          int    `json:"iid"`
-	State        string `json:"state"`
-	SourceBranch string `json:"source_branch"`
-	SHA          string `json:"sha"`
-	WebURL       string `json:"web_url"`
-}
-
-type gitlabUserInfo struct {
-	Username string `json:"username"`
-}
-
-func gitlabReviewStates(
-	repoDir string,
-	repoURL string,
-	targets map[string]reviewTarget,
-) (map[string]ReviewInfo, error) {
-	out, err := cachedReviewOutput(
-		reviewProviderGitLab,
-		repoURL,
-		"me",
-		func() ([]byte, error) {
-			username, err := gitlabCurrentUsername(repoDir)
-			if err != nil {
-				return nil, err
-			}
-			return reviewRunFunc(repoDir,
-				"glab",
-				"mr", "list",
-				"-R", repoURL,
-				"--all",
-				"--author", username,
-				"--output", "json",
-				"--per-page", "100",
-			)
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	var mrs []gitlabReviewInfo
-	if err := decodeReviewJSON(out, &mrs); err != nil {
-		return nil, err
-	}
-
-	candidates := make([]reviewCandidate, 0, len(mrs))
-	for _, mr := range mrs {
-		candidates = append(candidates, reviewCandidate{
-			Provider:   reviewProviderGitLab,
-			Number:     mr.IID,
-			State:      normalizeReviewState(mr.State),
-			HeadBranch: mr.SourceBranch,
-			HeadCommit: mr.SHA,
-			URL:        mr.WebURL,
-		})
-	}
-	return selectReviewCandidates(candidates, targets), nil
-}
-
-func gitlabCurrentUsername(repoDir string) (string, error) {
-	out, err := reviewRunFunc(repoDir, "glab", "api", "user")
-	if err != nil {
-		return "", err
-	}
-	var user gitlabUserInfo
-	if err := decodeReviewJSON(out, &user); err != nil {
-		return "", err
-	}
-	if user.Username == "" {
-		return "", errors.New("failed to determine GitLab username")
-	}
-	return user.Username, nil
-}
-
 func selectReviewCandidates(
 	candidates []reviewCandidate,
-	targets map[string]reviewTarget,
+	targets map[string]string,
 ) map[string]ReviewInfo {
 	reviews := make(map[string]ReviewInfo, len(targets))
 	exact := make(map[string]bool, len(targets))
@@ -386,7 +248,7 @@ func selectReviewCandidates(
 			HeadBranch: candidate.HeadBranch,
 			URL:        candidate.URL,
 		}
-		if target.Commit != "" && candidate.HeadCommit != "" && target.Commit == candidate.HeadCommit {
+		if target != "" && candidate.HeadCommit != "" && target == candidate.HeadCommit {
 			reviews[candidate.HeadBranch] = info
 			exact[candidate.HeadBranch] = true
 			continue
@@ -396,75 +258,6 @@ func selectReviewCandidates(
 		}
 	}
 	return reviews
-}
-
-func cachedReviewOutput(
-	provider string,
-	repoURL string,
-	author string,
-	load func() ([]byte, error),
-) ([]byte, error) {
-	if out, ok := readReviewCache(provider, repoURL, author); ok {
-		return out, nil
-	}
-	out, err := load()
-	if err != nil {
-		return nil, err
-	}
-	writeReviewCache(provider, repoURL, author, out)
-	return out, nil
-}
-
-func readReviewCache(provider string, repoURL string, author string) ([]byte, bool) {
-	path, ok := reviewCachePath(provider, repoURL, author)
-	if !ok {
-		return nil, false
-	}
-	info, err := os.Stat(path)
-	if err != nil || time.Since(info.ModTime()) > reviewCacheTTL {
-		return nil, false
-	}
-	out, err := os.ReadFile(path)
-	if err != nil {
-		return nil, false
-	}
-	return out, true
-}
-
-func writeReviewCache(provider string, repoURL string, author string, out []byte) {
-	path, ok := reviewCachePath(provider, repoURL, author)
-	if !ok {
-		return
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, out, 0o644); err != nil {
-		return
-	}
-	_ = os.Rename(tmp, path)
-}
-
-func reviewCachePath(provider string, repoURL string, author string) (string, bool) {
-	dir, err := reviewCacheDirFunc()
-	if err != nil || dir == "" {
-		return "", false
-	}
-	key := strings.Join([]string{reviewCacheVersion, provider, repoURL, author}, "\x00")
-	sum := sha256.Sum256([]byte(key))
-	return filepath.Join(dir, "gmc", "reviews", fmt.Sprintf("%x.json", sum)), true
-}
-
-func decodeReviewJSON(out []byte, target any) error {
-	trimmed := strings.TrimSpace(string(out))
-	if trimmed == "" || trimmed == "[]" {
-		return nil
-	}
-	if err := json.Unmarshal([]byte(trimmed), target); err != nil {
-		return fmt.Errorf("failed to parse review lookup output: %w", err)
-	}
-	return nil
 }
 
 func normalizeReviewState(state string) string {

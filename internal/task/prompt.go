@@ -29,23 +29,17 @@ func BuildTaskContextMarkdown(rec Record, attempt AttemptRecord) string {
 	if rec.Issue != "" {
 		fmt.Fprintf(&b, "- Issue: #%s\n", rec.Issue)
 	}
-	if rec.SourceFile != "" {
-		fmt.Fprintf(&b, "- Source file: %s\n", rec.SourceFile)
-	}
-	if rec.Workflow != "" {
-		fmt.Fprintf(&b, "- Workflow: %s\n", rec.Workflow)
-	}
-	if rec.CurrentNode != "" {
-		fmt.Fprintf(&b, "- Current node: %s\n", rec.CurrentNode)
-	}
-	if attempt.Branch != "" {
-		fmt.Fprintf(&b, "- Branch: %s\n", attempt.Branch)
-	}
-	if attempt.Worktree != "" {
-		fmt.Fprintf(&b, "- Worktree: %s\n", attempt.Worktree)
-	}
-	if attempt.Agent != "" {
-		fmt.Fprintf(&b, "- Agent: %s\n", attempt.Agent)
+	for _, field := range [][2]string{
+		{"Source file", rec.SourceFile},
+		{"Workflow", rec.Workflow},
+		{"Current node", rec.CurrentNode},
+		{"Branch", attempt.Branch},
+		{"Worktree", attempt.Worktree},
+		{"Agent", attempt.Agent},
+	} {
+		if field[1] != "" {
+			fmt.Fprintf(&b, "- %s: %s\n", field[0], field[1])
+		}
 	}
 	b.WriteString("\n## Source\n\n")
 	b.WriteString(strings.TrimSpace(rec.Source))

@@ -16,8 +16,7 @@ var wtSwitchCmd = &cobra.Command{
 	Long: `Interactively select a worktree and change into it.
 Requires the shell integration from 'gmc wt init'; without it only the path is printed.`,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		wtClient := newWorktreeClient()
-		return runWorktreeSwitch(wtClient)
+		return runWorktreeSwitch(newWorktreeClient())
 	},
 }
 
