@@ -2,6 +2,8 @@ package branch
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestGenerateName(t *testing.T) {
@@ -10,41 +12,17 @@ func TestGenerateName(t *testing.T) {
 		description string
 		expected    string
 	}{
-		{
-			name:        "empty description",
-			description: "",
-			expected:    "",
-		},
-		{
-			name:        "feature keyword",
-			description: "add user authentication",
-			expected:    "feature/add-user-authentication",
-		},
-		{
-			name:        "fix keyword",
-			description: "fix critical security bug",
-			expected:    "fix/fix-critical-security-bug",
-		},
-		{
-			name:        "docs keyword",
-			description: "update documentation",
-			expected:    "docs/update-documentation",
-		},
-		{
-			name:        "default chore prefix",
-			description: "update dependencies",
-			expected:    "chore/update-dependencies",
-		},
+		{name: "empty description", description: "", expected: ""},
+		{name: "feature keyword", description: "add user authentication", expected: "feature/add-user-authentication"},
+		{name: "fix keyword", description: "fix critical security bug", expected: "fix/fix-critical-security-bug"},
+		{name: "docs keyword", description: "update documentation", expected: "docs/update-documentation"},
+		{name: "default chore prefix", description: "update dependencies", expected: "chore/update-dependencies"},
 		{
 			name:        "special characters removal",
 			description: "add user@email.com validation!",
 			expected:    "feature/add-useremailcom-validation",
 		},
-		{
-			name:        "multiple spaces",
-			description: "add   multiple    spaces",
-			expected:    "feature/add-multiple-spaces",
-		},
+		{name: "multiple spaces", description: "add   multiple    spaces", expected: "feature/add-multiple-spaces"},
 		{
 			name:        "long description truncation",
 			description: "this is a very long description that should be truncated properly",
@@ -54,10 +32,7 @@ func TestGenerateName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := GenerateName(tt.description)
-			if result != tt.expected {
-				t.Errorf("GenerateName(%q) = %q, want %q", tt.description, result, tt.expected)
-			}
+			assert.Equal(t, tt.expected, GenerateName(tt.description))
 		})
 	}
 }
@@ -81,10 +56,7 @@ func TestDetectPrefix(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.description, func(t *testing.T) {
-			result := detectPrefix(tt.description)
-			if result != tt.expected {
-				t.Errorf("detectPrefix(%q) = %q, want %q", tt.description, result, tt.expected)
-			}
+			assert.Equal(t, tt.expected, detectPrefix(tt.description))
 		})
 	}
 }
@@ -104,10 +76,7 @@ func TestSanitizeDescription(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			result := sanitizeDescription(tt.input)
-			if result != tt.expected {
-				t.Errorf("sanitizeDescription(%q) = %q, want %q", tt.input, result, tt.expected)
-			}
+			assert.Equal(t, tt.expected, sanitizeDescription(tt.input))
 		})
 	}
 }
@@ -127,18 +96,12 @@ func TestLimitLength(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			result := limitLength(tt.input, tt.maxLength)
-			if result != tt.expected {
-				t.Errorf("limitLength(%q, %d) = %q, want %q", tt.input, tt.maxLength, result, tt.expected)
-			}
-			if len(result) > tt.maxLength {
-				t.Errorf("limitLength(%q, %d) returned %q with length %d, expected max %d",
-					tt.input, tt.maxLength, result, len(result), tt.maxLength)
-			}
+			assert.Equal(t, tt.expected, result)
+			assert.LessOrEqual(t, len(result), tt.maxLength)
 		})
 	}
 }
 
-// Benchmark tests to verify performance improvements
 func BenchmarkGenerateName(b *testing.B) {
 	description := "add user authentication with oauth2 support"
 

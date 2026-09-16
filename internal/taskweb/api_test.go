@@ -8,17 +8,13 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/samzong/gmc/internal/task"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 )
 
 func testServerOptions() Options {
@@ -74,32 +70,24 @@ func writeAttempt(t *testing.T, storeRoot, taskID string, attempt task.AttemptRe
 	if attempt.ID == "" {
 		attempt.ID = "attempt-1"
 	}
-	now := time.Now().UTC()
-	if attempt.CreatedAt.IsZero() {
-		attempt.CreatedAt = now
-	}
-	attempt.UpdatedAt = now
-	dir := filepath.Join(storeRoot, "gmc-tasks", "tasks", taskID)
-	require.NoError(t, os.MkdirAll(dir, 0o755))
-	data, err := yaml.Marshal(attempt)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "attempt.yaml"), data, 0o644))
+	require.NoError(t, task.NewStore(storeRoot).SaveAttempt(attempt))
 }
 
 func writeTaskState(t *testing.T, storeRoot string, rec task.Record) {
 	t.Helper()
-	dir := filepath.Join(storeRoot, "gmc-tasks", "tasks", rec.ID)
-	path := filepath.Join(dir, "task.yaml")
-	data, err := os.ReadFile(path)
+	store := task.NewStore(storeRoot)
+	stored, err := store.LoadTask(rec.ID)
 	require.NoError(t, err)
-	var stored task.Record
-	require.NoError(t, yaml.Unmarshal(data, &stored))
 	stored.State = rec.State
 	stored.CurrentNode = rec.CurrentNode
-	stored.UpdatedAt = time.Now().UTC()
-	out, err := yaml.Marshal(stored)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(path, out, 0o644))
+	require.NoError(t, store.CreateTask(stored))
+}
+
+func serveTest(t *testing.T, srv *Server) string {
+	t.Helper()
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	return ts.URL
 }
 
 func TestListenLoopbackOnly(t *testing.T) {
@@ -151,10 +139,9 @@ func TestListenLoopbackFallsBackWhenPreferredTaken(t *testing.T) {
 
 func TestAPIProjectAndWorkflow(t *testing.T) {
 	srv, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	url := serveTest(t, srv)
 
-	resp := apiGet(t, srv, ts.URL+"/api/v1/project")
+	resp := apiGet(t, srv, url+"/api/v1/project")
 	t.Cleanup(func() { _ = resp.Body.Close() })
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -163,7 +150,7 @@ func TestAPIProjectAndWorkflow(t *testing.T) {
 	assert.NotEmpty(t, project.Path)
 	assert.Equal(t, "ghostty", project.SuggestedTerminal)
 
-	resp2 := apiGet(t, srv, ts.URL+"/api/v1/workflow")
+	resp2 := apiGet(t, srv, url+"/api/v1/workflow")
 	t.Cleanup(func() { _ = resp2.Body.Close() })
 	require.Equal(t, http.StatusOK, resp2.StatusCode)
 
@@ -175,18 +162,17 @@ func TestAPIProjectAndWorkflow(t *testing.T) {
 
 func TestAPITaskCRUD(t *testing.T) {
 	srv, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	url := serveTest(t, srv)
 
 	createBody := `{"source":"webui task"}`
-	resp := apiPost(t, srv, ts.URL+"/api/v1/tasks", createBody)
+	resp := apiPost(t, srv, url+"/api/v1/tasks", createBody)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
 	var created task.Record
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
 	require.NoError(t, resp.Body.Close())
 
-	resp = apiGet(t, srv, ts.URL+"/api/v1/tasks")
+	resp = apiGet(t, srv, url+"/api/v1/tasks")
 	var cards []TaskCard
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&cards))
 	require.NoError(t, resp.Body.Close())
@@ -194,33 +180,32 @@ func TestAPITaskCRUD(t *testing.T) {
 	assert.Equal(t, 1, cards[0].Index)
 	assert.Equal(t, "webui task", cards[0].Title)
 
-	resp = apiGet(t, srv, ts.URL+"/api/v1/tasks/"+created.ID)
+	resp = apiGet(t, srv, url+"/api/v1/tasks/"+created.ID)
 	var detail TaskDetail
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&detail))
 	require.NoError(t, resp.Body.Close())
 	assert.Equal(t, "webui task", detail.Source)
 
-	resp = apiRequest(t, srv, http.MethodDelete, ts.URL+"/api/v1/tasks/"+created.ID, "")
+	resp = apiRequest(t, srv, http.MethodDelete, url+"/api/v1/tasks/"+created.ID, "")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.NoError(t, resp.Body.Close())
 }
 
 func TestAPIAttachValidation(t *testing.T) {
 	srv, root := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	url := serveTest(t, srv)
 
-	resp := apiPost(t, srv, ts.URL+"/api/v1/tasks", `{"source":"attach test"}`)
+	resp := apiPost(t, srv, url+"/api/v1/tasks", `{"source":"attach test"}`)
 	var created task.Record
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
 	require.NoError(t, resp.Body.Close())
 
-	resp = apiPost(t, srv, ts.URL+"/api/v1/tasks/"+created.ID+"/attach", `{"terminal":"iterm2"}`)
+	resp = apiPost(t, srv, url+"/api/v1/tasks/"+created.ID+"/attach", `{"terminal":"iterm2"}`)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	require.NoError(t, resp.Body.Close())
 
 	writeAttempt(t, root, created.ID, task.AttemptRecord{TmuxSession: "sess-demo", TmuxSocket: "gmc-task"})
-	resp = apiPost(t, srv, ts.URL+"/api/v1/tasks/"+created.ID+"/attach", `{"terminal":"ghostty"}`)
+	resp = apiPost(t, srv, url+"/api/v1/tasks/"+created.ID+"/attach", `{"terminal":"ghostty"}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	var attach AttachResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&attach))
@@ -244,10 +229,9 @@ func TestAPIAttachWithLauncher(t *testing.T) {
 	require.NoError(t, err)
 
 	createBody := `{"source":"launch"}`
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	url := serveTest(t, srv)
 
-	resp := apiPost(t, srv, ts.URL+"/api/v1/tasks", createBody)
+	resp := apiPost(t, srv, url+"/api/v1/tasks", createBody)
 	var created task.Record
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
 	require.NoError(t, resp.Body.Close())
@@ -258,7 +242,7 @@ func TestAPIAttachWithLauncher(t *testing.T) {
 		TmuxSocket:  "gmc-task",
 	})
 
-	resp = apiPost(t, srv, ts.URL+"/api/v1/tasks/"+created.ID+"/attach", `{"terminal":"ghostty"}`)
+	resp = apiPost(t, srv, url+"/api/v1/tasks/"+created.ID+"/attach", `{"terminal":"ghostty"}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	var attach AttachResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&attach))
@@ -270,11 +254,10 @@ func TestAPIAttachWithLauncher(t *testing.T) {
 
 func TestAPIMoveRejectsUnknownNode(t *testing.T) {
 	srv, root := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	url := serveTest(t, srv)
 
 	createBody := `{"source":"move test"}`
-	resp := apiPost(t, srv, ts.URL+"/api/v1/tasks", createBody)
+	resp := apiPost(t, srv, url+"/api/v1/tasks", createBody)
 	var created task.Record
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
 	require.NoError(t, resp.Body.Close())
@@ -282,17 +265,16 @@ func TestAPIMoveRejectsUnknownNode(t *testing.T) {
 	writeTaskState(t, root, task.Record{ID: created.ID, State: "plan", CurrentNode: "plan"})
 	writeAttempt(t, root, created.ID, task.AttemptRecord{})
 
-	resp = apiPost(t, srv, ts.URL+"/api/v1/tasks/"+created.ID+"/move", `{"to":"missing-node"}`)
+	resp = apiPost(t, srv, url+"/api/v1/tasks/"+created.ID+"/move", `{"to":"missing-node"}`)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	require.NoError(t, resp.Body.Close())
 }
 
 func TestStaticIndex(t *testing.T) {
 	srv, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	url := serveTest(t, srv)
 
-	resp, err := http.Get(ts.URL + "/")
+	resp, err := http.Get(url + "/")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -300,12 +282,12 @@ func TestStaticIndex(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(body), "gmc task webui")
 
-	resp, err = http.Get(ts.URL + "/app.js")
+	resp, err = http.Get(url + "/app.js")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	resp, err = http.Get(ts.URL + "/app.css")
+	resp, err = http.Get(url + "/app.css")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 	require.Equal(t, http.StatusOK, resp.StatusCode)

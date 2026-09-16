@@ -31,7 +31,7 @@ func TestSemVerComparison(t *testing.T) {
 	base := SemVer{Major: 1, Minor: 2, Patch: 3}
 	assert.Equal(t, "v1.2.3", base.String())
 	assert.True(t, base.LessThan(SemVer{Major: 2}))
-	assert.True(t, base.GreaterThan(SemVer{Major: 1, Minor: 2, Patch: 2}))
+	assert.True(t, (SemVer{Major: 1, Minor: 2, Patch: 2}).LessThan(base))
 }
 
 func TestSuggestWithRulesMajor(t *testing.T) {

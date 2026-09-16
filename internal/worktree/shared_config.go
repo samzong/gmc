@@ -13,6 +13,109 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type ResourceStrategy string
+
+const (
+	StrategyCopy    ResourceStrategy = "copy"
+	StrategySymlink ResourceStrategy = "link"
+)
+
+type SharedResource struct {
+	worktreeRelative bool
+	Path             string           `yaml:"path" json:"path"`
+	Strategy         ResourceStrategy `yaml:"strategy,omitempty" json:"strategy,omitempty"`
+	Disabled         bool             `yaml:"disabled,omitempty" json:"disabled,omitempty"`
+	Origin           string           `yaml:"-" json:"origin,omitempty"`
+}
+
+type Hook struct {
+	ID       string `yaml:"id,omitempty" json:"id,omitempty"`
+	Cmd      string `yaml:"cmd,omitempty" json:"cmd,omitempty"`
+	Desc     string `yaml:"desc,omitempty" json:"desc,omitempty"`
+	Disabled bool   `yaml:"disabled,omitempty" json:"disabled,omitempty"`
+	Origin   string `yaml:"-" json:"origin,omitempty"`
+}
+
+const (
+	sharedConfigName       = "gmc-share.yml"
+	legacySharedConfigYML  = ".gmc-shared.yml"
+	legacySharedConfigYAML = ".gmc-shared.yaml"
+)
+
+type SharedConfig struct {
+	Resources []SharedResource `yaml:"shared"`
+	Hooks     []Hook           `yaml:"hooks,omitempty"`
+}
+
+func (c *Client) LoadSharedConfig() (*SharedConfig, string, error) {
+	c.once.Do(c.init)
+
+	commonDir, err := c.GetGitCommonDir()
+	if err != nil {
+		if c.bareRoot != "" {
+			commonDir = filepath.Join(c.bareRoot, ".bare")
+		} else {
+			return nil, "", err
+		}
+	}
+
+	configPath := filepath.Join(commonDir, sharedConfigName)
+	legacyCandidates := []string{
+		filepath.Join(commonDir, legacySharedConfigYML),
+		filepath.Join(commonDir, legacySharedConfigYAML),
+	}
+	if c.worktreeRoot != "" {
+		legacyCandidates = append(legacyCandidates,
+			filepath.Join(c.worktreeRoot, legacySharedConfigYML),
+			filepath.Join(c.worktreeRoot, legacySharedConfigYAML),
+		)
+	}
+
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		for _, candidate := range legacyCandidates {
+			if _, statErr := os.Stat(candidate); statErr == nil {
+				configPath = candidate
+				break
+			}
+		}
+	}
+
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return &SharedConfig{Resources: []SharedResource{}}, filepath.Join(commonDir, sharedConfigName), nil
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, configPath, fmt.Errorf("failed to read shared config: %w", err)
+	}
+
+	var cfg SharedConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, configPath, fmt.Errorf("failed to parse shared config: %w", err)
+	}
+
+	return &cfg, configPath, nil
+}
+
+func (c *Client) SaveSharedConfig(cfg *SharedConfig, path string) error {
+	if err := validateSharedConfig(cfg); err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal shared config: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("failed to create shared config directory: %w", err)
+	}
+
+	if err := writeSharedConfig(path, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write shared config: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) LoadGlobalSharedConfig() (*SharedConfig, string, error) {
 	var document struct {
 		Worktree SharedConfig `yaml:"worktree"`
@@ -202,204 +305,4 @@ func writeSharedConfig(path string, data []byte, mode os.FileMode) error {
 		return err
 	}
 	return os.Rename(file.Name(), path)
-}
-
-func (c *Client) loadSharedScope(global bool) (*SharedConfig, string, error) {
-	if global {
-		return c.LoadGlobalSharedConfig()
-	}
-	return c.LoadSharedConfig()
-}
-
-func (c *Client) saveSharedScope(cfg *SharedConfig, path string, global bool) error {
-	if err := validateSharedConfig(cfg); err != nil {
-		return err
-	}
-	if global {
-		return c.SaveGlobalSharedConfig(cfg)
-	}
-	return c.SaveSharedConfig(cfg, path)
-}
-
-func (c *Client) AddGlobalSharedResource(path string, strategy ResourceStrategy) (Report, error) {
-	return c.addSharedResource(path, strategy, true)
-}
-
-func (c *Client) addSharedResource(path string, strategy ResourceStrategy, global bool) (Report, error) {
-	var report Report
-	if global && filepath.IsAbs(path) {
-		return report, errors.New("global shared paths must be worktree-relative")
-	}
-	path, err := c.NormalizeSharedResourcePath(path)
-	if err != nil {
-		return report, err
-	}
-	cfg, configPath, err := c.loadSharedScope(global)
-	if err != nil {
-		return report, err
-	}
-	resource := SharedResource{Path: filepath.ToSlash(path), Strategy: strategy}
-	found := false
-	for i, existing := range cfg.Resources {
-		if filepath.ToSlash(filepath.Clean(existing.Path)) == resource.Path {
-			cfg.Resources[i] = resource
-			found = true
-			break
-		}
-	}
-	if !found {
-		cfg.Resources = append(cfg.Resources, resource)
-	}
-	if err := c.saveSharedScope(cfg, configPath, global); err != nil {
-		return report, err
-	}
-	report.Info(fmt.Sprintf("Updated shared resource: %s (%s)", path, strategy))
-	return report, nil
-}
-
-func (c *Client) RemoveGlobalSharedResource(path string) (Report, error) {
-	return c.removeSharedResource(path, true)
-}
-
-func (c *Client) removeSharedResource(path string, global bool) (Report, error) {
-	var report Report
-	path, err := c.NormalizeSharedResourcePath(path)
-	if err != nil {
-		return report, err
-	}
-	path = filepath.ToSlash(path)
-	cfg, configPath, err := c.loadSharedScope(global)
-	if err != nil {
-		return report, err
-	}
-	found := false
-	remaining := make([]SharedResource, 0, len(cfg.Resources))
-	for _, resource := range cfg.Resources {
-		if filepath.ToSlash(filepath.Clean(resource.Path)) == path {
-			found = true
-		} else {
-			remaining = append(remaining, resource)
-		}
-	}
-	if !global {
-		defaults, _, err := c.LoadGlobalSharedConfig()
-		if err != nil {
-			return report, err
-		}
-		for _, resource := range defaults.Resources {
-			if resource.Path == path || MatchSharedPath(resource.Path, path) {
-				remaining = append(remaining, SharedResource{Path: path, Disabled: true})
-				found = true
-				break
-			}
-		}
-	}
-	if !found {
-		return report, fmt.Errorf("resource not found in config: %s", path)
-	}
-	cfg.Resources = remaining
-	if err := c.saveSharedScope(cfg, configPath, global); err != nil {
-		return report, err
-	}
-	report.Info("Removed or disabled shared resource: " + path)
-	return report, nil
-}
-
-func (c *Client) AddGlobalHook(hook Hook) (Report, error) {
-	return c.addHook(hook, true)
-}
-
-func (c *Client) addHook(hook Hook, global bool) (Report, error) {
-	var report Report
-	cfg, configPath, err := c.loadSharedScope(global)
-	if err != nil {
-		return report, err
-	}
-	found := false
-	for i, existing := range cfg.Hooks {
-		if hookKey(existing) == hookKey(hook) {
-			cfg.Hooks[i] = hook
-			found = true
-			break
-		}
-	}
-	if !found {
-		cfg.Hooks = append(cfg.Hooks, hook)
-	}
-	if err := c.saveSharedScope(cfg, configPath, global); err != nil {
-		return report, err
-	}
-	label := hook.Desc
-	if label == "" {
-		label = hook.Cmd
-	}
-	report.Info("Updated hook: " + label)
-	return report, nil
-}
-
-func (c *Client) RemoveGlobalHook(index int) (Report, error) {
-	return c.removeHook(index, true)
-}
-
-func (c *Client) hookList(global bool) (*SharedConfig, error) {
-	if global {
-		cfg, _, err := c.LoadGlobalSharedConfig()
-		return cfg, err
-	}
-	return c.LoadEffectiveSharedConfig()
-}
-
-func (c *Client) RemoveHookByID(id string, global bool) (Report, error) {
-	var report Report
-	cfg, err := c.hookList(global)
-	if err != nil {
-		return report, err
-	}
-	for i, hook := range cfg.Hooks {
-		if hook.ID == id {
-			return c.removeHook(i, global)
-		}
-	}
-	return report, fmt.Errorf("hook id not found: %s", id)
-}
-
-func (c *Client) removeHook(index int, global bool) (Report, error) {
-	var report Report
-	visible, err := c.hookList(global)
-	if err != nil {
-		return report, err
-	}
-	if index < 0 || index >= len(visible.Hooks) {
-		return report, fmt.Errorf("hook index out of range: %d", index+1)
-	}
-	removed := visible.Hooks[index]
-	cfg, configPath, err := c.loadSharedScope(global)
-	if err != nil {
-		return report, err
-	}
-	remaining := make([]Hook, 0, len(cfg.Hooks))
-	for _, hook := range cfg.Hooks {
-		if hookKey(hook) != hookKey(removed) {
-			remaining = append(remaining, hook)
-		}
-	}
-	if !global {
-		defaults, _, err := c.LoadGlobalSharedConfig()
-		if err != nil {
-			return report, err
-		}
-		for _, hook := range defaults.Hooks {
-			if hookKey(hook) == hookKey(removed) {
-				hook.Disabled = true
-				remaining = append(remaining, hook)
-				break
-			}
-		}
-	}
-	cfg.Hooks = remaining
-	if err := c.saveSharedScope(cfg, configPath, global); err != nil {
-		return report, err
-	}
-	report.Info(fmt.Sprintf("Removed or disabled hook: %d", index+1))
-	return report, nil
 }

@@ -94,8 +94,7 @@ func init() {
 		"Additional context or instructions for commit message generation")
 	rootCmd.Flags().IntVar(&timeoutSeconds, "timeout", 30, "LLM request timeout in seconds")
 
-	rootCmd.AddCommand(configCmd)
-	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(configCmd, initCmd)
 }
 
 func initConfig() {

@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -36,80 +34,6 @@ var configFilePath string
 
 func FilePath() string {
 	return configFilePath
-}
-
-var repoAllowedKeys = map[string]bool{
-	"role":         true,
-	"model":        true,
-	"enable_emoji": true,
-}
-
-const maxIgnoredKeys = 10
-
-func safeKeyName(key string) string {
-	cleaned := strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-			return r
-		case r == '_', r == '-', r == '.':
-			return r
-		default:
-			return -1
-		}
-	}, key)
-
-	if cleaned == "" {
-		return "(unnamed key)"
-	}
-	const maxKeyLength = 64
-	if len(cleaned) > maxKeyLength {
-		cleaned = cleaned[:maxKeyLength] + "..."
-	}
-	return cleaned
-}
-
-type repoLayer struct {
-	path    string
-	values  map[string]any
-	ignored []string
-	total   int
-	skipped bool
-	err     error
-}
-
-var repo repoLayer
-
-type RepoConfigStatus struct {
-	Path         string
-	Ignored      []string
-	IgnoredTotal int
-	Skipped      bool
-	Err          error
-}
-
-func RepoConfig() RepoConfigStatus {
-	return RepoConfigStatus{
-		Path:         repo.path,
-		Ignored:      repo.ignored,
-		IgnoredTotal: repo.total,
-		Skipped:      repo.skipped,
-		Err:          repo.err,
-	}
-}
-
-var suggestedRoles = []string{
-	"Developer",
-	"Frontend Developer",
-	"Backend Developer",
-	"DevOps Engineer",
-	"Full Stack Developer",
-	"Markdown Engineer",
-}
-
-var suggestedModels = []string{
-	"gpt-3.5-turbo",
-	"gpt-4",
-	"gpt-4-turbo",
 }
 
 func getConfigPath(cfgFile string) (string, bool, error) {
@@ -178,125 +102,17 @@ func InitConfig(cfgFile string) error {
 			if err := viper.WriteConfigAs(configFilePath); err != nil {
 				return fmt.Errorf("failed to write configuration file: %w", err)
 			}
-			if err := enforceConfigFilePermissions(configFilePath); err != nil {
-				return err
-			}
 		} else {
 			return fmt.Errorf("failed to read configuration file: %w", err)
 		}
-	} else {
-		if err := enforceConfigFilePermissions(configFilePath); err != nil {
-			return err
-		}
+	}
+	if err := enforceConfigFilePermissions(configFilePath); err != nil {
+		return err
 	}
 
 	loadRepoLayer(explicit)
 
 	return nil
-}
-
-func findRepoConfig() string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-	repoConfigPath := filepath.Join(cwd, LegacyConfigName+".yaml")
-	if _, err := os.Stat(repoConfigPath); err == nil {
-		return repoConfigPath
-	}
-	return ""
-}
-
-func loadRepoLayer(explicit bool) {
-	path := findRepoConfig()
-	if path == "" {
-		return
-	}
-	repo.path = path
-
-	if explicit {
-		repo.skipped = true
-		return
-	}
-
-	repoViper := viper.New()
-	repoViper.SetConfigFile(path)
-	if err := repoViper.ReadInConfig(); err != nil {
-		repo.err = fmt.Errorf("ignoring project config %s: %w", path, err)
-		return
-	}
-
-	values := make(map[string]any)
-	for _, key := range repoViper.AllKeys() {
-		if !repoAllowedKeys[key] {
-			repo.total++
-			if len(repo.ignored) < maxIgnoredKeys {
-				repo.ignored = append(repo.ignored, safeKeyName(key))
-			}
-			continue
-		}
-		values[key] = repoViper.Get(key)
-	}
-	sort.Strings(repo.ignored)
-	repo.values = values
-}
-
-func applyRepoLayer(cfg *Config) {
-	for key, value := range repo.values {
-		if envVarSet(key) {
-			continue
-		}
-
-		switch key {
-		case "role":
-			if v := stringValue(value); v != "" {
-				cfg.Role = v
-			}
-		case "model":
-			if v := stringValue(value); v != "" {
-				cfg.Model = v
-			}
-		case "enable_emoji":
-			if v, ok := boolValue(value); ok {
-				cfg.EnableEmoji = v
-			}
-		}
-	}
-}
-
-func envKey(key string) string {
-	return EnvPrefix + "_" + strings.ToUpper(strings.ReplaceAll(key, ".", "_"))
-}
-
-func envVarSet(key string) bool {
-	_, ok := os.LookupEnv(envKey(key))
-	return ok
-}
-
-func stringValue(value any) string {
-	switch v := value.(type) {
-	case nil:
-		return ""
-	case string:
-		return strings.TrimSpace(v)
-	default:
-		return strings.TrimSpace(fmt.Sprintf("%v", v))
-	}
-}
-
-func boolValue(value any) (bool, bool) {
-	switch v := value.(type) {
-	case bool:
-		return v, true
-	case string:
-		parsed, err := strconv.ParseBool(strings.TrimSpace(v))
-		if err != nil {
-			return false, false
-		}
-		return parsed, true
-	default:
-		return false, false
-	}
 }
 
 func GetConfig() (*Config, error) {
@@ -320,10 +136,7 @@ func defaultConfig() *Config {
 	return &Config{
 		Role:           DefaultRole,
 		Model:          DefaultModel,
-		APIKey:         "",
-		APIBase:        "",
 		PromptTemplate: DefaultPromptTemplate,
-		EnableEmoji:    false,
 	}
 }
 
@@ -344,14 +157,6 @@ func IsValidRole(role string) bool {
 
 func IsValidModel(model string) bool {
 	return model != ""
-}
-
-func GetSuggestedRoles() []string {
-	return suggestedRoles
-}
-
-func GetSuggestedModels() []string {
-	return suggestedModels
 }
 
 func enforceConfigFilePermissions(path string) error {

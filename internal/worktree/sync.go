@@ -11,25 +11,11 @@ import (
 	"github.com/samzong/gmc/internal/stringsutil"
 )
 
-// SyncOptions controls worktree sync behavior.
 type SyncOptions struct {
 	BaseBranch string
 	DryRun     bool
 }
 
-// syncContext holds resolved sync parameters.
-type syncContext struct {
-	repoDir      string
-	remote       string
-	baseName     string
-	remoteRef    string
-	localFull    string
-	remoteFull   string
-	baseWorktree string
-	status       string
-}
-
-// ResolveSyncBaseBranch resolves the base branch used for syncing.
 func (c *Client) ResolveSyncBaseBranch(override string) (string, error) {
 	if err := c.ensureInit(); err != nil {
 		return "", fmt.Errorf("failed to find worktree root: %w", err)
@@ -70,24 +56,11 @@ func (c *Client) Sync(opts SyncOptions) (Report, error) {
 		status = c.GetWorktreeStatus(baseWorktree)
 	}
 
-	ctx := syncContext{
-		repoDir:      repoDir,
-		remote:       remote,
-		baseName:     baseName,
-		remoteRef:    remoteRef,
-		localFull:    localFull,
-		remoteFull:   remoteFull,
-		baseWorktree: baseWorktree,
-		status:       status,
-	}
-
-	if opts.DryRun {
-		return c.syncDryRun(ctx)
-	}
-
-	result, err := c.runner.RunLogged("-C", repoDir, "fetch", remote)
-	if err != nil {
-		return report, gitutil.WrapGitError("failed to fetch "+remote, result, err)
+	if !opts.DryRun {
+		result, err := c.runner.RunLogged("-C", repoDir, "fetch", remote)
+		if err != nil {
+			return report, gitutil.WrapGitError("failed to fetch "+remote, result, err)
+		}
 	}
 
 	canFF, err := c.canFastForward(repoDir, localFull, remoteFull)
@@ -98,17 +71,36 @@ func (c *Client) Sync(opts SyncOptions) (Report, error) {
 		return report, fmt.Errorf("base branch '%s' cannot be fast-forwarded to %s", baseName, remoteRef)
 	}
 
-	localHash := c.refHash(repoDir, localFull)
-	remoteHash := c.refHash(repoDir, remoteFull)
+	localHash := c.getGitOutput(repoDir, "rev-parse", localFull)
+	remoteHash := c.getGitOutput(repoDir, "rev-parse", remoteFull)
 	needsUpdate := localHash == "" || (remoteHash != "" && localHash != remoteHash)
+
+	if opts.DryRun {
+		report.Warn("Would fetch " + remote)
+		if needsUpdate {
+			report.Warn(fmt.Sprintf("Would fast-forward %s to %s", baseName, remoteRef))
+		} else {
+			report.Warn(fmt.Sprintf("%s is already up to date with %s", baseName, remoteRef))
+		}
+		if remote == "upstream" && needsUpdate && c.remoteExists(repoDir, "origin") {
+			report.Warn("Would push origin " + baseName)
+		}
+	}
 
 	if msg := checkWorktreeReady(baseWorktree, status, baseName); msg != "" {
 		report.Warn(msg)
 		return report, nil
 	}
 
+	if opts.DryRun {
+		if needsUpdate {
+			report.Warn("Would update worktree: " + baseWorktree)
+		}
+		return report, nil
+	}
+
 	if needsUpdate {
-		result, err = c.runner.RunLogged("-C", baseWorktree, "reset", "--hard", remoteRef)
+		result, err := c.runner.RunLogged("-C", baseWorktree, "reset", "--hard", remoteRef)
 		if err != nil {
 			return report, gitutil.WrapGitError("failed to update worktree", result, err)
 		}
@@ -129,43 +121,6 @@ func (c *Client) Sync(opts SyncOptions) (Report, error) {
 	} else {
 		localShort := stringsutil.ShortHash(localHash, 7, "none")
 		report.Info(fmt.Sprintf("%s already up to date with %s (%s)", baseName, remoteRef, localShort))
-	}
-
-	return report, nil
-}
-
-func (c *Client) syncDryRun(ctx syncContext) (Report, error) {
-	var report Report
-
-	canFF, err := c.canFastForward(ctx.repoDir, ctx.localFull, ctx.remoteFull)
-	if err != nil {
-		return report, err
-	}
-	if !canFF {
-		return report, fmt.Errorf("base branch '%s' cannot be fast-forwarded to %s", ctx.baseName, ctx.remoteRef)
-	}
-
-	localHash := c.refHash(ctx.repoDir, ctx.localFull)
-	remoteHash := c.refHash(ctx.repoDir, ctx.remoteFull)
-	needsUpdate := localHash == "" || (remoteHash != "" && localHash != remoteHash)
-
-	report.Warn("Would fetch " + ctx.remote)
-	if needsUpdate {
-		report.Warn(fmt.Sprintf("Would fast-forward %s to %s", ctx.baseName, ctx.remoteRef))
-	} else {
-		report.Warn(fmt.Sprintf("%s is already up to date with %s", ctx.baseName, ctx.remoteRef))
-	}
-
-	if ctx.remote == "upstream" && needsUpdate && c.remoteExists(ctx.repoDir, "origin") {
-		report.Warn("Would push origin " + ctx.baseName)
-	}
-
-	if msg := checkWorktreeReady(ctx.baseWorktree, ctx.status, ctx.baseName); msg != "" {
-		report.Warn(msg)
-		return report, nil
-	}
-	if needsUpdate {
-		report.Warn("Would update worktree: " + ctx.baseWorktree)
 	}
 
 	return report, nil
@@ -221,7 +176,6 @@ func (c *Client) canFastForward(repoDir string, localFull string, remoteFull str
 	return c.isAncestor(repoDir, localFull, remoteFull)
 }
 
-// isAncestor checks if commitA is an ancestor of commitB using merge-base --is-ancestor.
 func (c *Client) isAncestor(repoDir string, commitA, commitB string) (bool, error) {
 	result, err := c.runner.Run("-C", repoDir, "merge-base", "--is-ancestor", commitA, commitB)
 	if err == nil {
@@ -232,12 +186,4 @@ func (c *Client) isAncestor(repoDir string, commitA, commitB string) (bool, erro
 	}
 
 	return false, gitutil.WrapGitError("failed to check ancestry", result, err)
-}
-
-func (c *Client) refHash(repoDir string, ref string) string {
-	result, err := c.runner.Run("-C", repoDir, "rev-parse", ref)
-	if err != nil {
-		return ""
-	}
-	return result.StdoutString(true)
 }

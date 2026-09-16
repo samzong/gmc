@@ -36,42 +36,24 @@ func AgentCommand(agent, model, prompt string) ([]string, error) {
 		return nil, err
 	}
 	prompt = strings.TrimSpace(prompt)
-	switch agent {
-	case "codex":
-		args := []string{"codex"}
-		if model != "" {
-			args = append(args, "-m", model)
-		}
+	args := []string{agent}
+	if agent == "opencode" {
 		if prompt != "" {
-			args = append(args, prompt)
+			args = append(args, "run", prompt)
 		}
 		return args, nil
-	case "grok":
-		args := []string{"grok"}
-		if model != "" {
-			args = append(args, "-m", model)
-		}
-		if prompt != "" {
-			args = append(args, prompt)
-		}
-		return args, nil
-	case "cursor-agent":
-		args := []string{"cursor-agent"}
-		if model != "" {
-			args = append(args, "--model", model)
-		}
-		if prompt != "" {
-			args = append(args, prompt)
-		}
-		return args, nil
-	case "opencode":
-		if prompt == "" {
-			return []string{"opencode"}, nil
-		}
-		return []string{"opencode", "run", prompt}, nil
-	default:
-		return nil, fmt.Errorf("unsupported agent %q (use codex, grok, cursor-agent, or opencode)", agent)
 	}
+	if model != "" {
+		flag := "-m"
+		if agent == "cursor-agent" {
+			flag = "--model"
+		}
+		args = append(args, flag, model)
+	}
+	if prompt != "" {
+		args = append(args, prompt)
+	}
+	return args, nil
 }
 
 func WorkflowNodeCommand(node WorkflowNode, agent, model, prompt string) ([]string, error) {

@@ -11,7 +11,7 @@ import (
 
 func TestWriteTaskContextFile(t *testing.T) {
 	dir := t.TempDir()
-	rec := Record{ID: "t-1", State: TaskPlan, Source: "fix the bug", Title: "Fix bug"}
+	rec := Record{ID: "t-1", State: "plan", Source: "fix the bug", Title: "Fix bug"}
 	attempt := AttemptRecord{ID: "attempt-1", Worktree: dir, Branch: "_task/t-1/1", Agent: "codex"}
 
 	path, err := WriteTaskContextFile(dir, rec, attempt)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -12,7 +11,10 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-var ErrLLM = errors.New("LLM error")
+var (
+	ErrLLM           = errors.New("LLM error")
+	errMissingAPIKey = errors.New("API key not set, please set the API key first: gmc config set apikey YOUR_API_KEY")
+)
 
 type Options struct {
 	Timeout time.Duration
@@ -25,20 +27,8 @@ type Client struct {
 const defaultTimeout = 30 * time.Second
 
 func NewClient(opts Options) *Client {
-	timeout := opts.Timeout
-	if timeout <= 0 {
-		timeout = defaultTimeout
-	}
-	return &Client{timeout: timeout}
+	return &Client{timeout: opts.Timeout}
 }
-
-var (
-	versionPattern   = regexp.MustCompile(`(?i)version:\s*(v?\d+\.\d+\.\d+)`)
-	reasonPattern    = regexp.MustCompile(`(?is)reason:\s*(.+)$`)
-	errMissingAPIKey = errors.New(
-		"API key not set, please set the API key first: gmc config set apikey YOUR_API_KEY",
-	)
-)
 
 func (c *Client) effectiveTimeout() time.Duration {
 	if c == nil || c.timeout <= 0 {
@@ -47,69 +37,57 @@ func (c *Client) effectiveTimeout() time.Duration {
 	return c.timeout
 }
 
-func (c *Client) newOpenAIClient(model string) (*openai.Client, context.Context, context.CancelFunc, string, error) {
+func (c *Client) complete(request openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error) {
 	cfg, err := config.GetConfig()
 	if err != nil {
-		return nil, nil, nil, "", err
+		return openai.ChatCompletionResponse{}, err
 	}
-
 	if cfg.APIKey == "" {
-		return nil, nil, nil, "", errMissingAPIKey
+		return openai.ChatCompletionResponse{}, errMissingAPIKey
 	}
-
 	clientConfig := openai.DefaultConfig(cfg.APIKey)
-
 	if cfg.APIBase != "" {
 		clientConfig.BaseURL = cfg.APIBase
 	}
-
-	client := openai.NewClientWithConfig(clientConfig)
-	ctx, cancel := context.WithTimeout(context.Background(), c.effectiveTimeout())
-
-	if model == "" {
-		model = cfg.Model
+	if request.Model == "" {
+		request.Model = cfg.Model
 	}
-
-	return client, ctx, cancel, model, nil
+	ctx, cancel := context.WithTimeout(context.Background(), c.effectiveTimeout())
+	defer cancel()
+	resp, err := openai.NewClientWithConfig(clientConfig).CreateChatCompletion(ctx, request)
+	if err != nil {
+		return resp, fmt.Errorf("failed to call LLM: %w (%w)", err, ErrLLM)
+	}
+	if len(resp.Choices) == 0 {
+		return resp, fmt.Errorf("LLM returned empty response: %w", ErrLLM)
+	}
+	return resp, nil
 }
 
 func (c *Client) GenerateCommitMessage(prompt string, model string) (string, error) {
-	client, ctx, cancel, chosenModel, err := c.newOpenAIClient(model)
+	resp, err := c.complete(openai.ChatCompletionRequest{
+		Model: model,
+		Messages: []openai.ChatCompletionMessage{
+			{Role: openai.ChatMessageRoleSystem,
+				Content: "You are a professional Git commit message generator, helping developers generate " +
+					"commit messages that comply with the Conventional Commits specification."},
+			{Role: openai.ChatMessageRoleUser, Content: prompt},
+		},
+	})
 	if err != nil {
 		return "", err
 	}
-	defer cancel()
+	return firstChoiceContent(resp)
+}
 
-	messages := []openai.ChatCompletionMessage{
-		{
-			Role: openai.ChatMessageRoleSystem,
-			Content: "You are a professional Git commit message generator, helping developers generate " +
-				"commit messages that comply with the Conventional Commits specification.",
-		},
-		{
-			Role:    openai.ChatMessageRoleUser,
-			Content: prompt,
-		},
-	}
-
-	resp, err := client.CreateChatCompletion(
-		ctx,
-		openai.ChatCompletionRequest{
-			Model:    chosenModel,
-			Messages: messages,
-		},
-	)
-
-	if err != nil {
-		return "", fmt.Errorf("failed to call LLM: %w (%w)", err, ErrLLM)
-	}
-
-	content, err := firstChoiceContent(resp)
-	if err != nil {
-		return "", err
-	}
-
-	return content, nil
+func (c *Client) TestConnection(model string) error {
+	_, err := c.complete(openai.ChatCompletionRequest{
+		Model:       model,
+		Messages:    []openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleUser, Content: "Reply with OK."}},
+		MaxTokens:   1,
+		Temperature: 0,
+	})
+	return err
 }
 
 func firstChoiceContent(resp openai.ChatCompletionResponse) (string, error) {
@@ -128,153 +106,4 @@ func firstChoiceContent(resp openai.ChatCompletionResponse) (string, error) {
 	}
 
 	return content, nil
-}
-
-func (c *Client) SuggestVersion(baseVersion string, commits []string, model string) (string, string, error) {
-	if len(commits) == 0 {
-		return "", "", errors.New("no commits provided for version suggestion")
-	}
-
-	client, ctx, cancel, chosenModel, err := c.newOpenAIClient(model)
-	if err != nil {
-		return "", "", err
-	}
-	defer cancel()
-
-	prompt := buildVersionPrompt(baseVersion, commits)
-
-	messages := []openai.ChatCompletionMessage{
-		{
-			Role: openai.ChatMessageRoleSystem,
-			Content: "You are a release manager that recommends the next semantic version. " +
-				"Always follow Semantic Versioning rules and respond using VERSION/REASON fields.",
-		},
-		{
-			Role:    openai.ChatMessageRoleUser,
-			Content: prompt,
-		},
-	}
-
-	resp, err := client.CreateChatCompletion(
-		ctx,
-		openai.ChatCompletionRequest{
-			Model:    chosenModel,
-			Messages: messages,
-		},
-	)
-
-	if err != nil {
-		return "", "", fmt.Errorf("failed to call LLM: %w (%w)", err, ErrLLM)
-	}
-
-	content, err := firstChoiceContent(resp)
-	if err != nil {
-		return "", "", err
-	}
-
-	version, reason, err := parseVersionSuggestion(content)
-	if err != nil {
-		return "", "", fmt.Errorf("%w (%w)", err, ErrLLM)
-	}
-
-	return version, reason, nil
-}
-
-func (c *Client) TestConnection(model string) error {
-	client, ctx, cancel, chosenModel, err := c.newOpenAIClient(model)
-	if err != nil {
-		return err
-	}
-	defer cancel()
-
-	messages := []openai.ChatCompletionMessage{
-		{
-			Role:    openai.ChatMessageRoleUser,
-			Content: "Reply with OK.",
-		},
-	}
-
-	resp, err := client.CreateChatCompletion(
-		ctx,
-		openai.ChatCompletionRequest{
-			Model:       chosenModel,
-			Messages:    messages,
-			MaxTokens:   1,
-			Temperature: 0,
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to call LLM: %w (%w)", err, ErrLLM)
-	}
-
-	if len(resp.Choices) == 0 {
-		return fmt.Errorf("LLM returned empty response: %w", ErrLLM)
-	}
-
-	return nil
-}
-
-func DefaultClient() *Client {
-	return NewClient(Options{})
-}
-
-func GenerateCommitMessage(prompt string, model string) (string, error) {
-	return DefaultClient().GenerateCommitMessage(prompt, model)
-}
-
-func SuggestVersion(baseVersion string, commits []string, model string) (string, string, error) {
-	return DefaultClient().SuggestVersion(baseVersion, commits, model)
-}
-
-func TestConnection(model string) error {
-	return DefaultClient().TestConnection(model)
-}
-
-func buildVersionPrompt(baseVersion string, commits []string) string {
-	var builder strings.Builder
-	for i, commit := range commits {
-		fmt.Fprintf(&builder, "%d. %s\n", i+1, strings.TrimSpace(commit))
-	}
-
-	return fmt.Sprintf(`Current version: %s
-
-Commits since last release:
-%s
-
-Apply semantic versioning:
-- Breaking change or incompatible API -> MAJOR
-- New feature (backward compatible) -> MINOR
-- Fix/perf/refactor/build/ci/revert -> PATCH
-- Documentation/style/test/chore alone should keep the version the same unless nothing else applies.
-
-Respond exactly in this format:
-VERSION: vX.Y.Z
-REASON: <short explanation>
-
-If no release should happen, repeat the current version.`,
-		strings.TrimSpace(baseVersion), builder.String())
-}
-
-func parseVersionSuggestion(response string) (string, string, error) {
-	trimmed := strings.TrimSpace(response)
-	if trimmed == "" {
-		return "", "", errors.New("LLM returned empty response")
-	}
-
-	versionMatch := versionPattern.FindStringSubmatch(trimmed)
-	if len(versionMatch) < 2 {
-		return "", "", errors.New("LLM response missing VERSION line in expected format")
-	}
-
-	version := strings.TrimSpace(versionMatch[1])
-	if !strings.HasPrefix(version, "v") {
-		version = "v" + version
-	}
-
-	reason := ""
-	if reasonMatch := reasonPattern.FindStringSubmatch(trimmed); len(reasonMatch) >= 2 {
-		reason = strings.TrimSpace(reasonMatch[1])
-	}
-
-	return version, reason, nil
 }

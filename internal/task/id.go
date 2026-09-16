@@ -20,10 +20,6 @@ func NewTaskID(now time.Time) string {
 	return "t-" + now.UTC().Format("20060102-150405") + "-" + hex.EncodeToString(b[:])
 }
 
-func NewAttemptID() string {
-	return "attempt-1"
-}
-
 func DisplayTitle(rec Record) string {
 	if strings.TrimSpace(rec.Title) != "" {
 		return rec.Title

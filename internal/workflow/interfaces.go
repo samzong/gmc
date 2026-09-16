@@ -1,10 +1,6 @@
-// Package workflow provides the commit workflow orchestration logic.
 package workflow
 
-// GitClient abstracts git operations for testability.
 type GitClient interface {
-	IsGitRepository() bool
-	CheckGitRepository() error
 	AddAll() error
 	StageFiles(files []string) error
 	GetStagedDiff() (string, error)
@@ -18,7 +14,6 @@ type GitClient interface {
 	CreateAndSwitchBranch(branchName string) error
 }
 
-// LLMClient abstracts LLM operations for testability.
 type LLMClient interface {
 	GenerateCommitMessage(prompt string, model string) (string, error)
 }

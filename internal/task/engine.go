@@ -100,17 +100,14 @@ func (e *Engine) Start(opts StartOptions) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
-	node, err := workflowStartNode(workflow)
-	if err != nil {
-		return Summary{}, err
-	}
+	node := workflow.Nodes[workflow.Start]
 	agent, err := WorkflowNodeAgent(node, opts.Agent)
 	if err != nil {
 		return Summary{}, err
 	}
 	model := WorkflowNodeModel(node, opts.Model)
 
-	attemptID := NewAttemptID()
+	attemptID := "attempt-1"
 	wtDir := WorktreeDirName(taskID, attemptID)
 	wtBranch := WorktreeBranchName(taskID, attemptID)
 	if _, err := e.wt.Add(wtDir, worktree.AddOptions{BaseBranch: opts.BaseBranch, Branch: wtBranch}); err != nil {
@@ -143,19 +140,12 @@ func (e *Engine) Start(opts StartOptions) (Summary, error) {
 
 	cmdNode := node
 	if strings.TrimSpace(opts.Command) != "" {
-		cmdNode = node
 		cmdNode.Command = strings.TrimSpace(opts.Command)
 	}
-	command, err := WorkflowNodeCommand(cmdNode, attempt.Agent, attempt.Model, BuildWorkflowNodePrompt(rec, node))
+	attempt, err = e.runWorkflowNode(attempt, cmdNode, BuildWorkflowNodePrompt(rec, node))
 	if err != nil {
 		return Summary{}, err
 	}
-	session := TmuxSessionName(taskID, attemptID, node.ID, "1")
-	profile, err := tmuxSessionStarter(session, wtPath, command)
-	if err != nil {
-		return Summary{}, err
-	}
-	attempt = recordTmuxSession(attempt, node.ID, profile, command)
 	if err := e.store.SaveAttempt(attempt); err != nil {
 		return Summary{}, err
 	}
@@ -310,14 +300,6 @@ func recordTmuxSession(attempt AttemptRecord, nodeID string, profile TmuxProfile
 		StartedAt: time.Now().UTC(),
 	})
 	return attempt
-}
-
-func workflowStartNode(wf WorkflowDefinition) (WorkflowNode, error) {
-	node, ok := wf.Nodes[wf.Start]
-	if !ok {
-		return WorkflowNode{}, fmt.Errorf("workflow %q start node %q not found", wf.Name, wf.Start)
-	}
-	return node, nil
 }
 
 func workflowForTask(rec Record) (WorkflowDefinition, error) {

@@ -17,26 +17,10 @@ func TestSanitizeCommitMessage(t *testing.T) {
 		input string
 		want  string
 	}{
-		{
-			name:  "plain subject is untouched",
-			input: "feat: add thing",
-			want:  "feat: add thing",
-		},
-		{
-			name:  "surrounding whitespace is trimmed",
-			input: "  feat: add thing  ",
-			want:  "feat: add thing",
-		},
-		{
-			name:  "fenced answer keeps only the message",
-			input: "```\nfeat: add thing\n```",
-			want:  "feat: add thing",
-		},
-		{
-			name:  "fenced answer with a language tag",
-			input: "```text\nfeat: add thing\n```",
-			want:  "feat: add thing",
-		},
+		{name: "plain subject is untouched", input: "feat: add thing", want: "feat: add thing"},
+		{name: "surrounding whitespace is trimmed", input: "  feat: add thing  ", want: "feat: add thing"},
+		{name: "fenced answer keeps only the message", input: "```\nfeat: add thing\n```", want: "feat: add thing"},
+		{name: "fenced answer with a language tag", input: "```text\nfeat: add thing\n```", want: "feat: add thing"},
 		{
 			name:  "prose after the closing fence is dropped",
 			input: "```\nfeat: add thing\n```\n\nThis message follows Conventional Commits.",
@@ -47,21 +31,9 @@ func TestSanitizeCommitMessage(t *testing.T) {
 			input: "Here is the commit message:\nfeat: add thing",
 			want:  "feat: add thing",
 		},
-		{
-			name:  "bold preamble is dropped",
-			input: "**Commit message:**\nfeat: add thing",
-			want:  "feat: add thing",
-		},
-		{
-			name:  "heading preamble is dropped",
-			input: "### Commit message:\nfeat: add thing",
-			want:  "feat: add thing",
-		},
-		{
-			name:  "bullet preamble is dropped",
-			input: "- Commit message:\nfeat: add thing",
-			want:  "feat: add thing",
-		},
+		{name: "bold preamble is dropped", input: "**Commit message:**\nfeat: add thing", want: "feat: add thing"},
+		{name: "heading preamble is dropped", input: "### Commit message:\nfeat: add thing", want: "feat: add thing"},
+		{name: "bullet preamble is dropped", input: "- Commit message:\nfeat: add thing", want: "feat: add thing"},
 		{
 			name:  "heading preamble followed by a fenced block",
 			input: "### Commit Message\n\n```\nfeat: add thing\n```",
@@ -87,41 +59,17 @@ func TestSanitizeCommitMessage(t *testing.T) {
 			input: "```Sure, here is the commit message: feat: add thing```",
 			want:  "feat: add thing",
 		},
-		{
-			name:  "closing fence sharing the message line",
-			input: "```\nfeat: add thing```",
-			want:  "feat: add thing",
-		},
-		{
-			name:  "unclosed fence carrying content",
-			input: "```feat: add thing",
-			want:  "",
-		},
-		{
-			name:  "list bullet before the subject",
-			input: "- feat: add thing",
-			want:  "feat: add thing",
-		},
+		{name: "closing fence sharing the message line", input: "```\nfeat: add thing```", want: "feat: add thing"},
+		{name: "unclosed fence carrying content", input: "```feat: add thing", want: ""},
+		{name: "list bullet before the subject", input: "- feat: add thing", want: "feat: add thing"},
 		{
 			name:  "fence carrying an info string",
 			input: "```json title=x\nfeat: add thing\n```",
 			want:  "feat: add thing",
 		},
-		{
-			name:  "fence opened and closed on one line",
-			input: "```feat: add thing```",
-			want:  "feat: add thing",
-		},
-		{
-			name:  "tilde fence",
-			input: "~~~\nfeat: add thing\n~~~",
-			want:  "feat: add thing",
-		},
-		{
-			name:  "subject ending in an underscore survives",
-			input: "fix: handle foo_",
-			want:  "fix: handle foo_",
-		},
+		{name: "fence opened and closed on one line", input: "```feat: add thing```", want: "feat: add thing"},
+		{name: "tilde fence", input: "~~~\nfeat: add thing\n~~~", want: "feat: add thing"},
+		{name: "subject ending in an underscore survives", input: "fix: handle foo_", want: "fix: handle foo_"},
 		{
 			name:  "emphasis inside the subject survives",
 			input: "feat: add **bold** support",
@@ -147,26 +95,10 @@ func TestSanitizeCommitMessage(t *testing.T) {
 			input: "feat: add thing\n\nA longer explanation of the change.",
 			want:  "feat: add thing",
 		},
-		{
-			name:  "empty input stays empty",
-			input: "",
-			want:  "",
-		},
-		{
-			name:  "fence only",
-			input: "```",
-			want:  "",
-		},
-		{
-			name:  "empty fenced block",
-			input: "```\n```",
-			want:  "",
-		},
-		{
-			name:  "preamble only",
-			input: "Here is the commit message:",
-			want:  "",
-		},
+		{name: "empty input stays empty", input: "", want: ""},
+		{name: "fence only", input: "```", want: ""},
+		{name: "empty fenced block", input: "```\n```", want: ""},
+		{name: "preamble only", input: "Here is the commit message:", want: ""},
 	}
 
 	for _, tt := range tests {

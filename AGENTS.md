@@ -44,12 +44,12 @@ Entry point: `main.go` → `cmd.Execute()`.
 | Area | Location | Notes |
 |------|----------|-------|
 | Root commit workflow | `cmd/root.go`, `internal/workflow/` | Staging, prompt, interactive confirm, commit |
-| Worktree commands | `cmd/worktree*.go`, `internal/worktree/` | Split across `worktree.go`, `worktree_share.go`, `worktree_hook.go`, `worktree_sync.go`, `worktree_init.go`, `worktree_prune.go` |
+| Worktree commands | `cmd/worktree*.go`, `internal/worktree/` | Definitions in `worktree.go`; runners in `worktree_actions.go`; display in `worktree_list.go`; feature commands in `worktree_*.go` |
 | Worktree client wiring | `cmd/worktree_client.go` | Thin factory over `worktree.NewClient` |
 | Config | `cmd/config.go`, `internal/config/` | Viper-based; XDG paths |
 | LLM integration | `internal/llm/` | OpenAI-compatible client |
-| Prompt / formatting | `internal/formatter/` | Templates, diff truncation (`diff_truncator.go`) |
-| Git operations | `internal/git/`, `internal/gitcmd/`, `internal/gitutil/` | |
+| Prompt / formatting | `internal/formatter/` | Prompt construction (`prompt.go`), templates, diff truncation (`diff_truncator.go`) |
+| Git operations | `internal/git/`, `internal/gitcmd/`, `internal/gitutil/` | Git execution, staged files (`files.go`), release history (`tag.go`) |
 | Branch naming | `internal/branch/` | `--branch` flag on root command |
 | Shell integration | `internal/shell/`, `cmd/worktree_init.go` | `gmc wt init bash\|zsh\|fish` |
 | Tests for CLI | `cmd/*_test.go` | Use isolated command instances; swap `outWriterFunc` / `errWriterFunc` |
@@ -116,7 +116,7 @@ Do not assume legacy paths or removed config keys.
 
 **Project-level `.gmc.yaml` is untrusted input.** It may only set keys from the
 allowlist `role`, `model` and `enable_emoji` (`repoAllowedKeys` in
-`internal/config/config.go`). Everything else is ignored with a warning on stderr.
+`internal/config/repo.go`). Everything else is ignored with a warning on stderr.
 
 An allowlist, not a denylist, is deliberate: a new config key must be opted in
 rather than silently becoming repository-controllable. The three keys left out are

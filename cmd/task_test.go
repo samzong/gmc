@@ -42,10 +42,7 @@ func TestCompleteTaskAgents(t *testing.T) {
 }
 
 func TestValidateTaskAddArgs(t *testing.T) {
-	old := taskAddFile
-	t.Cleanup(func() { taskAddFile = old })
-
-	taskAddFile = ""
+	setTestValue(t, &taskAddFile, "")
 	require.NoError(t, validateTaskAddArgs(taskAddCmd, []string{"fix it"}))
 	require.Error(t, validateTaskAddArgs(taskAddCmd, nil))
 

@@ -48,11 +48,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rec, err := s.engine.CreateTask(source)
-	if err != nil {
-		writeAPIError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, rec)
+	writeResult(w, http.StatusCreated, rec, err)
 }
 
 func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
@@ -81,11 +77,7 @@ func (s *Server) handleStartTask(w http.ResponseWriter, r *http.Request) {
 		Agent:      req.Agent,
 		BaseBranch: req.BaseBranch,
 	})
-	if err != nil {
-		writeAPIError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, sum)
+	writeResult(w, http.StatusOK, sum, err)
 }
 
 func (s *Server) handleMoveTask(w http.ResponseWriter, r *http.Request) {
@@ -100,11 +92,7 @@ func (s *Server) handleMoveTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sum, err := s.engine.Advance(task.AdvanceOptions{TaskID: id, ToNode: req.To})
-	if err != nil {
-		writeAPIError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, sum)
+	writeResult(w, http.StatusOK, sum, err)
 }
 
 func (s *Server) handleAttachTask(w http.ResponseWriter, r *http.Request) {
@@ -152,11 +140,8 @@ func (s *Server) handleRemoveTask(w http.ResponseWriter, r *http.Request) {
 		}
 		force = req.Force
 	}
-	if err := s.engine.Remove(id, task.RemoveOptions{Force: force}); err != nil {
-		writeAPIError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"task_id": id, "action": "removed"})
+	err := s.engine.Remove(id, task.RemoveOptions{Force: force})
+	writeResult(w, http.StatusOK, map[string]string{"task_id": id, "action": "removed"}, err)
 }
 
 const maxRequestBody = 1 << 20
@@ -187,26 +172,30 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, errorResponse{Error: msg})
 }
 
+func writeResult(w http.ResponseWriter, status int, value any, err error) {
+	if err != nil {
+		writeAPIError(w, err)
+		return
+	}
+	writeJSON(w, status, value)
+}
+
 func writeAPIError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, task.ErrInvalidTaskID):
 		writeError(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, task.ErrNotFound):
-		writeError(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, task.ErrNoAttempt):
+	case errors.Is(err, task.ErrNotFound), errors.Is(err, task.ErrNoAttempt):
 		writeError(w, http.StatusNotFound, err.Error())
 	default:
 		msg := err.Error()
-		if strings.Contains(msg, "not found") ||
-			strings.Contains(msg, "only from new") ||
-			strings.Contains(msg, "already started") ||
-			strings.Contains(msg, "has not started") ||
-			strings.Contains(msg, "already done") ||
-			strings.Contains(msg, "no tmux session") ||
-			strings.Contains(msg, "unsupported") ||
-			strings.Contains(msg, "required") {
-			writeError(w, http.StatusBadRequest, msg)
-			return
+		for _, hint := range []string{
+			"not found", "only from new", "already started", "has not started",
+			"already done", "no tmux session", "unsupported", "required",
+		} {
+			if strings.Contains(msg, hint) {
+				writeError(w, http.StatusBadRequest, msg)
+				return
+			}
 		}
 		writeError(w, http.StatusInternalServerError, msg)
 	}

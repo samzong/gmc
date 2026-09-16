@@ -41,11 +41,7 @@ func (c *Client) remoteExists(repoDir string, name string) bool {
 }
 
 func (c *Client) gitSymbolicRef(repoDir string, ref string) string {
-	result, err := c.runner.Run("-C", repoDir, "symbolic-ref", "--short", ref)
-	if err != nil {
-		return ""
-	}
-	return result.StdoutString(true)
+	return c.getGitOutput(repoDir, "symbolic-ref", "--short", ref)
 }
 
 func (c *Client) gitRefExists(repoDir string, ref string) bool {

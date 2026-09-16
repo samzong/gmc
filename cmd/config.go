@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -94,7 +93,6 @@ var (
 	}
 )
 
-// configJSONOutput is the JSON structure for config get --json
 type configJSONOutput struct {
 	Role           string `json:"role"`
 	Model          string `json:"model"`
@@ -104,10 +102,12 @@ type configJSONOutput struct {
 	EnableEmoji    bool   `json:"enable_emoji"`
 }
 
-func saveConfig() error {
+func setConfigValue(key string, value any, message string) error {
+	config.SetConfigValue(key, value)
 	if err := config.SaveConfig(); err != nil {
 		return fmt.Errorf("failed to save configuration: %w", err)
 	}
+	fmt.Fprintln(outWriter(), message)
 	return nil
 }
 
@@ -117,14 +117,7 @@ func runConfigSetRole(args []string) error {
 		return fmt.Errorf("invalid role: %s", role)
 	}
 
-	config.SetConfigValue("role", role)
-
-	if err := saveConfig(); err != nil {
-		return err
-	}
-
-	fmt.Fprintf(outWriter(), "The role has been set to: %s\n", role)
-	return nil
+	return setConfigValue("role", role, "The role has been set to: "+role)
 }
 
 func runConfigSetModel(args []string) error {
@@ -133,14 +126,7 @@ func runConfigSetModel(args []string) error {
 		return fmt.Errorf("invalid model: %s", model)
 	}
 
-	config.SetConfigValue("model", model)
-
-	if err := saveConfig(); err != nil {
-		return err
-	}
-
-	fmt.Fprintf(outWriter(), "The model has been set to: %s\n", model)
-	return nil
+	return setConfigValue("model", model, "The model has been set to: "+model)
 }
 
 func runConfigSetAPIKey() error {
@@ -150,7 +136,7 @@ func runConfigSetAPIKey() error {
 
 	fmt.Fprint(errWriter(), "Enter API Key: ")
 	keyBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
-	fmt.Fprintln(errWriter()) // newline after hidden input
+	fmt.Fprintln(errWriter())
 	if err != nil {
 		return fmt.Errorf("failed to read API key: %w", err)
 	}
@@ -160,28 +146,12 @@ func runConfigSetAPIKey() error {
 		return errors.New("API key cannot be empty")
 	}
 
-	config.SetConfigValue("api_key", apiKey)
-
-	if err := saveConfig(); err != nil {
-		return err
-	}
-
-	fmt.Fprintln(outWriter(), "The API key has been set")
-	return nil
+	return setConfigValue("api_key", apiKey, "The API key has been set")
 }
 
 func runConfigSetAPIBase(args []string) error {
-	apiBase := args[0]
-
-	config.SetConfigValue("api_base", apiBase)
-
-	if err := saveConfig(); err != nil {
-		return err
-	}
-
-	fmt.Fprintln(outWriter(), "The API base URL has been set to:", apiBase)
-	fmt.Fprintln(outWriter(), "Note: This setting is used for proxy OpenAI API, leave it empty if you don't need a proxy")
-	return nil
+	return setConfigValue("api_base", args[0], "The API base URL has been set to: "+args[0]+
+		"\nNote: This setting is used for proxy OpenAI API, leave it empty if you don't need a proxy")
 }
 
 func runConfigSetPromptTemplate(args []string) error {
@@ -192,14 +162,7 @@ func runConfigSetPromptTemplate(args []string) error {
 		return fmt.Errorf("invalid prompt template: %s, error: %w", templateName, err)
 	}
 
-	config.SetConfigValue("prompt_template", templateName)
-
-	if err := saveConfig(); err != nil {
-		return err
-	}
-
-	fmt.Fprintf(outWriter(), "The prompt template has been set to: %s\n", templateName)
-	return nil
+	return setConfigValue("prompt_template", templateName, "The prompt template has been set to: "+templateName)
 }
 
 func runConfigSetEnableEmoji(args []string) error {
@@ -214,18 +177,11 @@ func runConfigSetEnableEmoji(args []string) error {
 		return fmt.Errorf("invalid value: %s (must be 'true' or 'false')", value)
 	}
 
-	config.SetConfigValue("enable_emoji", enableEmoji)
-
-	if err := saveConfig(); err != nil {
-		return err
-	}
-
+	message := "Emoji support has been disabled"
 	if enableEmoji {
-		fmt.Fprintln(outWriter(), "Emoji support has been enabled")
-	} else {
-		fmt.Fprintln(outWriter(), "Emoji support has been disabled")
+		message = "Emoji support has been enabled"
 	}
-	return nil
+	return setConfigValue("enable_emoji", enableEmoji, message)
 }
 
 func runConfigGet() error {
@@ -243,9 +199,7 @@ func runConfigGet() error {
 			PromptTemplate: cfg.PromptTemplate,
 			EnableEmoji:    cfg.EnableEmoji,
 		}
-		encoder := json.NewEncoder(outWriter())
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(output)
+		return printJSON(outWriter(), output)
 	}
 
 	fmt.Fprintln(outWriter(), "Current Configuration:")
@@ -263,16 +217,11 @@ func runConfigGet() error {
 }
 
 func init() {
-	configSetCmd.AddCommand(configSetRoleCmd)
-	configSetCmd.AddCommand(configSetModelCmd)
-	configSetCmd.AddCommand(configSetAPIKeyCmd)
-	configSetCmd.AddCommand(configSetAPIBaseCmd)
-	configSetCmd.AddCommand(configSetPromptTemplateCmd)
-	configSetCmd.AddCommand(configSetEnableEmojiCmd)
+	configSetCmd.AddCommand(configSetRoleCmd, configSetModelCmd, configSetAPIKeyCmd,
+		configSetAPIBaseCmd, configSetPromptTemplateCmd, configSetEnableEmojiCmd)
 
 	configGetCmd.Flags().BoolVar(&configOutputJSON, "json", false, "Output in JSON format (deprecated: use -o json)")
 	_ = configGetCmd.Flags().MarkDeprecated("json", "use -o json instead")
 
-	configCmd.AddCommand(configSetCmd)
-	configCmd.AddCommand(configGetCmd)
+	configCmd.AddCommand(configSetCmd, configGetCmd)
 }

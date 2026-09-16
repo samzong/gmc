@@ -2,13 +2,7 @@ package task
 
 import "time"
 
-const (
-	TaskNew    = "new"
-	TaskPlan   = "plan"
-	TaskCode   = "code"
-	TaskReview = "review"
-	TaskShip   = "ship"
-)
+const TaskNew = "new"
 
 type Record struct {
 	ID               string             `json:"id" yaml:"id"`

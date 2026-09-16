@@ -40,7 +40,7 @@ var taskAddCmd = &cobra.Command{
   gmc task add todo.md
   gmc task add --file todo.md
   gmc task add "Fix flaky wt list test"`,
-	RunE: runTaskAdd,
+	RunE: taskRunner(runTaskAdd),
 }
 
 var taskStartCmd = &cobra.Command{
@@ -50,7 +50,7 @@ var taskStartCmd = &cobra.Command{
 	Example: `  gmc task start t-20260614-120000-a1b2
   gmc task start t-20260614-120000-a1b2 --agent codex --model gpt-5
   gmc task start 1 --agent cursor-agent`,
-	RunE: runTaskStart,
+	RunE: taskRunner(runTaskStart),
 }
 
 var taskListCmd = &cobra.Command{
@@ -58,21 +58,21 @@ var taskListCmd = &cobra.Command{
 	Aliases: []string{"ls"},
 	Short:   "List tasks",
 	Args:    cobra.NoArgs,
-	RunE:    runTaskList,
+	RunE:    taskRunner(runTaskList),
 }
 
 var taskShowCmd = &cobra.Command{
 	Use:   "show <task-id>",
 	Short: "Show task detail",
 	Args:  cobra.ExactArgs(1),
-	RunE:  runTaskShow,
+	RunE:  taskRunner(runTaskShow),
 }
 
 var taskAttachCmd = &cobra.Command{
 	Use:   "attach <task-id>",
 	Short: "Attach to task agent session",
 	Args:  cobra.ExactArgs(1),
-	RunE:  runTaskAttach,
+	RunE:  taskRunner(runTaskAttach),
 }
 
 var taskAdvanceCmd = &cobra.Command{
@@ -82,7 +82,7 @@ var taskAdvanceCmd = &cobra.Command{
 	Example: `  gmc task advance t-20260614-120000-a1b2
   gmc task advance 1
   gmc task advance 1 --to review`,
-	RunE: runTaskAdvance,
+	RunE: taskRunner(runTaskAdvance),
 }
 
 var taskRmCmd = &cobra.Command{
@@ -91,17 +91,11 @@ var taskRmCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Example: `  gmc task rm t-20260614-120000-a1b2
   gmc task rm t-20260614-120000-a1b2 --force`,
-	RunE: runTaskRm,
+	RunE: taskRunner(runTaskRm),
 }
 
 func init() {
-	taskCmd.AddCommand(taskAddCmd)
-	taskCmd.AddCommand(taskStartCmd)
-	taskCmd.AddCommand(taskListCmd)
-	taskCmd.AddCommand(taskShowCmd)
-	taskCmd.AddCommand(taskAttachCmd)
-	taskCmd.AddCommand(taskAdvanceCmd)
-	taskCmd.AddCommand(taskRmCmd)
+	taskCmd.AddCommand(taskAddCmd, taskStartCmd, taskListCmd, taskShowCmd, taskAttachCmd, taskAdvanceCmd, taskRmCmd)
 
 	taskAddCmd.Flags().StringVar(&taskAddFile, "file", "", "Read task source from file")
 	_ = taskAddCmd.MarkFlagFilename("file")
@@ -128,9 +122,7 @@ func validateTaskAddArgs(cmd *cobra.Command, args []string) error {
 	return cobra.ExactArgs(1)(cmd, args)
 }
 
-func completeTaskAgents(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	_ = cmd
-	_ = args
+func completeTaskAgents(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	candidates := []string{"codex", "grok", "cursor-agent", "opencode"}
 	return completeStrings(candidates, toComplete), cobra.ShellCompDirectiveNoFileComp
 }
@@ -154,12 +146,17 @@ func newTaskEngine() (*task.Engine, error) {
 	return task.NewEngine(store, wt), nil
 }
 
-func runTaskAdd(cmd *cobra.Command, args []string) error {
-	_ = cmd
-	engine, err := newTaskEngine()
-	if err != nil {
-		return err
+func taskRunner(run func(*task.Engine, []string) error) func(*cobra.Command, []string) error {
+	return func(_ *cobra.Command, args []string) error {
+		engine, err := newTaskEngine()
+		if err != nil {
+			return err
+		}
+		return run(engine, args)
 	}
+}
+
+func runTaskAdd(engine *task.Engine, args []string) error {
 	source := strings.TrimSpace(taskAddFile)
 	if source == "" {
 		source = args[0]
@@ -173,19 +170,12 @@ func runTaskAdd(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Fprintf(outWriter(), "Added task %s (%s)\n", rec.ID, rec.State)
 	fmt.Fprintf(outWriter(), "  title: %s\n", task.DisplayTitle(rec))
-	if rec.SourceFile != "" {
-		fmt.Fprintf(outWriter(), "  source file: %s\n", rec.SourceFile)
-	}
+	printTaskField("source file", rec.SourceFile)
 	fmt.Fprintf(outWriter(), "  next: gmc task start %s\n", rec.ID)
 	return nil
 }
 
-func runTaskStart(cmd *cobra.Command, args []string) error {
-	_ = cmd
-	engine, err := newTaskEngine()
-	if err != nil {
-		return err
-	}
+func runTaskStart(engine *task.Engine, args []string) error {
 	sum, err := engine.Start(task.StartOptions{
 		TaskID:     args[0],
 		Agent:      taskAgent,
@@ -199,12 +189,8 @@ func runTaskStart(cmd *cobra.Command, args []string) error {
 		return printJSON(outWriter(), sum)
 	}
 	fmt.Fprintf(outWriter(), "Started task %s (%s)\n", sum.Task.ID, sum.Task.State)
-	if sum.Task.Workflow != "" {
-		fmt.Fprintf(outWriter(), "  workflow: %s\n", sum.Task.Workflow)
-	}
-	if sum.Task.CurrentNode != "" {
-		fmt.Fprintf(outWriter(), "  node: %s\n", sum.Task.CurrentNode)
-	}
+	printTaskField("workflow", sum.Task.Workflow)
+	printTaskField("node", sum.Task.CurrentNode)
 	if sum.Attempt != nil {
 		fmt.Fprintf(outWriter(), "  worktree: %s\n", sum.Attempt.Worktree)
 		fmt.Fprintf(outWriter(), "  branch: %s\n", sum.Attempt.Branch)
@@ -214,13 +200,7 @@ func runTaskStart(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runTaskList(cmd *cobra.Command, args []string) error {
-	_ = cmd
-	_ = args
-	engine, err := newTaskEngine()
-	if err != nil {
-		return err
-	}
+func runTaskList(engine *task.Engine, _ []string) error {
 	summaries, err := engine.ListTasks()
 	if err != nil {
 		return err
@@ -236,10 +216,8 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 	_, _ = fmt.Fprintln(w, "#\tID\tSTATE\tAGENT\tTITLE")
 	for i, sum := range summaries {
 		agent := "-"
-		if sum.Attempt != nil {
-			if sum.Attempt.Agent != "" {
-				agent = sum.Attempt.Agent
-			}
+		if sum.Attempt != nil && sum.Attempt.Agent != "" {
+			agent = sum.Attempt.Agent
 		}
 		_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n",
 			i+1, sum.Task.ID, sum.Task.State, agent, task.DisplayTitle(sum.Task))
@@ -248,12 +226,7 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runTaskShow(cmd *cobra.Command, args []string) error {
-	_ = cmd
-	engine, err := newTaskEngine()
-	if err != nil {
-		return err
-	}
+func runTaskShow(engine *task.Engine, args []string) error {
 	sum, err := engine.ShowTask(args[0])
 	if err != nil {
 		return err
@@ -265,21 +238,11 @@ func runTaskShow(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runTaskAttach(cmd *cobra.Command, args []string) error {
-	_ = cmd
-	engine, err := newTaskEngine()
-	if err != nil {
-		return err
-	}
+func runTaskAttach(engine *task.Engine, args []string) error {
 	return engine.Attach(args[0])
 }
 
-func runTaskAdvance(cmd *cobra.Command, args []string) error {
-	_ = cmd
-	engine, err := newTaskEngine()
-	if err != nil {
-		return err
-	}
+func runTaskAdvance(engine *task.Engine, args []string) error {
 	sum, err := engine.Advance(task.AdvanceOptions{
 		TaskID: args[0],
 		ToNode: taskAdvanceTo,
@@ -298,12 +261,7 @@ func runTaskAdvance(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runTaskRm(cmd *cobra.Command, args []string) error {
-	_ = cmd
-	engine, err := newTaskEngine()
-	if err != nil {
-		return err
-	}
+func runTaskRm(engine *task.Engine, args []string) error {
 	if err := engine.Remove(args[0], task.RemoveOptions{Force: taskRmForce}); err != nil {
 		return err
 	}
@@ -321,29 +279,17 @@ func printTaskDetail(sum task.Summary) {
 	if sum.Task.Issue != "" {
 		fmt.Fprintf(outWriter(), "  issue: #%s\n", sum.Task.Issue)
 	}
-	if sum.Task.SourceFile != "" {
-		fmt.Fprintf(outWriter(), "  source file: %s\n", sum.Task.SourceFile)
-	}
-	if sum.Task.Workflow != "" {
-		fmt.Fprintf(outWriter(), "  workflow: %s\n", sum.Task.Workflow)
-	}
-	if sum.Task.CurrentNode != "" {
-		fmt.Fprintf(outWriter(), "  node: %s\n", sum.Task.CurrentNode)
-	}
+	printTaskField("source file", sum.Task.SourceFile)
+	printTaskField("workflow", sum.Task.Workflow)
+	printTaskField("node", sum.Task.CurrentNode)
 	if sum.Attempt != nil {
 		fmt.Fprintf(outWriter(), "Attempt: %s\n", sum.Attempt.ID)
 		fmt.Fprintf(outWriter(), "  worktree: %s\n", sum.Attempt.Worktree)
 		fmt.Fprintf(outWriter(), "  branch: %s\n", sum.Attempt.Branch)
 		fmt.Fprintf(outWriter(), "  agent: %s\n", sum.Attempt.Agent)
-		if sum.Attempt.Model != "" {
-			fmt.Fprintf(outWriter(), "  model: %s\n", sum.Attempt.Model)
-		}
-		if sum.Attempt.ContextFile != "" {
-			fmt.Fprintf(outWriter(), "  task brief: %s\n", sum.Attempt.ContextFile)
-		}
-		if sum.Attempt.TmuxSession != "" {
-			fmt.Fprintf(outWriter(), "  tmux: %s\n", sum.Attempt.TmuxSession)
-		}
+		printTaskField("model", sum.Attempt.Model)
+		printTaskField("task brief", sum.Attempt.ContextFile)
+		printTaskField("tmux", sum.Attempt.TmuxSession)
 		if len(sum.Attempt.TmuxSessions) > 0 {
 			fmt.Fprintln(outWriter(), "  tmux sessions:")
 			for _, session := range sum.Attempt.TmuxSessions {
@@ -355,10 +301,12 @@ func printTaskDetail(sum task.Summary) {
 	fmt.Fprintln(outWriter(), indentLines(sum.Task.Source, "  "))
 }
 
-func indentLines(s, prefix string) string {
-	var b strings.Builder
-	for _, line := range strings.Split(strings.TrimSpace(s), "\n") {
-		fmt.Fprintf(&b, "%s%s\n", prefix, line)
+func printTaskField(label, value string) {
+	if value != "" {
+		fmt.Fprintf(outWriter(), "  %s: %s\n", label, value)
 	}
-	return strings.TrimSuffix(b.String(), "\n")
+}
+
+func indentLines(s, prefix string) string {
+	return prefix + strings.ReplaceAll(strings.TrimSpace(s), "\n", "\n"+prefix)
 }

@@ -11,509 +11,152 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseCommitOutput(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected int
-		wantErr  bool
-	}{
-		{
-			name: "Valid commit output",
-			input: `abc1234|John Doe|2024-01-15|feat: add new feature
-def5678|Jane Smith|2024-01-14|fix: resolve bug in parser`,
-			expected: 2,
-			wantErr:  false,
-		},
-		{
-			name:     "Empty input",
-			input:    "",
-			expected: 0,
-			wantErr:  false,
-		},
-		{
-			name:     "Single commit",
-			input:    `abc1234|John Doe|2024-01-15|feat: add new feature`,
-			expected: 1,
-			wantErr:  false,
-		},
-		{
-			name: "Malformed line (should be skipped)",
-			input: `abc1234|John Doe|2024-01-15|feat: add new feature
-invalid-line
-def5678|Jane Smith|2024-01-14|fix: resolve bug`,
-			expected: 2,
-			wantErr:  false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			commits, err := parseCommitOutput(tt.input)
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parseCommitOutput() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if len(commits) != tt.expected {
-				t.Errorf("parseCommitOutput() got %d commits, want %d", len(commits), tt.expected)
-				return
-			}
-
-			// Test first commit if exists
-			if len(commits) > 0 {
-				commit := commits[0]
-				if commit.Hash == "" || commit.Author == "" || commit.Date == "" || commit.Message == "" {
-					t.Errorf("parseCommitOutput() commit has empty fields: %+v", commit)
-				}
-			}
-		})
-	}
-}
-
-func TestCommitInfoFields(t *testing.T) {
-	input := `abc1234|John Doe|2024-01-15|feat: add new feature`
-	commits, err := parseCommitOutput(input)
-
-	if err != nil {
-		t.Fatalf("parseCommitOutput() error = %v", err)
-	}
-
-	if len(commits) != 1 {
-		t.Fatalf("parseCommitOutput() got %d commits, want 1", len(commits))
-	}
-
-	commit := commits[0]
-
-	if commit.Hash != "abc1234" {
-		t.Errorf("commit.Hash = %q, want %q", commit.Hash, "abc1234")
-	}
-
-	if commit.Author != "John Doe" {
-		t.Errorf("commit.Author = %q, want %q", commit.Author, "John Doe")
-	}
-
-	if commit.Date != "2024-01-15" {
-		t.Errorf("commit.Date = %q, want %q", commit.Date, "2024-01-15")
-	}
-
-	if commit.Message != "feat: add new feature" {
-		t.Errorf("commit.Message = %q, want %q", commit.Message, "feat: add new feature")
-	}
-}
-
-// Test CommitInfo struct
-func TestCommitInfo(t *testing.T) {
-	commit := CommitInfo{
-		Hash:    "abc123",
-		Author:  "Test User",
-		Date:    "2024-01-15",
-		Message: "test commit message",
-	}
-
-	assert.Equal(t, "abc123", commit.Hash)
-	assert.Equal(t, "Test User", commit.Author)
-	assert.Equal(t, "2024-01-15", commit.Date)
-	assert.Equal(t, "test commit message", commit.Message)
-}
-
-// Test ParseChangedFiles function signature
-func TestParseChangedFiles(t *testing.T) {
-	client := NewClient(Options{})
-
-	// Test that ParseChangedFiles has correct signature
-	// If we're in a git repo, it should succeed, otherwise error
-	files, err := client.ParseChangedFiles()
-	if client.IsGitRepository() {
-		assert.NoError(t, err, "ParseChangedFiles should succeed in git repo")
-		assert.NotNil(t, files, "Files slice should not be nil")
-	} else {
-		assert.Error(t, err, "ParseChangedFiles should error outside git repo")
-		assert.Contains(t, err.Error(), "not in a git repository")
-	}
-}
-
-func TestClientOptions_Verbose(t *testing.T) {
-	client := NewClient(Options{Verbose: true})
-	assert.True(t, client.verbose)
-}
-
-// Integration tests that require a real git repository
-// These tests will be skipped if not in a git repository
-func TestGitIntegration(t *testing.T) {
-	client := NewClient(Options{})
-
-	// Check if we're in a git repository
-	if !client.IsGitRepository() {
-		t.Skip("Not in a git repository, skipping integration tests")
-	}
-
-	t.Run("IsGitRepository", func(t *testing.T) {
-		result := client.IsGitRepository()
-		assert.True(t, result, "Should detect git repository")
-	})
-
-	t.Run("CheckGitRepository", func(t *testing.T) {
-		err := client.CheckGitRepository()
-		assert.NoError(t, err, "Should not error in git repository")
-	})
-}
-
-// Test git functions with a temporary git repository
-func TestWithTempGitRepo(t *testing.T) {
-	client := NewClient(Options{})
-
-	if os.Getenv("RUN_INTEGRATION_TESTS") != "1" {
-		t.Skip("Skipping integration test that performs real git operations; set RUN_INTEGRATION_TESTS=1 to enable")
-	}
-
-	// SAFETY CHECK: Ensure we're not in a real git repository
-	if client.IsGitRepository() {
-		t.Fatal("SAFETY: Refusing to run integration tests in an existing git repository. Tests must run in isolation.")
-	}
-
-	// Create a temporary directory
-	tempDir, err := os.MkdirTemp("", "gmc_git_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
-
-	// Save current directory
-	currentDir, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() {
-		// Always return to original directory
-		if err := os.Chdir(currentDir); err != nil {
-			t.Errorf("Failed to return to original directory: %v", err)
-		}
-	}()
-
-	// Change to temp directory
-	err = os.Chdir(tempDir)
-	require.NoError(t, err)
-
-	// DOUBLE CHECK: Ensure we're in the temp directory
-	cwd, err := os.Getwd()
-	require.NoError(t, err)
-	if cwd != tempDir {
-		t.Fatalf("SAFETY: Failed to change to temp directory. Current: %s, Expected: %s", cwd, tempDir)
-	}
-
-	// Initialize git repository
-	err = exec.Command("git", "init").Run()
-	if err != nil {
-		t.Skip("Git not available, skipping git integration tests")
-		return
-	}
-
-	// Configure git user for tests
-	err = exec.Command("git", "config", "user.name", "Test User").Run()
-	require.NoError(t, err)
-	err = exec.Command("git", "config", "user.email", "test@example.com").Run()
-	require.NoError(t, err)
-
-	t.Run("IsGitRepository_InTempRepo", func(t *testing.T) {
-		result := client.IsGitRepository()
-		assert.True(t, result)
-	})
-
-	t.Run("CheckGitRepository_InTempRepo", func(t *testing.T) {
-		err := client.CheckGitRepository()
-		assert.NoError(t, err)
-	})
-
-	// Create some test files
-	testFile := "test.txt"
-	err = os.WriteFile(testFile, []byte("Hello World"), 0644)
-	require.NoError(t, err)
-
-	t.Run("AddAll", func(t *testing.T) {
-		err := client.AddAll()
-		assert.NoError(t, err, "AddAll should succeed")
-	})
-
-	// Check staged files after add
-	t.Run("ParseStagedFiles", func(t *testing.T) {
-		files, err := client.ParseStagedFiles()
-		assert.NoError(t, err)
-		assert.Contains(t, files, "test.txt", "Should contain staged test file")
-	})
-
-	t.Run("GetStagedDiff", func(t *testing.T) {
-		diff, err := client.GetStagedDiff()
-		assert.NoError(t, err)
-		assert.Contains(t, diff, "test.txt", "Staged diff should contain test file")
-		assert.Contains(t, diff, "Hello World", "Staged diff should contain file content")
-	})
-
-	t.Run("GetStagedDiffStats", func(t *testing.T) {
-		stats, err := client.GetStagedDiffStats()
-		assert.NoError(t, err)
-		assert.Contains(t, stats, "test.txt", "Stats should contain test file")
-	})
-
-	t.Run("Commit", func(t *testing.T) {
-		// Double check we're in temp directory before committing
-		cwd, _ := os.Getwd()
-		if !strings.Contains(cwd, "gmc_git_test") {
-			t.Fatal("SAFETY: Not in temporary test directory, refusing to commit")
-		}
-
-		err := client.Commit("test: safe commit in temp repo")
-		assert.NoError(t, err, "Commit should succeed in temp repo")
-	})
-
-	// Test after commit
-	t.Run("GetCommitHistory", func(t *testing.T) {
-		commits, err := client.GetCommitHistory(10, false)
-		assert.NoError(t, err)
-		assert.Len(t, commits, 1, "Should have one commit")
-		assert.Equal(t, "test: safe commit in temp repo", commits[0].Message)
-		assert.Equal(t, "Test User", commits[0].Author)
-	})
-
-	t.Run("GetLatestTag_NoTags", func(t *testing.T) {
-		tag, err := client.GetLatestTag()
-		assert.NoError(t, err)
-		assert.Equal(t, "", tag)
-	})
-
-	// Test with more changes
-	t.Run("GetDiff_WithUnstagedChanges", func(t *testing.T) {
-		// Modify the file
-		err := os.WriteFile(testFile, []byte("Hello World\nSecond line"), 0644)
-		require.NoError(t, err)
-
-		diff, err := client.GetDiff()
-		assert.NoError(t, err)
-		assert.Contains(t, diff, "test.txt", "Diff should contain modified file")
-		assert.Contains(t, diff, "+Second line", "Diff should show added line")
-	})
-
-	t.Run("CreateAndSwitchBranch", func(t *testing.T) {
-		err := client.CreateAndSwitchBranch("feature/test-branch")
-		assert.NoError(t, err, "Should create and switch to new branch")
-	})
-
-	t.Run("CreateAnnotatedTag", func(t *testing.T) {
-		err := client.CreateAnnotatedTag("v0.1.0", "Release v0.1.0")
-		assert.NoError(t, err)
-	})
-
-	t.Run("GetLatestTag_WithTag", func(t *testing.T) {
-		tag, err := client.GetLatestTag()
-		assert.NoError(t, err)
-		assert.Equal(t, "v0.1.0", tag)
-	})
-
-	t.Run("GetCommitsSinceTag_NoNewCommits", func(t *testing.T) {
-		commits, err := client.GetCommitsSinceTag("v0.1.0")
-		assert.NoError(t, err)
-		assert.Len(t, commits, 0)
-	})
-
-	t.Run("GetCommitsSinceTag_WithCommits", func(t *testing.T) {
-		err := os.WriteFile("feature.txt", []byte("new feature"), 0644)
-		require.NoError(t, err)
-
-		err = client.AddAll()
-		require.NoError(t, err)
-
-		err = client.Commit("feat: add new capability", "-m", "Additional context for feature")
-		assert.NoError(t, err)
-
-		commits, err := client.GetCommitsSinceTag("v0.1.0")
-		assert.NoError(t, err)
-		require.Len(t, commits, 1)
-		assert.Equal(t, "feat: add new capability", commits[0].Message)
-		assert.Equal(t, "Additional context for feature", commits[0].Body)
-	})
-
-	t.Run("GetCommitsSinceTag_UnknownTag", func(t *testing.T) {
-		commits, err := client.GetCommitsSinceTag("v9.9.9")
-		assert.NoError(t, err)
-		assert.GreaterOrEqual(t, len(commits), 2)
-	})
-}
-
-func TestResolveFilesIncludesUntracked(t *testing.T) {
-	client := NewClient(Options{})
-
-	tempDir, err := os.MkdirTemp("", "gmc_git_dir_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
-
-	runGitCommand(t, tempDir, "init")
-	runGitCommand(t, tempDir, "config", "user.email", "test@example.com")
-	runGitCommand(t, tempDir, "config", "user.name", "gmc tester")
-
-	pkgDir := filepath.Join(tempDir, "pkg")
-	require.NoError(t, os.MkdirAll(pkgDir, 0o755))
-
-	trackedFile := filepath.Join(pkgDir, "tracked.txt")
-	require.NoError(t, os.WriteFile(trackedFile, []byte("tracked"), 0644))
-	runGitCommand(t, tempDir, "add", ".")
-	runGitCommand(t, tempDir, "commit", "-m", "initial commit")
-
-	untrackedFile := filepath.Join(pkgDir, "draft.txt")
-	require.NoError(t, os.WriteFile(untrackedFile, []byte("draft"), 0644))
-
-	originalDir, err := os.Getwd()
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = os.Chdir(originalDir)
-	})
-
-	require.NoError(t, os.Chdir(tempDir))
-	AssertNotInRealRepo(t)
-
-	files, err := client.ResolveFiles([]string{"pkg"})
-	require.NoError(t, err)
-
-	assert.Contains(t, files, "pkg/tracked.txt")
-	assert.Contains(t, files, "pkg/draft.txt")
-}
-
-func runGitCommand(t *testing.T, dir string, args ...string) {
+func setupRepo(t *testing.T) *Client {
 	t.Helper()
-
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(output))
+	t.Chdir(t.TempDir())
+	for _, args := range [][]string{
+		{"init", "-b", "main"},
+		{"config", "user.email", "test@example.com"},
+		{"config", "user.name", "Test User"},
+		{"config", "commit.gpgsign", "false"},
+		{"config", "core.hooksPath", t.TempDir()},
+	} {
+		runGitCommand(t, args...)
 	}
+	return NewClient(Options{})
 }
 
-// Test functions outside of git repository
+func runGitCommand(t *testing.T, args ...string) string {
+	t.Helper()
+	output, err := exec.Command("git", args...).CombinedOutput()
+	require.NoError(t, err, "git %s: %s", strings.Join(args, " "), output)
+	return strings.TrimSpace(string(output))
+}
+
+func TestCommitAndTag(t *testing.T) {
+	client := setupRepo(t)
+	assert.True(t, client.IsGitRepository())
+	require.NoError(t, client.CheckGitRepository())
+	require.NoError(t, os.WriteFile("test.txt", []byte("Hello World"), 0o644))
+	require.NoError(t, client.AddAll())
+	files, err := client.ParseStagedFiles()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"test.txt"}, files)
+	diff, err := client.GetStagedDiff()
+	require.NoError(t, err)
+	assert.Contains(t, diff, "test.txt")
+	assert.Contains(t, diff, "Hello World")
+	stats, err := client.GetStagedDiffStats()
+	require.NoError(t, err)
+	assert.Contains(t, stats, "test.txt")
+	require.NoError(t, client.Commit("test: safe commit in temp repo"))
+	commits, err := client.GetCommitsSinceTag("")
+	require.NoError(t, err)
+	require.Len(t, commits, 1)
+	assert.Equal(t, "test: safe commit in temp repo", commits[0].Message)
+	assert.Equal(t, "Test User", commits[0].Author)
+	assert.NotEmpty(t, commits[0].Hash)
+	assert.NotEmpty(t, commits[0].Date)
+	tag, err := client.GetLatestTag()
+	require.NoError(t, err)
+	assert.Empty(t, tag)
+	require.NoError(t, client.CreateAndSwitchBranch("feature/test-branch"))
+	assert.Equal(t, "feature/test-branch", runGitCommand(t, "branch", "--show-current"))
+	require.Error(t, client.CreateAndSwitchBranch("feature/test-branch"))
+	require.Error(t, client.CreateAndSwitchBranch("invalid..branch"))
+	require.NoError(t, client.CreateAnnotatedTag("v0.1.0", "Release v0.1.0"))
+	tag, err = client.GetLatestTag()
+	require.NoError(t, err)
+	assert.Equal(t, "v0.1.0", tag)
+	commits, err = client.GetCommitsSinceTag(tag)
+	require.NoError(t, err)
+	assert.Empty(t, commits)
+	require.NoError(t, os.WriteFile("feature.txt", []byte("new feature"), 0o644))
+	require.NoError(t, client.AddAll())
+	require.NoError(t, client.Commit("feat: add new capability", "-m", "Additional context for feature"))
+	commits, err = client.GetCommitsSinceTag(tag)
+	require.NoError(t, err)
+	require.Len(t, commits, 1)
+	assert.Equal(t, "feat: add new capability", commits[0].Message)
+	assert.Equal(t, "Additional context for feature", commits[0].Body)
+	commits, err = client.GetCommitsSinceTag("v9.9.9")
+	require.NoError(t, err)
+	assert.Len(t, commits, 2)
+}
+
+func TestSelectiveFiles(t *testing.T) {
+	client := setupRepo(t)
+	require.NoError(t, os.Mkdir("pkg", 0o755))
+	require.NoError(t, os.WriteFile("pkg/tracked.txt", []byte("tracked"), 0o644))
+	require.NoError(t, client.AddAll())
+	require.NoError(t, client.Commit("initial commit"))
+	require.NoError(t, os.WriteFile("pkg/draft.txt", []byte("draft"), 0o644))
+	files, err := client.ResolveFiles([]string{"pkg", "pkg/tracked.txt"})
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"pkg/tracked.txt", "pkg/draft.txt"}, files)
+	require.NoError(t, os.WriteFile("pkg/tracked.txt", []byte("modified"), 0o644))
+	staged, modified, untracked, err := client.CheckFileStatus(files)
+	require.NoError(t, err)
+	assert.Empty(t, staged)
+	assert.Equal(t, []string{"pkg/tracked.txt"}, modified)
+	assert.Equal(t, []string{"pkg/draft.txt"}, untracked)
+	require.NoError(t, client.StageFiles(files))
+	staged, modified, untracked, err = client.CheckFileStatus(files)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, files, staged)
+	assert.Empty(t, modified)
+	assert.Empty(t, untracked)
+	diff, err := client.GetFilesDiff([]string{"pkg/draft.txt"})
+	require.NoError(t, err)
+	assert.Contains(t, diff, "+draft")
+	assert.NotContains(t, diff, "tracked.txt")
+	require.NoError(t, client.CommitFiles("feat: draft", []string{"pkg/draft.txt"}, "-s"))
+	remaining, err := client.ParseStagedFiles()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"pkg/tracked.txt"}, remaining)
+	assert.Contains(t, runGitCommand(t, "log", "-1", "--format=%B"), "Signed-off-by: Test User <test@example.com>")
+	runGitCommand(t, "rm", "pkg/draft.txt")
+	files, err = client.ResolveFiles([]string{"pkg/draft.txt"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"pkg/draft.txt"}, files)
+	_, err = client.ResolveFiles([]string{"missing.txt"})
+	require.Error(t, err)
+}
+
 func TestOutsideGitRepo(t *testing.T) {
+	t.Chdir(t.TempDir())
 	client := NewClient(Options{})
-
-	// Create a temporary directory that's not a git repo
-	tempDir, err := os.MkdirTemp("", "gmc_non_git_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
-
-	// Save current directory
-	currentDir, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() {
-		// Always return to original directory
-		if err := os.Chdir(currentDir); err != nil {
-			t.Errorf("Failed to return to original directory: %v", err)
-		}
-	}()
-
-	// Change to temp directory
-	err = os.Chdir(tempDir)
-	require.NoError(t, err)
-
-	// Verify we're in the temp directory
-	// On macOS, /var is a symlink to /private/var, so we need to evaluate symlinks
-	cwd, err := os.Getwd()
-	require.NoError(t, err)
-	evalCwd, err := filepath.EvalSymlinks(cwd)
-	require.NoError(t, err)
-	evalTemp, err := filepath.EvalSymlinks(tempDir)
-	require.NoError(t, err)
-	if evalCwd != evalTemp {
-		t.Fatalf("SAFETY: Failed to change to temp directory. Current: %s, Expected: %s", evalCwd, evalTemp)
+	assert.False(t, client.IsGitRepository())
+	for name, call := range map[string]func() error{
+		"check":  client.CheckGitRepository,
+		"add":    client.AddAll,
+		"diff":   func() error { _, err := client.GetStagedDiff(); return err },
+		"files":  func() error { _, err := client.ParseStagedFiles(); return err },
+		"commit": func() error { return client.Commit("test message") },
+		"branch": func() error { return client.CreateAndSwitchBranch("test-branch") },
+	} {
+		t.Run(name, func(t *testing.T) { assert.ErrorIs(t, call(), ErrNotGitRepo) })
 	}
-
-	t.Run("IsGitRepository_OutsideRepo", func(t *testing.T) {
-		result := client.IsGitRepository()
-		assert.False(t, result, "Should not detect git repository")
-	})
-
-	t.Run("CheckGitRepository_OutsideRepo", func(t *testing.T) {
-		err := client.CheckGitRepository()
-		assert.ErrorIs(t, err, ErrNotGitRepo)
-	})
-
-	t.Run("GetDiff_OutsideRepo", func(t *testing.T) {
-		_, err := client.GetDiff()
-		assert.ErrorIs(t, err, ErrNotGitRepo)
-	})
-
-	t.Run("GetStagedDiff_OutsideRepo", func(t *testing.T) {
-		_, err := client.GetStagedDiff()
-		assert.ErrorIs(t, err, ErrNotGitRepo)
-	})
-
-	t.Run("AddAll_OutsideRepo", func(t *testing.T) {
-		err := client.AddAll()
-		assert.Error(t, err)
-	})
-
-	t.Run("ParseStagedFiles_OutsideRepo", func(t *testing.T) {
-		_, err := client.ParseStagedFiles()
-		assert.Error(t, err)
-	})
-
-	t.Run("Commit_OutsideRepo", func(t *testing.T) {
-		err := client.Commit("test message")
-		assert.Error(t, err)
-	})
-
-	t.Run("CreateAndSwitchBranch_OutsideRepo", func(t *testing.T) {
-		err := client.CreateAndSwitchBranch("test-branch")
-		assert.Error(t, err)
-	})
-
-	t.Run("GetCommitHistory_OutsideRepo", func(t *testing.T) {
-		_, err := client.GetCommitHistory(10, false)
-		assert.Error(t, err)
-	})
 }
 
-// Test edge cases and error conditions
-func TestEdgeCases(t *testing.T) {
-	t.Run("ParseChangedFiles_EdgeCases", func(t *testing.T) {
-		client := NewClient(Options{})
-
-		// ParseChangedFiles calls git directly, test behavior based on repo status
-		files, err := client.ParseChangedFiles()
-		if client.IsGitRepository() {
-			assert.NoError(t, err, "Should succeed in git repo")
-			assert.NotNil(t, files, "Should return files slice")
-		} else {
-			assert.Error(t, err, "Should error outside git repo")
-		}
-	})
-
-	t.Run("ParseCommitOutput_EdgeCases", func(t *testing.T) {
-		// Test with malformed commit output
-		malformedOutput := `incomplete|line
-another|incomplete
-valid|hash|User Name|2024-01-01|Valid message`
-
-		commits, err := parseCommitOutput(malformedOutput)
-		assert.NoError(t, err, "Should not error on malformed lines")
-		assert.Len(t, commits, 1, "Should parse only valid lines")
-		assert.Equal(t, "valid", commits[0].Hash)
-	})
-}
-
-// Test commit validation and branch operations
-func TestBranchValidation(t *testing.T) {
-	// IMPORTANT: These tests must NOT execute real git operations
-	// They should only test validation logic without side effects
-
-	t.Run("CreateAndSwitchBranch_InvalidBranch", func(t *testing.T) {
-		client := NewClient(Options{})
-
-		// Skip if in a real git repo to avoid any operations
-		if client.IsGitRepository() {
-			t.Skip("Skipping test in real git repository for safety")
-		}
-
-		// This will fail because we're not in a git repo
-		err := client.CreateAndSwitchBranch("invalid..branch..name")
-		assert.Error(t, err, "Should error outside git repository")
-	})
-
-	// REMOVED dangerous Commit tests that could create real commits
-	// These tests should ONLY run in isolated test environments
-	// See TestWithTempGitRepo for proper isolated testing of Commit function
+func TestCommitAllowsNonTempDirInTestEnv(t *testing.T) {
+	cacheDir, err := os.UserCacheDir()
+	require.NoError(t, err)
+	repoDir, err := os.MkdirTemp(cacheDir, "gmc_safe_repo_")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(repoDir)) })
+	if strings.Contains(filepath.Clean(repoDir), "/tmp/") {
+		t.Skip("cache directory is a temporary directory")
+	}
+	t.Chdir(repoDir)
+	t.Setenv("GO_TEST_ENV", "1")
+	runGitCommand(t, "init")
+	runGitCommand(t, "config", "user.name", "Test")
+	runGitCommand(t, "config", "user.email", "test@test.com")
+	runGitCommand(t, "config", "commit.gpgsign", "false")
+	runGitCommand(t, "config", "core.hooksPath", t.TempDir())
+	require.NoError(t, os.WriteFile("test.txt", []byte("test"), 0o644))
+	client := NewClient(Options{Verbose: true})
+	require.NoError(t, client.AddAll())
+	require.NoError(t, client.Commit("test: safe commit outside temp patterns"))
 }

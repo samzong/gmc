@@ -10,8 +10,8 @@ import (
 )
 
 type CloneOptions struct {
-	Name     string // Custom project name
-	Upstream string // Upstream URL for fork workflow
+	Name     string
+	Upstream string
 }
 
 func (c *Client) Clone(repoURL string, opts CloneOptions) (Report, error) {

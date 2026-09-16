@@ -3,15 +3,9 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/mattn/go-isatty"
-	"github.com/samzong/gmc/internal/stringsutil"
-	"github.com/samzong/gmc/internal/worktree"
 	"github.com/spf13/cobra"
 )
 
@@ -36,9 +30,8 @@ var wtCmd = &cobra.Command{
 	Short:   "Manage worktrees for parallel AI agents",
 	Long: `Manage sibling worktrees on a bare (.bare) clone so each AI agent gets an isolated working tree.
 Run without a subcommand to list worktrees.`,
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		wtClient := newWorktreeClient()
-		return runWorktreeDefault(wtClient, cmd)
+	RunE: func(_ *cobra.Command, _ []string) error {
+		return runWorktreeList(newWorktreeClient(), true)
 	},
 }
 
@@ -74,8 +67,7 @@ With -b and no name, the worktree name is derived from the base branch.`,
 		if len(args) == 0 {
 			args = []string{wtBaseBranch}
 		}
-		wtClient := newWorktreeClient()
-		return runWorktreeAdd(wtClient, args)
+		return runWorktreeAdd(newWorktreeClient(), args)
 	},
 }
 
@@ -84,8 +76,7 @@ var wtListCmd = &cobra.Command{
 	Aliases: []string{"ls"},
 	Short:   "List all worktrees",
 	RunE: func(_ *cobra.Command, _ []string) error {
-		wtClient := newWorktreeClient()
-		return runWorktreeList(wtClient)
+		return runWorktreeList(newWorktreeClient(), false)
 	},
 }
 
@@ -106,8 +97,7 @@ var wtRemoveCmd = &cobra.Command{
 		return nil
 	},
 	RunE: func(_ *cobra.Command, args []string) error {
-		wtClient := newWorktreeClient()
-		return runWorktreeRemove(wtClient, args)
+		return runWorktreeRemove(newWorktreeClient(), args)
 	},
 }
 
@@ -119,8 +109,7 @@ var wtCloneCmd = &cobra.Command{
   gmc wt clone https://github.com/me/fork.git --upstream https://github.com/org/repo.git --name repo`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		wtClient := newWorktreeClient()
-		return runWorktreeClone(wtClient, args[0])
+		return runWorktreeClone(newWorktreeClient(), args[0])
 	},
 }
 
@@ -134,8 +123,7 @@ Defaults to 2 worktrees from the current branch. Promote the winner with 'gmc wt
   gmc wt dup 3 --task todo.md`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		wtClient := newWorktreeClient()
-		return runWorktreeDup(wtClient, args)
+		return runWorktreeDup(newWorktreeClient(), args)
 	},
 }
 
@@ -159,8 +147,7 @@ It never commits, pushes, opens PRs, or deletes the candidate.`,
 		return nil
 	},
 	RunE: func(_ *cobra.Command, args []string) error {
-		wtClient := newWorktreeClient()
-		return runWorktreePromote(wtClient, args[0])
+		return runWorktreePromote(newWorktreeClient(), args[0])
 	},
 }
 
@@ -176,46 +163,26 @@ The remote is detected automatically (upstream, then origin, then the single rem
 			return fmt.Errorf("invalid PR number: %s", args[0])
 		}
 
-		wtClient := newWorktreeClient()
-		return runWorktreeAddPR(wtClient, prNumber)
+		return runWorktreeAddPR(newWorktreeClient(), prNumber)
 	},
 }
 
 func init() {
-	// Add subcommands
-	wtCmd.AddCommand(wtAddCmd)
-	wtCmd.AddCommand(wtListCmd)
-	wtCmd.AddCommand(wtRemoveCmd)
-	wtCmd.AddCommand(wtCloneCmd)
-	wtCmd.AddCommand(wtDupCmd)
-	wtCmd.AddCommand(wtPromoteCmd)
-	wtCmd.AddCommand(wtPruneCmd)
-	wtCmd.AddCommand(wtPrReviewCmd)
-	wtCmd.AddCommand(wtInitCmd)
-	wtCmd.AddCommand(wtSwitchCmd)
-
-	// Flags for add command
+	wtCmd.AddCommand(wtAddCmd, wtListCmd, wtRemoveCmd, wtCloneCmd, wtDupCmd,
+		wtPromoteCmd, wtPruneCmd, wtPrReviewCmd, wtInitCmd, wtSwitchCmd)
 	wtAddCmd.Flags().StringVarP(&wtBaseBranch, "base", "b", "", "Base branch to create from")
 	wtAddCmd.Flags().IntVar(&wtAddPR, "pr", 0, "Create a worktree from a pull request")
-
-	// Flags for remove command
 	wtRemoveCmd.Flags().BoolVarP(&wtForce, "force", "f", false, "Force removal even if worktree is dirty")
 	wtRemoveCmd.Flags().BoolVarP(&wtDeleteBranch, "delete-branch", "D", false, "Also delete the branch")
 	wtRemoveCmd.Flags().BoolVar(&wtDryRun, "dry-run", false, "Preview what would be removed without making changes")
 	wtRemoveCmd.Flags().BoolVarP(&wtAll, "all", "a", false, "Remove all non-protected worktrees")
-
-	// Flags for clone command
 	wtCloneCmd.Flags().StringVar(&wtUpstream, "upstream", "", "Upstream repository URL (for fork workflow)")
 	wtCloneCmd.Flags().StringVar(&wtProjectName, "name", "", "Custom project directory name")
-
-	// Flags for dup command
 	wtDupCmd.Flags().StringVarP(&wtDupBase, "base", "b", "", "Base branch to create from")
 	wtDupCmd.Flags().StringArrayVar(&wtDupTasks, "task", nil, "Task context file to copy into each candidate (repeatable)")
 
 	wtPromoteCmd.Flags().BoolVar(&wtDryRun, "dry-run", false,
 		"Check whether the candidate can be promoted without changing files")
-
-	// Flags for prune command
 	wtPruneCmd.Flags().StringVarP(&wtPruneBase, "base", "b", "", "Base branch to check merge status against")
 	wtPruneCmd.Flags().BoolVarP(&wtPruneForce, "force", "f", false, "Force removal even if worktree is dirty")
 	wtPruneCmd.Flags().BoolVar(&wtPruneDryRun, "dry-run", false, "Preview what would be removed without making changes")
@@ -232,131 +199,14 @@ func init() {
 		"Base branch/ref for worktree diff stats")
 	wtListCmd.Flags().StringVar(&wtDiffBase, "diff-base", "",
 		"Base branch/ref for worktree diff stats")
-
-	// Shell completions for arguments
 	wtRemoveCmd.ValidArgsFunction = completeWorktreeNames
 	wtPromoteCmd.ValidArgsFunction = completeWorktreeNames
-
-	// Shell completions for flags
 	_ = wtAddCmd.RegisterFlagCompletionFunc("base", completeBranchNames)
 	_ = wtDupCmd.RegisterFlagCompletionFunc("base", completeBranchNames)
 	_ = wtPruneCmd.RegisterFlagCompletionFunc("base", completeBranchNames)
 	_ = wtCmd.RegisterFlagCompletionFunc("diff-base", completeBranchNames)
 	_ = wtListCmd.RegisterFlagCompletionFunc("diff-base", completeBranchNames)
-
-	// Add to root command
 	rootCmd.AddCommand(wtCmd)
-}
-
-type WorktreeJSON struct {
-	Name           string `json:"name"`
-	Path           string `json:"path"`
-	Branch         string `json:"branch"`
-	Commit         string `json:"commit"`
-	Status         string `json:"status"`
-	DiffBase       string `json:"diff_base,omitempty"`
-	ChangedFiles   *int   `json:"changed_files,omitempty"`
-	Insertions     *int   `json:"insertions,omitempty"`
-	Deletions      *int   `json:"deletions,omitempty"`
-	ReviewProvider string `json:"review_provider,omitempty"`
-	ReviewNumber   int    `json:"review_number,omitempty"`
-	ReviewState    string `json:"review_state,omitempty"`
-	ReviewURL      string `json:"review_url,omitempty"`
-}
-
-func runWorktreeDefault(wtClient *worktree.Client, _ *cobra.Command) error {
-	worktrees, err := wtClient.List()
-	if err != nil {
-		return err
-	}
-
-	filtered := filterBareWorktrees(worktrees)
-	reviews := loadWorktreeReviews(wtClient, filtered)
-	diffStats, err := loadWorktreeDiffStats(wtClient, filtered)
-	if err != nil {
-		return err
-	}
-
-	if outputFormat() == "json" {
-		if err := printWorktreeJSON(wtClient, filtered, reviews.Reviews, diffStats); err != nil {
-			return err
-		}
-		printReviewWarning(errWriter(), reviews)
-		return nil
-	}
-
-	fmt.Fprintln(outWriter(), "Current Worktrees:")
-	printWorktreeTable(wtClient, filtered, reviews.Reviews, diffStats)
-
-	cwd, err := os.Getwd()
-	if err == nil {
-		for _, wt := range filtered {
-			if strings.HasPrefix(cwd, wt.Path) {
-				fmt.Fprintln(outWriter())
-				fmt.Fprintf(outWriter(), "You are here: ./%s (branch: %s)\n", filepath.Base(wt.Path), wt.Branch)
-				break
-			}
-		}
-	}
-	printReviewWarning(outWriter(), reviews)
-
-	return nil
-}
-
-// filterBareWorktrees removes bare worktrees from the list (e.g., .bare directory)
-func filterBareWorktrees(worktrees []worktree.Info) []worktree.Info {
-	var filtered []worktree.Info
-	for _, wt := range worktrees {
-		// Skip bare worktrees and the .bare directory itself
-		if wt.IsBare || filepath.Base(wt.Path) == ".bare" {
-			continue
-		}
-		filtered = append(filtered, wt)
-	}
-	return filtered
-}
-
-func runWorktreeAdd(wtClient *worktree.Client, names []string) error {
-	if wtAddPR > 0 {
-		return runWorktreeAddPR(wtClient, wtAddPR)
-	}
-
-	baseBranch := wtBaseBranch
-	if wtAddSync {
-		if baseBranch == "" {
-			resolved, err := wtClient.ResolveSyncBaseBranch("")
-			if err != nil {
-				return err
-			}
-			baseBranch = resolved
-		}
-		syncOpts := worktree.SyncOptions{
-			BaseBranch: baseBranch,
-			DryRun:     false,
-		}
-		report, err := wtClient.Sync(syncOpts)
-		printWorktreeReport(report)
-		if err != nil {
-			return err
-		}
-	}
-	opts := worktree.AddOptions{
-		BaseBranch: baseBranch,
-		Fetch:      false,
-	}
-	var failed []string
-	for _, name := range names {
-		report, err := wtClient.Add(name, opts)
-		printWorktreeReport(report)
-		if err != nil {
-			fmt.Fprintf(errWriter(), "Error adding '%s': %v\n", name, err)
-			failed = append(failed, name)
-		}
-	}
-	if len(failed) > 0 {
-		return fmt.Errorf("failed to add worktrees: %s", strings.Join(failed, ", "))
-	}
-	return nil
 }
 
 func addPRMode(cmd *cobra.Command) bool {
@@ -365,482 +215,6 @@ func addPRMode(cmd *cobra.Command) bool {
 	}
 	return cmd != nil && cmd.Flags().Changed("pr")
 }
-
-func runWorktreeAddPR(wtClient *worktree.Client, prNumber int) error {
-	report, err := wtClient.AddPR(prNumber, "")
-	printWorktreeReport(report)
-	return err
-}
-
-func runWorktreeList(wtClient *worktree.Client) error {
-	worktrees, err := wtClient.List()
-	if err != nil {
-		return err
-	}
-
-	filtered := filterBareWorktrees(worktrees)
-	reviews := loadWorktreeReviews(wtClient, filtered)
-	diffStats, err := loadWorktreeDiffStats(wtClient, filtered)
-	if err != nil {
-		return err
-	}
-
-	if outputFormat() == "json" {
-		if err := printWorktreeJSON(wtClient, filtered, reviews.Reviews, diffStats); err != nil {
-			return err
-		}
-		printReviewWarning(errWriter(), reviews)
-		return nil
-	}
-
-	if len(filtered) == 0 {
-		fmt.Fprintln(outWriter(), "No worktrees found.")
-		return nil
-	}
-
-	printWorktreeTable(wtClient, filtered, reviews.Reviews, diffStats)
-	printReviewWarning(outWriter(), reviews)
-	return nil
-}
-
-func runWorktreeRemove(wtClient *worktree.Client, names []string) error {
-	if wtAll {
-		resolved, err := resolveAllRemovableWorktrees(wtClient)
-		if err != nil {
-			return err
-		}
-		if len(resolved) == 0 {
-			fmt.Fprintln(outWriter(), "No removable worktrees found.")
-			return nil
-		}
-		names = resolved
-	}
-
-	opts := worktree.RemoveOptions{
-		Force:        wtForce,
-		DeleteBranch: wtDeleteBranch,
-		DryRun:       wtDryRun,
-	}
-
-	result := wtClient.RemoveBatch(names, opts)
-	printWorktreeReport(result.Report)
-
-	var failed []string
-	for _, name := range names {
-		if err, ok := result.Failed[name]; ok {
-			fmt.Fprintf(errWriter(), "Error removing '%s': %v\n", name, err)
-			failed = append(failed, name)
-		}
-	}
-
-	if len(failed) > 0 {
-		return fmt.Errorf("failed to remove worktrees: %s", strings.Join(failed, ", "))
-	}
-	return nil
-}
-
-func resolveAllRemovableWorktrees(wtClient *worktree.Client) ([]string, error) {
-	all, err := wtClient.List()
-	if err != nil {
-		return nil, err
-	}
-
-	pp, err := wtClient.NewProtectionPolicy()
-	if err != nil {
-		return nil, err
-	}
-	root := getDisplayRoot(wtClient)
-	var names []string
-	for _, wt := range all {
-		if pp.IsProtected(wt) {
-			continue
-		}
-		if isExternalWorktree(root, wt.Path) || isAgentWorktree(wt.Path) {
-			continue
-		}
-		names = append(names, displayWorktreeName(root, wt.Path))
-	}
-	return names, nil
-}
-
-func runWorktreeClone(wtClient *worktree.Client, url string) error {
-	opts := worktree.CloneOptions{
-		Name:     wtProjectName,
-		Upstream: wtUpstream,
-	}
-	report, err := wtClient.Clone(url, opts)
-	printWorktreeReport(report)
-	return err
-}
-
-// getDisplayRoot returns the root to use for worktree name display and external detection.
-// Bare layout: root (parent of .bare) — all managed worktrees live inside it.
-// Non-bare layout: parent of the repo dir — sibling linked worktrees show with short names.
-func getDisplayRoot(wtClient *worktree.Client) string {
-	root, err := wtClient.GetWorktreeRoot()
-	if err != nil || root == "" {
-		return ""
-	}
-	bareDir := filepath.Join(root, ".bare")
-	if info, err := os.Stat(bareDir); err == nil && info.IsDir() {
-		return root // bare layout
-	}
-	return filepath.Dir(root) // non-bare: use parent so siblings are not flagged external
-}
-
-// isExternalWorktree reports whether wtPath is outside the display root.
-func isExternalWorktree(displayRoot, wtPath string) bool {
-	if displayRoot == "" {
-		return false
-	}
-	rel, err := filepath.Rel(displayRoot, wtPath)
-	if err != nil {
-		return true
-	}
-	return strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".."
-}
-
-// isAgentWorktree reports whether the path is inside a known AI-agent worktree directory
-// (e.g. .claude/worktrees/ or .codex/worktrees/).
-func isAgentWorktree(wtPath string) bool {
-	normalized := filepath.ToSlash(wtPath)
-	return strings.Contains(normalized, "/.claude/worktrees/") ||
-		strings.Contains(normalized, "/.codex/worktrees/")
-}
-
-func abbrevPath(path string) string {
-	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(path, home+string(filepath.Separator)) {
-		return "~" + path[len(home):]
-	}
-	return path
-}
-
-func displayWorktreeName(displayRoot string, wtPath string) string {
-	if displayRoot == "" {
-		return filepath.Base(wtPath)
-	}
-	rel, err := filepath.Rel(displayRoot, wtPath)
-	if err != nil || rel == "." || rel == "" {
-		return filepath.Base(wtPath)
-	}
-	if strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
-		// External: always show absolute path so the user knows where it is.
-		return abbrevPath(wtPath)
-	}
-	// Agent worktrees inside the root also show their absolute path for easy navigation.
-	if isAgentWorktree(wtPath) {
-		return abbrevPath(wtPath)
-	}
-	return rel
-}
-
-func resolveWorktreeStatus(wtClient *worktree.Client, root string, wt worktree.Info) string {
-	switch {
-	case wt.IsBare:
-		return "bare"
-	case isExternalWorktree(root, wt.Path), isAgentWorktree(wt.Path):
-		return "agent"
-	default:
-		return wtClient.GetWorktreeStatus(wt.Path)
-	}
-}
-
-type worktreeDiffStats struct {
-	Stats map[string]worktree.DiffStat
-}
-
-func loadWorktreeDiffStats(wtClient *worktree.Client, worktrees []worktree.Info) (worktreeDiffStats, error) {
-	lookup := worktreeDiffStats{Stats: make(map[string]worktree.DiffStat)}
-	if len(worktrees) == 0 {
-		return lookup, nil
-	}
-
-	override := strings.TrimSpace(wtDiffBase)
-
-	for _, wt := range worktrees {
-		base, baseErr := wtClient.ResolveDiffBaseForWorktree(wt.Path, wtDiffBase)
-		if baseErr != nil {
-			if override != "" {
-				return lookup, baseErr
-			}
-			continue
-		}
-
-		stat, statErr := wtClient.WorktreeDiffStat(wt.Path, base)
-		if statErr != nil {
-			if override != "" {
-				return lookup, statErr
-			}
-			continue
-		}
-		lookup.Stats[wt.Path] = stat
-	}
-	return lookup, nil
-}
-
-func formatWorktreeStatus(status string, stat worktree.DiffStat, ok bool) string {
-	if !ok || !stat.HasChanges() {
-		return status
-	}
-	diffStat := formatDiffStat(stat)
-	if status == "" || status == "clean" {
-		return diffStat
-	}
-	return status + ", " + diffStat
-}
-
-func formatDiffStat(stat worktree.DiffStat) string {
-	fileLabel := "files"
-	if stat.Files == 1 {
-		fileLabel = "file"
-	}
-	return fmt.Sprintf("%d %s (+%d -%d)", stat.Files, fileLabel, stat.Insertions, stat.Deletions)
-}
-
-func loadWorktreeReviews(wtClient *worktree.Client, worktrees []worktree.Info) worktree.ReviewLookup {
-	if !wtShowPR || len(worktrees) == 0 {
-		return worktree.ReviewLookup{}
-	}
-	return wtClient.ReviewStates(worktrees)
-}
-
-func printReviewWarning(w io.Writer, reviews worktree.ReviewLookup) {
-	if reviews.Warning == "" {
-		return
-	}
-	fmt.Fprintln(w, "Warning: "+reviews.Warning)
-}
-
-func formatWorktreeReview(reviews map[string]worktree.ReviewInfo, branch string) string {
-	if reviews == nil {
-		return ""
-	}
-	review, ok := reviews[branch]
-	if !ok {
-		return "-"
-	}
-	if review.State == "" {
-		return fmt.Sprintf("#%d", review.Number)
-	}
-	return fmt.Sprintf("#%d %s", review.Number, review.State)
-}
-
-func formatWorktreeReviewDisplay(reviews map[string]worktree.ReviewInfo, branch string, links bool) string {
-	text := formatWorktreeReview(reviews, branch)
-	if text == "" || text == "-" || !links {
-		return text
-	}
-	review, ok := reviews[branch]
-	if !ok || review.URL == "" || review.Number == 0 {
-		return text
-	}
-	number := fmt.Sprintf("#%d", review.Number)
-	linked := fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", review.URL, number)
-	return strings.Replace(text, number, linked, 1)
-}
-
-func terminalLinksEnabled(w io.Writer) bool {
-	file, ok := w.(*os.File)
-	if !ok || os.Getenv("TERM") == "dumb" {
-		return false
-	}
-	return isatty.IsTerminal(file.Fd()) || isatty.IsCygwinTerminal(file.Fd())
-}
-
-func padVisibleRight(text string, visibleLen int, width int) string {
-	if visibleLen >= width {
-		return text
-	}
-	return text + strings.Repeat(" ", width-visibleLen)
-}
-
-func printWorktreeTable(
-	wtClient *worktree.Client,
-	worktrees []worktree.Info,
-	reviews map[string]worktree.ReviewInfo,
-	diffStats worktreeDiffStats,
-) {
-	if len(worktrees) == 0 {
-		return
-	}
-
-	root := getDisplayRoot(wtClient)
-	writer := outWriter()
-	links := terminalLinksEnabled(writer)
-
-	maxName := len("Name")
-	maxBranch := len("Branch")
-	maxPR := len("PR")
-	for _, wt := range worktrees {
-		name := displayWorktreeName(root, wt.Path)
-		if len(name) > maxName {
-			maxName = len(name)
-		}
-		if len(wt.Branch) > maxBranch {
-			maxBranch = len(wt.Branch)
-		}
-		prText := formatWorktreeReview(reviews, wt.Branch)
-		if len(prText) > maxPR {
-			maxPR = len(prText)
-		}
-	}
-
-	maxName += 2
-	maxBranch += 2
-	maxPR += 2
-
-	if reviews != nil {
-		fmt.Fprintf(
-			writer,
-			"%-*s %-*s %-8s %-*s %s\n",
-			maxName, "NAME",
-			maxBranch, "BRANCH",
-			"COMMIT",
-			maxPR, "PR",
-			"STATUS",
-		)
-	} else {
-		fmt.Fprintf(writer, "%-*s %-*s %-8s %s\n", maxName, "NAME", maxBranch, "BRANCH", "COMMIT", "STATUS")
-	}
-
-	for _, wt := range worktrees {
-		name := displayWorktreeName(root, wt.Path)
-		shortCommit := stringsutil.ShortHash(wt.Commit, 7, "")
-		stat, hasStat := diffStats.Stats[wt.Path]
-		status := formatWorktreeStatus(resolveWorktreeStatus(wtClient, root, wt), stat, hasStat)
-		if reviews != nil {
-			prText := formatWorktreeReview(reviews, wt.Branch)
-			prDisplay := formatWorktreeReviewDisplay(reviews, wt.Branch, links)
-			fmt.Fprintf(
-				writer,
-				"%-*s %-*s %-8s %s %s\n",
-				maxName, name,
-				maxBranch, wt.Branch,
-				shortCommit,
-				padVisibleRight(prDisplay, len(prText), maxPR),
-				status,
-			)
-		} else {
-			fmt.Fprintf(writer, "%-*s %-*s %-8s %s\n", maxName, name, maxBranch, wt.Branch, shortCommit, status)
-		}
-	}
-}
-
-func buildWorktreeJSON(
-	wtClient *worktree.Client,
-	worktrees []worktree.Info,
-	reviews map[string]worktree.ReviewInfo,
-	diffStats worktreeDiffStats,
-) []WorktreeJSON {
-	root := getDisplayRoot(wtClient)
-	result := make([]WorktreeJSON, 0, len(worktrees))
-	for _, wt := range worktrees {
-		stat, hasStat := diffStats.Stats[wt.Path]
-		item := WorktreeJSON{
-			Name:   displayWorktreeName(root, wt.Path),
-			Path:   wt.Path,
-			Branch: wt.Branch,
-			Commit: wt.Commit,
-			Status: resolveWorktreeStatus(wtClient, root, wt),
-		}
-		if hasStat && stat.HasChanges() {
-			changedFiles := stat.Files
-			insertions := stat.Insertions
-			deletions := stat.Deletions
-			item.DiffBase = stat.Base
-			item.ChangedFiles = &changedFiles
-			item.Insertions = &insertions
-			item.Deletions = &deletions
-		}
-		if reviews != nil {
-			if review, ok := reviews[wt.Branch]; ok {
-				item.ReviewProvider = review.Provider
-				item.ReviewNumber = review.Number
-				item.ReviewState = review.State
-				item.ReviewURL = review.URL
-			} else {
-				item.ReviewState = "none"
-			}
-		}
-		result = append(result, item)
-	}
-	return result
-}
-
-func printWorktreeJSON(
-	wtClient *worktree.Client,
-	worktrees []worktree.Info,
-	reviews map[string]worktree.ReviewInfo,
-	diffStats worktreeDiffStats,
-) error {
-	return printJSON(outWriter(), buildWorktreeJSON(wtClient, worktrees, reviews, diffStats))
-}
-
-func runWorktreeDup(wtClient *worktree.Client, args []string) error {
-	opts := worktree.DupOptions{
-		BaseBranch: wtDupBase,
-		Count:      2,
-		TaskFiles:  wtDupTasks,
-	}
-
-	if len(args) > 0 {
-		count, err := strconv.Atoi(args[0])
-		if err != nil {
-			return fmt.Errorf("invalid count: %s", args[0])
-		}
-		opts.Count = count
-	}
-
-	result, err := wtClient.Dup(opts)
-	if err != nil {
-		return err
-	}
-	for _, warning := range result.Warnings {
-		fmt.Fprintln(errWriter(), warning)
-	}
-
-	fmt.Fprintf(outWriter(), "Created %d worktrees based on '%s':\n", len(result.Worktrees), result.BaseBranch)
-	for i, wt := range result.Worktrees {
-		relPath := wt
-		if i < len(result.RelativePaths) && result.RelativePaths[i] != "" {
-			relPath = result.RelativePaths[i]
-		}
-		absPath := ""
-		if i < len(result.WorktreePaths) {
-			absPath = result.WorktreePaths[i]
-		}
-		if absPath == "" {
-			fmt.Fprintf(outWriter(), "  %s -> %s\n", relPath, result.Branches[i])
-		} else {
-			fmt.Fprintf(outWriter(), "  %s (%s) -> %s\n", relPath, absPath, result.Branches[i])
-		}
-	}
-	if len(result.TaskFiles) > 0 {
-		fmt.Fprintln(outWriter(), "Copied task files:")
-		for _, task := range result.TaskFiles {
-			fmt.Fprintf(outWriter(), "  %s\n", task)
-		}
-	}
-	fmt.Fprintln(outWriter())
-	fmt.Fprintln(outWriter(), "Next steps:")
-	fmt.Fprintln(outWriter(), "  1. Work in each directory with different AI tools")
-	fmt.Fprintln(outWriter(), "  2. Evaluate and pick the best solution")
-	fmt.Fprintf(outWriter(), "  3. Dry-run promote: gmc wt promote <candidate> --dry-run\n")
-	fmt.Fprintf(outWriter(), "  4. Promote winner: gmc wt promote <candidate>\n")
-	fmt.Fprintln(outWriter(), "  5. Clean up: gmc wt rm <other-worktrees> -D")
-
-	return nil
-}
-
-func runWorktreePromote(wtClient *worktree.Client, candidate string) error {
-	report, err := wtClient.Promote(candidate, worktree.PromoteOptions{
-		DryRun: wtDryRun,
-	})
-	printWorktreeReport(report)
-	return err
-}
-
-// Completion functions
 
 func completeWorktreeNames(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 	wtClient := newWorktreeClient()
@@ -854,7 +228,6 @@ func completeWorktreeNames(_ *cobra.Command, _ []string, _ string) ([]string, co
 
 	names := make([]string, 0, len(filtered))
 	for _, wt := range filtered {
-		// Skip agent/external worktrees — rm/promote cannot operate on them
 		if isExternalWorktree(root, wt.Path) || isAgentWorktree(wt.Path) {
 			continue
 		}

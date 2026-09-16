@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -18,15 +17,14 @@ import (
 
 func TestGuardRequiresSessionToken(t *testing.T) {
 	srv, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	baseURL := serveTest(t, srv)
 
-	resp, err := http.Get(ts.URL + "/api/v1/project")
+	resp, err := http.Get(baseURL + "/api/v1/project")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, "an anonymous read must not be served")
 
-	req, err := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/project", nil)
+	req, err := http.NewRequest(http.MethodGet, baseURL+"/api/v1/project", nil)
 	require.NoError(t, err)
 	req.Header.Set(tokenHeader, "not-the-token")
 	resp, err = http.DefaultClient.Do(req)
@@ -37,10 +35,9 @@ func TestGuardRequiresSessionToken(t *testing.T) {
 
 func TestGuardRejectsCrossOriginRequests(t *testing.T) {
 	srv, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	baseURL := serveTest(t, srv)
 
-	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/tasks", strings.NewReader(`{"source":"csrf"}`))
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/api/v1/tasks", strings.NewReader(`{"source":"csrf"}`))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "text/plain")
 	req.Header.Set("Origin", "https://evil.example")
@@ -54,12 +51,11 @@ func TestGuardRejectsCrossOriginRequests(t *testing.T) {
 
 func TestGuardAllowsSameOriginRequests(t *testing.T) {
 	srv, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	baseURL := serveTest(t, srv)
 
-	req, err := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/project", nil)
+	req, err := http.NewRequest(http.MethodGet, baseURL+"/api/v1/project", nil)
 	require.NoError(t, err)
-	req.Header.Set("Origin", ts.URL)
+	req.Header.Set("Origin", baseURL)
 	req.Header.Set(tokenHeader, srv.token)
 
 	resp, err := http.DefaultClient.Do(req)
@@ -70,10 +66,9 @@ func TestGuardAllowsSameOriginRequests(t *testing.T) {
 
 func TestGuardRejectsForeignHost(t *testing.T) {
 	srv, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	baseURL := serveTest(t, srv)
 
-	req, err := http.NewRequest(http.MethodGet, ts.URL+"/", nil)
+	req, err := http.NewRequest(http.MethodGet, baseURL+"/", nil)
 	require.NoError(t, err)
 	req.Host = "evil.example"
 
@@ -106,10 +101,9 @@ func TestOriginAllowed(t *testing.T) {
 
 func TestGuardRejectsNonJSONContentType(t *testing.T) {
 	srv, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	baseURL := serveTest(t, srv)
 
-	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/tasks", strings.NewReader(`{"source":"x"}`))
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/api/v1/tasks", strings.NewReader(`{"source":"x"}`))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "text/plain")
 	req.Header.Set(tokenHeader, srv.token)
@@ -126,11 +120,10 @@ func TestGuardRejectsNonJSONContentType(t *testing.T) {
 
 func TestGuardRefusesFraming(t *testing.T) {
 	srv, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	baseURL := serveTest(t, srv)
 
 	for _, path := range []string{"/", "/api/v1/project"} {
-		resp := apiGet(t, srv, ts.URL+path)
+		resp := apiGet(t, srv, baseURL+path)
 		t.Cleanup(func() { _ = resp.Body.Close() })
 
 		assert.Equal(t, "DENY", resp.Header.Get("X-Frame-Options"), path)
@@ -141,10 +134,9 @@ func TestGuardRefusesFraming(t *testing.T) {
 
 func TestIndexInjectsSessionToken(t *testing.T) {
 	srv, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	baseURL := serveTest(t, srv)
 
-	resp, err := http.Get(ts.URL + "/")
+	resp, err := http.Get(baseURL + "/")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -158,11 +150,10 @@ func TestIndexInjectsSessionToken(t *testing.T) {
 
 func TestStaticAssetsNeedNoToken(t *testing.T) {
 	srv, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	baseURL := serveTest(t, srv)
 
 	for _, path := range []string{"/app.js", "/app.css"} {
-		resp, err := http.Get(ts.URL + path)
+		resp, err := http.Get(baseURL + path)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = resp.Body.Close() })
 		assert.Equal(t, http.StatusOK, resp.StatusCode, path)
@@ -171,8 +162,7 @@ func TestStaticAssetsNeedNoToken(t *testing.T) {
 
 func TestTraversalTaskIDIsRejected(t *testing.T) {
 	srv, root := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	baseURL := serveTest(t, srv)
 
 	victim := filepath.Join(root, "victim")
 	require.NoError(t, os.MkdirAll(victim, 0o755))
@@ -181,14 +171,14 @@ func TestTraversalTaskIDIsRejected(t *testing.T) {
 
 	escaped := url.PathEscape("../../victim")
 
-	resp := apiGet(t, srv, ts.URL+"/api/v1/tasks/"+escaped)
+	resp := apiGet(t, srv, baseURL+"/api/v1/tasks/"+escaped)
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	assert.NotContains(t, string(body), "OUTSIDE_STORE_ROOT")
 
-	resp = apiRequest(t, srv, http.MethodDelete, ts.URL+"/api/v1/tasks/"+escaped, "")
+	resp = apiRequest(t, srv, http.MethodDelete, baseURL+"/api/v1/tasks/"+escaped, "")
 	require.NoError(t, resp.Body.Close())
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 
@@ -198,15 +188,14 @@ func TestTraversalTaskIDIsRejected(t *testing.T) {
 
 func TestStartRejectsClientSuppliedCommand(t *testing.T) {
 	srv, root := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
+	baseURL := serveTest(t, srv)
 
-	resp := apiPost(t, srv, ts.URL+"/api/v1/tasks", `{"source":"start test"}`)
+	resp := apiPost(t, srv, baseURL+"/api/v1/tasks", `{"source":"start test"}`)
 	var created task.Record
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
 	require.NoError(t, resp.Body.Close())
 
-	resp = apiPost(t, srv, ts.URL+"/api/v1/tasks/"+created.ID+"/start",
+	resp = apiPost(t, srv, baseURL+"/api/v1/tasks/"+created.ID+"/start",
 		`{"command":"touch /tmp/gmc-pwned"}`)
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)

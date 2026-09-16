@@ -3,7 +3,6 @@ package cmd
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,26 +19,14 @@ func TestRunWorktreeDefault_ShowsWorktreesInNonBareRepo(t *testing.T) {
 	linkedWt := filepath.Join(t.TempDir(), "feature-wt")
 	runGitCmd(t, repoDir, "worktree", "add", "-b", "feature/demo", linkedWt, "main")
 
-	oldCwd, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() { _ = os.Chdir(oldCwd) }()
-	require.NoError(t, os.Chdir(linkedWt))
+	t.Chdir(linkedWt)
 
 	var out bytes.Buffer
-	oldOut := outWriterFunc
-	oldErr := errWriterFunc
-	outWriterFunc = func() io.Writer { return &out }
-	errWriterFunc = func() io.Writer { return &out }
-	defer func() {
-		outWriterFunc = oldOut
-		errWriterFunc = oldErr
-	}()
+	withWriters(t, &out, &out)
 
 	client := worktree.NewClient(worktree.Options{})
-	cmd := &cobra.Command{Use: "wt"}
-	cmd.AddCommand(&cobra.Command{Use: "list", Short: "List all worktrees"})
 
-	err = runWorktreeDefault(client, cmd)
+	err := runWorktreeList(client, true)
 	require.NoError(t, err)
 
 	output := out.String()
@@ -53,22 +40,12 @@ func TestWtHookRemoveCmd_UnknownIDPreservesHooks(t *testing.T) {
 	cfgPath := filepath.Join(repoDir, ".git", "gmc-share.yml")
 	require.NoError(t, os.WriteFile(cfgPath, []byte("hooks:\n  - cmd: echo ok\n"), 0o644))
 
-	oldCwd, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() { _ = os.Chdir(oldCwd) }()
-	require.NoError(t, os.Chdir(repoDir))
+	t.Chdir(repoDir)
 
 	var out bytes.Buffer
-	oldOut := outWriterFunc
-	oldErr := errWriterFunc
-	outWriterFunc = func() io.Writer { return &out }
-	errWriterFunc = func() io.Writer { return &out }
-	defer func() {
-		outWriterFunc = oldOut
-		errWriterFunc = oldErr
-	}()
+	withWriters(t, &out, &out)
 
-	err = wtHookRemoveCmd.RunE(wtHookRemoveCmd, []string{"1abc"})
+	err := wtHookRemoveCmd.RunE(wtHookRemoveCmd, []string{"1abc"})
 	require.Error(t, err)
 
 	client := worktree.NewClient(worktree.Options{})
@@ -79,7 +56,8 @@ func TestWtHookRemoveCmd_UnknownIDPreservesHooks(t *testing.T) {
 
 func initCmdTestRepo(t *testing.T) string {
 	t.Helper()
-	repoDir := t.TempDir()
+	repoDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	runGitCmd(t, repoDir, "init", "-b", "main")
 	runGitCmd(t, repoDir, "config", "user.name", "Test User")
 	runGitCmd(t, repoDir, "config", "user.email", "test@example.com")
@@ -94,9 +72,7 @@ func runGitCmd(t *testing.T, dir string, args ...string) string {
 	cmd := execCommand("git", args...)
 	cmd.Dir = dir
 	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v failed: %v\n%s", args, err, string(output))
-	}
+	require.NoError(t, err, "git %v: %s", args, output)
 	return string(output)
 }
 
@@ -110,39 +86,18 @@ func TestRemoveAll_SkipsProtected(t *testing.T) {
 	runGitCmd(t, repoDir, "worktree", "add", "-b", "feat-1", feat1, "main")
 	runGitCmd(t, repoDir, "worktree", "add", "-b", "feat-2", feat2, "main")
 
-	oldCwd, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() { _ = os.Chdir(oldCwd) }()
-	require.NoError(t, os.Chdir(repoDir))
+	t.Chdir(repoDir)
 
 	var out bytes.Buffer
-	oldOut := outWriterFunc
-	oldErr := errWriterFunc
-	outWriterFunc = func() io.Writer { return &out }
-	errWriterFunc = func() io.Writer { return &out }
-	defer func() {
-		outWriterFunc = oldOut
-		errWriterFunc = oldErr
-	}()
+	withWriters(t, &out, &out)
 
-	oldAll := wtAll
-	oldForce := wtForce
-	oldDelete := wtDeleteBranch
-	oldDry := wtDryRun
-	defer func() {
-		wtAll = oldAll
-		wtForce = oldForce
-		wtDeleteBranch = oldDelete
-		wtDryRun = oldDry
-	}()
-
-	wtAll = true
-	wtForce = false
-	wtDeleteBranch = true
-	wtDryRun = false
+	setTestValue(t, &wtAll, true)
+	setTestValue(t, &wtForce, false)
+	setTestValue(t, &wtDeleteBranch, true)
+	setTestValue(t, &wtDryRun, false)
 
 	client := worktree.NewClient(worktree.Options{})
-	err = runWorktreeRemove(client, nil)
+	err := runWorktreeRemove(client, nil)
 	require.NoError(t, err)
 
 	_, err = os.Stat(feat1)
@@ -168,9 +123,7 @@ func TestRemoveAll_SkipsProtected(t *testing.T) {
 }
 
 func TestRemoveAllMutuallyExclusiveWithArgs(t *testing.T) {
-	oldAll := wtAll
-	defer func() { wtAll = oldAll }()
-	wtAll = true
+	setTestValue(t, &wtAll, true)
 
 	err := wtRemoveCmd.Args(wtRemoveCmd, []string{"some-worktree"})
 	require.Error(t, err)
@@ -178,9 +131,7 @@ func TestRemoveAllMutuallyExclusiveWithArgs(t *testing.T) {
 }
 
 func TestRemoveRequiresArgsOrAll(t *testing.T) {
-	oldAll := wtAll
-	defer func() { wtAll = oldAll }()
-	wtAll = false
+	setTestValue(t, &wtAll, false)
 
 	err := wtRemoveCmd.Args(wtRemoveCmd, nil)
 	require.Error(t, err)
@@ -232,10 +183,7 @@ func TestRunWorktreeAddPRCreatesPRWorktree(t *testing.T) {
 	repoDir := initCmdTestRepo(t)
 	runGitCmd(t, repoDir, "remote", "add", "origin", initCmdPRRemote(t, 42))
 
-	oldCwd, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() { _ = os.Chdir(oldCwd) }()
-	require.NoError(t, os.Chdir(repoDir))
+	t.Chdir(repoDir)
 
 	wtAddPR = 42
 	client := worktree.NewClient(worktree.Options{})
@@ -248,17 +196,9 @@ func TestRunWorktreeAddPRCreatesPRWorktree(t *testing.T) {
 
 func resetWtAddState(t *testing.T) {
 	t.Helper()
-	oldBase := wtBaseBranch
-	oldSync := wtAddSync
-	oldPR := wtAddPR
-	wtBaseBranch = ""
-	wtAddSync = false
-	wtAddPR = 0
-	t.Cleanup(func() {
-		wtBaseBranch = oldBase
-		wtAddSync = oldSync
-		wtAddPR = oldPR
-	})
+	setTestValue(t, &wtBaseBranch, "")
+	setTestValue(t, &wtAddSync, false)
+	setTestValue(t, &wtAddPR, 0)
 }
 
 func initCmdPRRemote(t *testing.T, prNumber int) string {

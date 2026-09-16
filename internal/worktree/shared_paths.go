@@ -1,6 +1,7 @@
 package worktree
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -10,6 +11,115 @@ import (
 
 	"github.com/samzong/gmc/internal/gitcmd"
 )
+
+func (c *Client) NormalizeSharedResourcePath(path string) (string, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return "", errors.New("shared resource path cannot be empty")
+	}
+
+	if filepath.IsAbs(trimmed) {
+		currentRoot := c.currentTopLevel()
+		if currentRoot == "" {
+			return "", fmt.Errorf("absolute shared resource path must be inside the current worktree: %s", path)
+		}
+		rel, err := filepath.Rel(currentRoot, trimmed)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return "", fmt.Errorf("absolute shared resource path must stay within the current worktree: %s", path)
+		}
+		trimmed = rel
+	}
+
+	trimmed = filepath.Clean(trimmed)
+	if trimmed == "." {
+		return "", errors.New("shared resource path cannot be '.'")
+	}
+	if filepath.IsAbs(trimmed) || strings.HasPrefix(trimmed, ".."+string(filepath.Separator)) || trimmed == ".." {
+		return "", fmt.Errorf("shared resource path must stay within the worktree: %s", path)
+	}
+	return trimmed, nil
+}
+
+func (c *Client) resolveSharedPaths(
+	repoRoot, targetRoot string, res SharedResource,
+) (srcPath string, targetPath string, skip bool, err error) {
+	targetPath, err = sanitizeTargetRelativePath(res.Path)
+	if err != nil {
+		return "", "", false, err
+	}
+
+	roots, rootsErr := c.sharedSourceRoots()
+	if rootsErr != nil {
+		return "", "", false, rootsErr
+	}
+	if res.worktreeRelative {
+		roots = c.primarySharedRoots(roots)
+		if len(roots) == 0 {
+			return "", targetPath, true, nil
+		}
+		repoRoot = roots[0]
+	}
+	for _, root := range roots {
+		if _, statErr := os.Lstat(filepath.Join(root, ".git")); statErr != nil {
+			continue
+		}
+		candidate := filepath.Join(root, targetPath)
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			return candidate, targetPath, false, nil
+		}
+	}
+
+	parts := strings.SplitN(res.Path, string(filepath.Separator), 2)
+	if len(parts) == 2 && !res.worktreeRelative {
+		worktrees, listErr := c.ListCached()
+		if listErr == nil {
+			var baseMatches []string
+			for _, wt := range worktrees {
+				if filepath.Base(wt.Path) == parts[0] {
+					baseMatches = append(baseMatches, wt.Path)
+				}
+			}
+			if match, matchErr := uniqueWorktreeMatch(parts[0], baseMatches, "legacy basename"); matchErr != nil {
+				return "", "", false, matchErr
+			} else if match != "" {
+				if match == targetRoot {
+					return "", "", true, nil
+				}
+				srcPath = filepath.Join(match, parts[1])
+				targetPath, err = sanitizeTargetRelativePath(parts[1])
+				if err != nil {
+					return "", "", false, err
+				}
+				return srcPath, targetPath, false, nil
+			}
+		}
+	}
+
+	srcPath = filepath.Join(repoRoot, targetPath)
+	if _, statErr := os.Stat(srcPath); statErr == nil {
+		return srcPath, targetPath, false, nil
+	}
+
+	for _, root := range roots {
+		candidate := filepath.Join(root, targetPath)
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			return candidate, targetPath, false, nil
+		}
+	}
+
+	return srcPath, targetPath, false, nil
+}
+
+func sanitizeTargetRelativePath(path string) (string, error) {
+	cleaned := filepath.Clean(strings.TrimSpace(path))
+	if cleaned == "" || cleaned == "." {
+		return "", errors.New("shared resource path cannot be empty")
+	}
+	if filepath.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("shared resource path must stay within the worktree: %s", path)
+	}
+	return cleaned, nil
+}
 
 func validateSharedPattern(pattern string) error {
 	if _, err := sanitizeTargetRelativePath(pattern); err != nil {

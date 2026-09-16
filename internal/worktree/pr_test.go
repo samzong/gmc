@@ -3,41 +3,29 @@ package worktree
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestAddPRUsesAddWorktreeNaming(t *testing.T) {
-	repoDir := initBareLayoutRepo(t)
-	runGit(t, filepath.Join(repoDir, ".bare"), "remote", "add", "origin", initPRRemote(t, 42))
-	chdir(t, filepath.Join(repoDir, "main"))
-
-	client := NewClient(Options{})
-	if _, err := client.AddPR(42, ""); err != nil {
-		t.Fatalf("AddPR() error = %v", err)
-	}
-
-	prDir := filepath.Join(repoDir, "pr--42")
-	status := runGit(t, prDir, "status", "--short", "--branch")
-	if !strings.Contains(status, "## pr/42") {
-		t.Fatalf("new worktree status = %q, want pr/42 branch", status)
-	}
-}
-
-func TestAddPRUsesAddWorktreeNamingInNormalRepo(t *testing.T) {
-	repoDir := initTestRepo(t)
-	runGit(t, repoDir, "remote", "add", "origin", initPRRemote(t, 42))
-	chdir(t, repoDir)
-
-	client := NewClient(Options{})
-	if _, err := client.AddPR(42, ""); err != nil {
-		t.Fatalf("AddPR() error = %v", err)
-	}
-
-	prDir := filepath.Join(filepath.Dir(repoDir), filepath.Base(repoDir)+"--pr--42")
-	status := runGit(t, prDir, "status", "--short", "--branch")
-	if !strings.Contains(status, "## pr/42") {
-		t.Fatalf("new worktree status = %q, want pr/42 branch", status)
+	for _, bare := range []bool{false, true} {
+		t.Run(fmt.Sprintf("bare=%t", bare), func(t *testing.T) {
+			var repo, current, target string
+			if bare {
+				root := initBareLayoutRepo(t)
+				repo, current = filepath.Join(root, ".bare"), filepath.Join(root, "main")
+				target = filepath.Join(root, "pr--42")
+			} else {
+				repo = initTestRepo(t)
+				current, target = repo, repo+"--pr--42"
+			}
+			runGit(t, repo, "remote", "add", "origin", initPRRemote(t, 42))
+			t.Chdir(current)
+			_, err := NewClient(Options{}).AddPR(42, "")
+			require.NoError(t, err)
+			require.Contains(t, runGit(t, target, "status", "--short", "--branch"), "## pr/42")
+		})
 	}
 }
 
@@ -46,8 +34,7 @@ func initPRRemote(t *testing.T, prNumber int) string {
 	remoteDir := initTestRepo(t)
 	runGit(t, remoteDir, "checkout", "-b", "feature/review")
 	writeFile(t, filepath.Join(remoteDir, "review.txt"), "review")
-	runGit(t, remoteDir, "add", ".")
-	runGit(t, remoteDir, "commit", "-m", "review")
+	commitFiles(t, remoteDir, "review", ".")
 	runGit(t, remoteDir, "update-ref", fmt.Sprintf("refs/pull/%d/head", prNumber), "HEAD")
 	return remoteDir
 }

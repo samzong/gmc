@@ -2,469 +2,152 @@ package llm
 
 import (
 	"context"
-	"strings"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
-	"github.com/samzong/gmc/internal/config"
 	"github.com/sashabaranov/go-openai"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// MockOpenAIClient is a mock implementation of the OpenAI client
-type MockOpenAIClient struct {
-	createChatCompletionFunc func(
-		ctx context.Context,
-		request openai.ChatCompletionRequest,
-	) (
-		openai.ChatCompletionResponse,
-		error,
-	)
-}
-
-func (m *MockOpenAIClient) CreateChatCompletion(
-	ctx context.Context,
-	request openai.ChatCompletionRequest,
-) (
-	openai.ChatCompletionResponse,
-	error,
-) {
-	if m.createChatCompletionFunc != nil {
-		return m.createChatCompletionFunc(ctx, request)
-	}
-
-	// Default successful response
-	return openai.ChatCompletionResponse{
-		Choices: []openai.ChatCompletionChoice{
-			{
-				Message: openai.ChatCompletionMessage{
-					Content: "feat: add new feature\n\nImplement new functionality for user authentication",
-				},
-			},
-		},
-	}, nil
-}
-
-func TestGenerateCommitMessage_Success(t *testing.T) {
-	// Setup viper config for testing
+func serveLLM(t *testing.T, handler http.HandlerFunc) *Client {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
 	viper.Reset()
+	t.Cleanup(viper.Reset)
 	viper.Set("api_key", "test-api-key")
-	viper.Set("model", "gpt-3.5-turbo")
-	viper.Set("api_base", "")
-
-	tests := []struct {
-		name      string
-		prompt    string
-		model     string
-		expected  string
-		configMod func()
-	}{
-		{
-			name:     "Successful generation with default model",
-			prompt:   "Add user authentication feature",
-			model:    "",
-			expected: "feat: add new feature\n\nImplement new functionality for user authentication",
-		},
-		{
-			name:     "Successful generation with specific model",
-			prompt:   "Fix bug in parser",
-			model:    "gpt-4",
-			expected: "feat: add new feature\n\nImplement new functionality for user authentication",
-		},
-		{
-			name:     "Successful generation with custom API base",
-			prompt:   "Add new feature",
-			model:    "gpt-3.5-turbo",
-			expected: "feat: add new feature\n\nImplement new functionality for user authentication",
-			configMod: func() {
-				viper.Set("api_base", "https://api.custom.com/v1")
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Reset and apply config modifications
-			viper.Reset()
-			viper.Set("api_key", "test-api-key")
-			viper.Set("model", "gpt-3.5-turbo")
-			viper.Set("api_base", "")
-
-			if tt.configMod != nil {
-				tt.configMod()
-			}
-
-			// This test requires actual OpenAI API setup which we can't mock easily
-			// since the client is created inside the function
-			// For now, we'll test the basic validation logic
-			cfg, err := config.GetConfig()
-			assert.NoError(t, err)
-			assert.NotEmpty(t, cfg.APIKey, "API key should be set")
-
-			// Skip actual API call for unit tests
-			t.Skip("Skipping actual OpenAI API call for unit test")
-		})
-	}
+	viper.Set("api_base", server.URL+"/v1")
+	viper.Set("model", "configured-model")
+	return NewClient(Options{Timeout: time.Second})
 }
 
-func TestGenerateCommitMessage_MissingAPIKey(t *testing.T) {
-	// Reset viper and set empty API key
-	viper.Reset()
-	viper.Set("api_key", "")
-	viper.Set("model", "gpt-3.5-turbo")
-
-	message, err := GenerateCommitMessage("test prompt", "gpt-3.5-turbo")
-
-	assert.Error(t, err)
-	assert.Empty(t, message)
-	assert.Contains(t, err.Error(), "API key not set")
-	assert.Contains(t, err.Error(), "gmc config set apikey")
-}
-
-func TestGenerateCommitMessage_EmptyPrompt(t *testing.T) {
-	// Setup valid config
-	viper.Reset()
-	viper.Set("api_key", "test-api-key")
-	viper.Set("model", "gpt-3.5-turbo")
-
-	// Test with empty prompt - this will make an API call and likely fail due to invalid key
-	// But it will exercise the code paths
-	_, err := GenerateCommitMessage("", "gpt-3.5-turbo")
-
-	// We expect an error since we're using a fake API key
-	// The important thing is that we exercised the code paths
-	if err != nil {
-		// Expected - fake API key will cause authentication error
-		assert.Contains(t, err.Error(), "failed to call LLM")
-	}
-}
-
-func TestGenerateCommitMessage_ModelFallback(t *testing.T) {
-	// Setup config
-	viper.Reset()
-	viper.Set("api_key", "test-api-key")
-	viper.Set("model", "gpt-4")
-
-	// Test that empty model parameter falls back to config model
-	cfg, err := config.GetConfig()
-	assert.NoError(t, err)
-	assert.Equal(t, "gpt-4", cfg.Model)
-
-	// Test with empty model - should fall back to config model
-	_, err = GenerateCommitMessage("test prompt", "")
-
-	// We expect an error due to fake API key, but the model fallback logic was exercised
-	if err != nil {
-		assert.Contains(t, err.Error(), "failed to call LLM")
-	}
-}
-
-// Test configuration validation logic
-func TestGenerateCommitMessage_ConfigValidation(t *testing.T) {
-	tests := []struct {
-		name      string
-		apiKey    string
-		apiBase   string
-		model     string
-		wantError bool
-		errorMsg  string
-	}{
-		{
-			name:      "Missing API key",
-			apiKey:    "",
-			apiBase:   "",
-			model:     "gpt-3.5-turbo",
-			wantError: true,
-			errorMsg:  "API key not set",
-		},
-		{
-			name:      "Valid config with default base",
-			apiKey:    "test-key",
-			apiBase:   "",
-			model:     "gpt-3.5-turbo",
-			wantError: false,
-		},
-		{
-			name:      "Valid config with custom base",
-			apiKey:    "test-key",
-			apiBase:   "https://api.custom.com/v1",
-			model:     "gpt-4",
-			wantError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Reset and setup config
-			viper.Reset()
-			viper.Set("api_key", tt.apiKey)
-			viper.Set("api_base", tt.apiBase)
-			viper.Set("model", tt.model)
-
-			// Test the validation part only
-			cfg, err := config.GetConfig()
-			assert.NoError(t, err)
-
-			if tt.wantError {
-				assert.Empty(t, cfg.APIKey, "API key should be empty for error case")
-			} else {
-				assert.NotEmpty(t, cfg.APIKey, "API key should be set for valid case")
-				if tt.apiBase != "" {
-					assert.Equal(t, tt.apiBase, cfg.APIBase)
+func TestGenerateCommitMessage(t *testing.T) {
+	for _, model := range []string{"", "explicit-model"} {
+		t.Run(model, func(t *testing.T) {
+			client := serveLLM(t, func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "/v1/chat/completions", r.URL.Path)
+				assert.Equal(t, "Bearer test-api-key", r.Header.Get("Authorization"))
+				var request openai.ChatCompletionRequest
+				if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&request)) {
+					return
 				}
-			}
+				expectedModel := model
+				if expectedModel == "" {
+					expectedModel = "configured-model"
+				}
+				assert.Equal(t, expectedModel, request.Model)
+				if assert.Len(t, request.Messages, 2) {
+					assert.Equal(t, openai.ChatMessageRoleSystem, request.Messages[0].Role)
+					assert.Contains(t, request.Messages[0].Content, "Conventional Commits")
+					assert.Equal(t, openai.ChatMessageRoleUser, request.Messages[1].Role)
+					assert.Equal(t, "Add authentication", request.Messages[1].Content)
+				}
+				fmt.Fprint(w, `{"choices":[{"message":{"content":"  feat: authenticate\n"},"finish_reason":"stop"}]}`)
+			})
+			message, err := client.GenerateCommitMessage("Add authentication", model)
+			require.NoError(t, err)
+			assert.Equal(t, "feat: authenticate", message)
 		})
 	}
+}
+
+func TestSuggestVersion(t *testing.T) {
+	client := serveLLM(t, func(w http.ResponseWriter, r *http.Request) {
+		var request openai.ChatCompletionRequest
+		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&request)) {
+			return
+		}
+		if assert.Len(t, request.Messages, 2) {
+			assert.Contains(t, request.Messages[0].Content, "Semantic Versioning")
+			assert.Contains(t, request.Messages[1].Content, "Current version: v1.0.0")
+			assert.Contains(t, request.Messages[1].Content, "1. feat: example")
+		}
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"VERSION: v1.1.0\nREASON: New capability"}}]}`)
+	})
+	version, reason, err := client.SuggestVersion("v1.0.0", []string{"feat: example"}, "")
+	require.NoError(t, err)
+	assert.Equal(t, "v1.1.0", version)
+	assert.Equal(t, "New capability", reason)
+	_, _, err = client.SuggestVersion("v1.0.0", nil, "")
+	require.Error(t, err)
+}
+
+func TestConnectionAcceptsTokenLimitedResponse(t *testing.T) {
+	client := serveLLM(t, func(w http.ResponseWriter, r *http.Request) {
+		var request openai.ChatCompletionRequest
+		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&request)) {
+			return
+		}
+		assert.Equal(t, 1, request.MaxTokens)
+		assert.Zero(t, request.Temperature)
+		assert.Equal(t, []openai.ChatCompletionMessage{
+			{Role: openai.ChatMessageRoleUser, Content: "Reply with OK."},
+		}, request.Messages)
+		fmt.Fprint(w, `{"choices":[{"message":{"content":""},"finish_reason":"length"}]}`)
+	})
+	require.NoError(t, client.TestConnection(""))
+}
+
+func TestCompletionFailures(t *testing.T) {
+	for _, response := range []string{
+		`{"choices":[]}`,
+		`{"choices":[{"message":{"content":""}}]}`,
+		`{"choices":[{"message":{"content":"partial"},"finish_reason":"length"}]}`,
+		`{"error":{"message":"denied","type":"invalid_request_error"}}`,
+	} {
+		t.Run(response, func(t *testing.T) {
+			client := serveLLM(t, func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, response) })
+			message, err := client.GenerateCommitMessage("", "")
+			assert.Empty(t, message)
+			require.ErrorIs(t, err, ErrLLM)
+		})
+	}
+}
+
+func TestCompletionTimeout(t *testing.T) {
+	client := serveLLM(t, func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(time.Second):
+		}
+	})
+	client.timeout = 10 * time.Millisecond
+	_, err := client.GenerateCommitMessage("prompt", "")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.ErrorIs(t, err, ErrLLM)
+}
+
+func TestMissingAPIKey(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	client := NewClient(Options{})
+	_, err := client.GenerateCommitMessage("prompt", "")
+	require.ErrorIs(t, err, errMissingAPIKey)
+	_, _, err = client.SuggestVersion("v1.0.0", []string{"fix: bug"}, "")
+	require.ErrorIs(t, err, errMissingAPIKey)
+	require.ErrorIs(t, client.TestConnection(""), errMissingAPIKey)
 }
 
 func TestParseVersionSuggestion(t *testing.T) {
-	tests := []struct {
-		name        string
-		input       string
-		wantVersion string
-		wantReason  string
-		wantErr     bool
+	for _, tt := range []struct {
+		input   string
+		version string
+		reason  string
 	}{
-		{
-			name:        "Valid uppercase fields",
-			input:       "VERSION: v1.2.3\nREASON: Minor improvements",
-			wantVersion: "v1.2.3",
-			wantReason:  "Minor improvements",
-		},
-		{
-			name:        "Missing v prefix",
-			input:       "Version: 0.2.0\nReason: Feature release",
-			wantVersion: "v0.2.0",
-			wantReason:  "Feature release",
-		},
-		{
-			name:    "Invalid format",
-			input:   "Unexpected response",
-			wantErr: true,
-		},
+		{"VERSION: v1.2.3\nREASON: Minor improvements", "v1.2.3", "Minor improvements"},
+		{"Version: 0.2.0\nReason: Feature release", "v0.2.0", "Feature release"},
+	} {
+		version, reason, err := parseVersionSuggestion(tt.input)
+		require.NoError(t, err)
+		assert.Equal(t, tt.version, version)
+		assert.Equal(t, tt.reason, reason)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			version, reason, err := parseVersionSuggestion(tt.input)
-
-			if tt.wantErr {
-				assert.Error(t, err)
-				return
-			}
-
-			assert.NoError(t, err)
-			assert.Equal(t, tt.wantVersion, version)
-			assert.Equal(t, tt.wantReason, reason)
-		})
-	}
-}
-
-func TestSuggestVersion_MissingAPIKey(t *testing.T) {
-	viper.Reset()
-	viper.Set("api_key", "")
-
-	version, reason, err := SuggestVersion("v0.1.0", []string{"feat: example"}, "")
-
-	assert.Error(t, err)
-	assert.Empty(t, version)
-	assert.Empty(t, reason)
-	assert.Contains(t, err.Error(), "API key not set")
-}
-
-func TestSuggestVersion_NoCommits(t *testing.T) {
-	viper.Reset()
-	viper.Set("api_key", "test")
-
-	version, reason, err := SuggestVersion("v0.1.0", nil, "")
-
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "no commits")
-	assert.Empty(t, version)
-	assert.Empty(t, reason)
-}
-
-// Test message building and context handling
-func TestGenerateCommitMessage_MessageConstruction(t *testing.T) {
-	// Test that we can validate the message construction logic
-	viper.Reset()
-	viper.Set("api_key", "test-api-key")
-	viper.Set("model", "gpt-3.5-turbo")
-
-	cfg, err := config.GetConfig()
-	assert.NoError(t, err)
-	assert.Equal(t, "test-api-key", cfg.APIKey)
-	assert.Equal(t, "gpt-3.5-turbo", cfg.Model)
-
-	// Validate that the config is used correctly
-	prompt := "Add user authentication"
-	model := "gpt-4"
-
-	// The actual message construction happens inside the function
-	// We can validate the inputs are processed correctly
-	assert.NotEmpty(t, prompt)
-	assert.NotEmpty(t, model)
-
-	// Skip actual API call
-	t.Skip("Skipping actual OpenAI API call - message construction tested")
-}
-
-// Test timeout and context handling
-func TestGenerateCommitMessage_TimeoutHandling(t *testing.T) {
-	// Test validates that timeout context is created correctly
-	viper.Reset()
-	viper.Set("api_key", "test-api-key")
-	viper.Set("model", "gpt-3.5-turbo")
-
-	// We can validate that timeout is reasonable (30 seconds)
-	timeout := 30 * time.Second
-	assert.Equal(t, 30*time.Second, timeout)
-
-	// Context creation happens inside the function
-	t.Skip("Skipping actual timeout test - requires API call")
-}
-
-// Test error handling scenarios
-func TestGenerateCommitMessage_ErrorScenarios(t *testing.T) {
-	tests := []struct {
-		name          string
-		setupConfig   func()
-		expectedError string
-	}{
-		{
-			name: "Empty API key",
-			setupConfig: func() {
-				viper.Reset()
-				viper.Set("api_key", "")
-				viper.Set("model", "gpt-3.5-turbo")
-			},
-			expectedError: "API key not set",
-		},
-		{
-			name: "Valid config setup",
-			setupConfig: func() {
-				viper.Reset()
-				viper.Set("api_key", "test-api-key")
-				viper.Set("model", "gpt-3.5-turbo")
-				viper.Set("api_base", "https://api.openai.com/v1")
-			},
-			expectedError: "", // No error expected for valid config
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.setupConfig()
-
-			cfg, err := config.GetConfig()
-			assert.NoError(t, err)
-
-			if tt.expectedError != "" {
-				assert.Empty(t, cfg.APIKey, "Should have empty API key for error case")
-			} else {
-				assert.NotEmpty(t, cfg.APIKey, "Should have valid API key")
-				assert.NotEmpty(t, cfg.Model, "Should have valid model")
-			}
-		})
-	}
-}
-
-// Test response processing logic (without actual API calls)
-func TestGenerateCommitMessage_ResponseProcessing(t *testing.T) {
-	// Test string trimming and processing logic
-	testCases := []struct {
-		input    string
-		expected string
-	}{
-		{
-			input:    "  feat: add new feature  \n",
-			expected: "feat: add new feature",
-		},
-		{
-			input:    "\n\nfix: resolve parsing issue\n\n",
-			expected: "fix: resolve parsing issue",
-		},
-		{
-			input:    "refactor: improve code structure",
-			expected: "refactor: improve code structure",
-		},
-	}
-
-	for _, tc := range testCases {
-		// Test the string processing logic that happens in the function
-		trimmed := strings.TrimSpace(tc.input)
-		assert.Equal(t, tc.expected, trimmed)
-	}
-}
-
-// Integration test placeholder (would require actual API)
-func TestGenerateCommitMessage_Integration(t *testing.T) {
-	t.Skip("Integration test requires actual OpenAI API key and network access")
-
-	// This test would:
-	// 1. Use real API credentials from environment
-	// 2. Make actual API call
-	// 3. Validate response format
-	// 4. Test timeout scenarios
-	// 5. Test error responses from API
-}
-
-// Test client configuration
-func TestGenerateCommitMessage_ClientConfiguration(t *testing.T) {
-	viper.Reset()
-	viper.Set("api_key", "test-key-12345")
-	viper.Set("model", "gpt-3.5-turbo")
-	viper.Set("api_base", "https://custom-api.example.com/v1")
-
-	cfg, err := config.GetConfig()
-	assert.NoError(t, err)
-
-	// Verify config is loaded correctly
-	assert.Equal(t, "test-key-12345", cfg.APIKey)
-	assert.Equal(t, "gpt-3.5-turbo", cfg.Model)
-	assert.Equal(t, "https://custom-api.example.com/v1", cfg.APIBase)
-
-	// Test with custom API base - this will exercise the client configuration code
-	_, err = GenerateCommitMessage("test prompt", "gpt-3.5-turbo")
-
-	// We expect an error due to custom API base + fake key, but configuration logic was exercised
-	if err != nil {
-		// The error will be from the API call, not configuration
-		assert.Contains(t, err.Error(), "failed to call LLM")
-	}
-}
-
-// Test with various API base configurations
-func TestGenerateCommitMessage_APIBaseConfiguration(t *testing.T) {
-	tests := []struct {
-		name    string
-		apiBase string
-	}{
-		{
-			name:    "Default API base (empty)",
-			apiBase: "",
-		},
-		{
-			name:    "Custom API base",
-			apiBase: "https://api.custom.com/v1",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			viper.Reset()
-			viper.Set("api_key", "test-key")
-			viper.Set("model", "gpt-3.5-turbo")
-			viper.Set("api_base", tt.apiBase)
-
-			// This will exercise both the default and custom API base configuration paths
-			_, err := GenerateCommitMessage("test prompt", "gpt-3.5-turbo")
-
-			// We expect an error due to fake API key, but the configuration was tested
-			if err != nil {
-				assert.Contains(t, err.Error(), "failed to call LLM")
-			}
-		})
-	}
+	_, _, err := parseVersionSuggestion("Unexpected response")
+	require.Error(t, err)
 }

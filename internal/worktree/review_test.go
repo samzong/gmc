@@ -2,9 +2,10 @@ package worktree
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestReviewProviderFromRemoteURL(t *testing.T) {
@@ -24,32 +25,50 @@ func TestReviewProviderFromRemoteURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := reviewProviderFromRemoteURL(tt.remoteURL); got != tt.want {
-				t.Fatalf("reviewProviderFromRemoteURL() = %q, want %q", got, tt.want)
-			}
+			require.Equal(t, tt.want, reviewProviderFromRemoteURL(tt.remoteURL))
 		})
 	}
 }
 
-func TestReviewStates_GitHub(t *testing.T) {
-	useTempReviewCache(t)
-	worktrees := runReviewLookupTest(t, "https://github.com/org/repo.git", "gh", `[
-		{
-			"number": 42,
-			"state": "OPEN",
-			"headRefName": "feature/github",
-			"headRefOid": "HEAD_COMMIT",
-			"url": "https://github.com/org/repo/pull/42"
-		}
-	]`, "feature/github")
-
-	result := NewClient(Options{}).ReviewStates(worktrees)
-	if result.Warning != "" {
-		t.Fatalf("Warning = %q, want empty", result.Warning)
-	}
-	review := result.Reviews["feature/github"]
-	if review.Provider != reviewProviderGitHub || review.Number != 42 || review.State != "OPEN" {
-		t.Fatalf("unexpected review: %+v", review)
+func TestReviewStates_ProvidersAndFreshCache(t *testing.T) {
+	for _, tc := range []struct {
+		provider, remote, tool, branch, output string
+		number                                 int
+	}{
+		{reviewProviderGitHub, "https://github.com/org/repo.git", "gh", "feature/github", `[
+			{
+				"number": 42,
+				"state": "OPEN",
+				"headRefName": "feature/github",
+				"headRefOid": "HEAD_COMMIT",
+				"url": "https://github.com/org/repo/pull/42"
+			}
+		]`, 42},
+		{reviewProviderGitLab, "https://gitlab.com/group/repo.git", "glab", "feature/gitlab", `[
+			{
+				"iid": 7,
+				"state": "opened",
+				"source_branch": "feature/gitlab",
+				"sha": "HEAD_COMMIT",
+				"web_url": "https://gitlab.com/group/repo/-/merge_requests/7"
+			}
+		]`, 7},
+	} {
+		t.Run(tc.provider, func(t *testing.T) {
+			useTempReviewCache(t)
+			worktrees := runReviewLookupTest(t, tc.remote, tc.tool, tc.output, tc.branch)
+			first := NewClient(Options{}).ReviewStates(worktrees)
+			require.Empty(t, first.Warning)
+			review := first.Reviews[tc.branch]
+			require.Equal(t, tc.provider, review.Provider)
+			require.Equal(t, tc.number, review.Number)
+			require.Equal(t, "OPEN", review.State)
+			reviewRunFunc = func(repoDir string, tool string, args ...string) ([]byte, error) {
+				t.Fatalf("review lookup should use fresh cache before user lookup: %s %v", tool, args)
+				return nil, nil
+			}
+			require.Equal(t, first, NewClient(Options{}).ReviewStates(worktrees))
+		})
 	}
 }
 
@@ -71,16 +90,10 @@ func TestReviewStates_GitHubOnlyMatchesPushedWorktreeBranches(t *testing.T) {
 		]`, "feature/github")
 
 	result := NewClient(Options{}).ReviewStates(worktrees)
-	if result.Warning != "" {
-		t.Fatalf("Warning = %q, want empty", result.Warning)
-	}
-	if _, ok := result.Reviews["not-local"]; ok {
-		t.Fatalf("Reviews[not-local] = %+v, want no non-worktree branch match", result.Reviews["not-local"])
-	}
+	require.Equal(t, "", result.Warning)
+	require.NotContains(t, result.Reviews, "not-local")
 	review := result.Reviews["feature/github"]
-	if review.Number != 43 {
-		t.Fatalf("Reviews[feature/github].Number = %d, want 43", review.Number)
-	}
+	require.Equal(t, 43, review.Number)
 }
 
 func TestReviewStates_GitHubPrefersExactHeadCommit(t *testing.T) {
@@ -103,103 +116,9 @@ func TestReviewStates_GitHubPrefersExactHeadCommit(t *testing.T) {
 		]`, "feature/github")
 
 	result := NewClient(Options{}).ReviewStates(worktrees)
-	if result.Warning != "" {
-		t.Fatalf("Warning = %q, want empty", result.Warning)
-	}
+	require.Equal(t, "", result.Warning)
 	review := result.Reviews["feature/github"]
-	if review.Number != 43 {
-		t.Fatalf("Reviews[feature/github].Number = %d, want exact commit PR 43", review.Number)
-	}
-}
-
-func TestReviewStates_GitLab(t *testing.T) {
-	useTempReviewCache(t)
-	worktrees := runReviewLookupTest(t, "https://gitlab.com/group/repo.git", "glab", `[
-		{
-			"iid": 7,
-			"state": "opened",
-			"source_branch": "feature/gitlab",
-			"sha": "HEAD_COMMIT",
-			"web_url": "https://gitlab.com/group/repo/-/merge_requests/7"
-		}
-	]`, "feature/gitlab")
-
-	result := NewClient(Options{}).ReviewStates(worktrees)
-	if result.Warning != "" {
-		t.Fatalf("Warning = %q, want empty", result.Warning)
-	}
-	review := result.Reviews["feature/gitlab"]
-	if review.Provider != reviewProviderGitLab || review.Number != 7 || review.State != "OPEN" {
-		t.Fatalf("unexpected review: %+v", review)
-	}
-}
-
-func TestReviewStates_UsesFreshCache(t *testing.T) {
-	useTempReviewCache(t)
-	worktrees := runReviewLookupTest(t, "https://github.com/org/repo.git", "gh", `[
-		{
-			"number": 42,
-			"state": "OPEN",
-			"headRefName": "feature/github",
-			"headRefOid": "HEAD_COMMIT",
-			"url": "https://github.com/org/repo/pull/42"
-		}
-	]`, "feature/github")
-
-	first := NewClient(Options{}).ReviewStates(worktrees)
-	if first.Warning != "" {
-		t.Fatalf("Warning = %q, want empty", first.Warning)
-	}
-
-	oldRun := reviewRunFunc
-	reviewRunFunc = func(repoDir string, tool string, args ...string) ([]byte, error) {
-		t.Fatalf("review lookup should use fresh cache, got %s %v", tool, args)
-		return nil, nil
-	}
-	t.Cleanup(func() { reviewRunFunc = oldRun })
-
-	second := NewClient(Options{}).ReviewStates(worktrees)
-	if second.Warning != "" {
-		t.Fatalf("Warning = %q, want empty", second.Warning)
-	}
-	review := second.Reviews["feature/github"]
-	if review.Number != 42 {
-		t.Fatalf("Reviews[feature/github].Number = %d, want cached PR 42", review.Number)
-	}
-}
-
-func TestReviewStates_GitLabUsesFreshCacheBeforeUserLookup(t *testing.T) {
-	useTempReviewCache(t)
-	worktrees := runReviewLookupTest(t, "https://gitlab.com/group/repo.git", "glab", `[
-		{
-			"iid": 7,
-			"state": "opened",
-			"source_branch": "feature/gitlab",
-			"sha": "HEAD_COMMIT",
-			"web_url": "https://gitlab.com/group/repo/-/merge_requests/7"
-		}
-	]`, "feature/gitlab")
-
-	first := NewClient(Options{}).ReviewStates(worktrees)
-	if first.Warning != "" {
-		t.Fatalf("Warning = %q, want empty", first.Warning)
-	}
-
-	oldRun := reviewRunFunc
-	reviewRunFunc = func(repoDir string, tool string, args ...string) ([]byte, error) {
-		t.Fatalf("GitLab review lookup should use fresh cache before user lookup, got %s %v", tool, args)
-		return nil, nil
-	}
-	t.Cleanup(func() { reviewRunFunc = oldRun })
-
-	second := NewClient(Options{}).ReviewStates(worktrees)
-	if second.Warning != "" {
-		t.Fatalf("Warning = %q, want empty", second.Warning)
-	}
-	review := second.Reviews["feature/gitlab"]
-	if review.Number != 7 {
-		t.Fatalf("Reviews[feature/gitlab].Number = %d, want cached MR 7", review.Number)
-	}
+	require.Equal(t, 43, review.Number)
 }
 
 func TestReviewStates_SkipsUnpushedBranches(t *testing.T) {
@@ -214,22 +133,11 @@ func TestReviewStates_SkipsUnpushedBranches(t *testing.T) {
 		return nil, nil
 	}
 
-	oldCwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldCwd) })
-	if err := os.Chdir(repoDir); err != nil {
-		t.Fatal(err)
-	}
+	t.Chdir(repoDir)
 
 	result := NewClient(Options{}).ReviewStates([]Info{{Branch: "feature/unpushed", Commit: head}})
-	if result.Warning != "" {
-		t.Fatalf("Warning = %q, want empty", result.Warning)
-	}
-	if len(result.Reviews) != 0 {
-		t.Fatalf("Reviews = %+v, want empty", result.Reviews)
-	}
+	require.Equal(t, "", result.Warning)
+	require.Len(t, result.Reviews, 0)
 }
 
 func TestReviewStates_WarnsOnMissingCLI(t *testing.T) {
@@ -239,12 +147,8 @@ func TestReviewStates_WarnsOnMissingCLI(t *testing.T) {
 	})
 
 	result := NewClient(Options{}).ReviewStates([]Info{{Branch: "feature/github", Commit: ""}})
-	if !strings.Contains(result.Warning, "gh CLI not found") {
-		t.Fatalf("Warning = %q, want missing gh warning", result.Warning)
-	}
-	if result.Reviews == nil || len(result.Reviews) != 0 {
-		t.Fatalf("Reviews = %+v, want empty non-nil map", result.Reviews)
-	}
+	require.Contains(t, result.Warning, "gh CLI not found")
+	require.Equal(t, map[string]ReviewInfo{}, result.Reviews)
 }
 
 func TestReviewStates_WarnsOnAuthFailure(t *testing.T) {
@@ -254,9 +158,7 @@ func TestReviewStates_WarnsOnAuthFailure(t *testing.T) {
 	})
 
 	result := NewClient(Options{}).ReviewStates([]Info{{Branch: "feature/github", Commit: ""}})
-	if !strings.Contains(result.Warning, "check authentication") {
-		t.Fatalf("Warning = %q, want authentication warning", result.Warning)
-	}
+	require.Contains(t, result.Warning, "check authentication")
 }
 
 func useTempReviewCache(t *testing.T) {
@@ -290,43 +192,26 @@ func runReviewLookupTest(
 	t.Cleanup(func() { reviewRunFunc = oldRun })
 	callCount := 0
 	reviewRunFunc = func(repoDir string, tool string, args ...string) ([]byte, error) {
-		if tool != wantTool {
-			t.Fatalf("tool = %q, want %s", tool, wantTool)
-		}
+		require.Equal(t, wantTool, tool)
 		callCount++
 		if tool == "glab" && hasReviewArg(args, "api", "user") {
 			return []byte(`{"username":"test-user"}`), nil
 		}
-		if !hasReviewArg(args, "-R", remoteURL) {
-			t.Fatalf("args = %v, want -R %s", args, remoteURL)
-		}
+		require.True(t, hasReviewArg(args, "-R", remoteURL))
 		switch tool {
 		case "gh":
-			if !hasReviewArg(args, "--author", "@me") {
-				t.Fatalf("args = %v, want --author @me", args)
-			}
+			require.True(t, hasReviewArg(args, "--author", "@me"))
 			return []byte(strings.ReplaceAll(output, "HEAD_COMMIT", head)), nil
 		case "glab":
-			if !hasReviewArg(args, "--author", "test-user") {
-				t.Fatalf("args = %v, want --author test-user", args)
-			}
-			if callCount != 2 {
-				t.Fatalf("glab mr list call count = %d, want 2 after user lookup", callCount)
-			}
+			require.True(t, hasReviewArg(args, "--author", "test-user"))
+			require.Equal(t, 2, callCount)
 			return []byte(strings.ReplaceAll(output, "HEAD_COMMIT", head)), nil
 		default:
 			return []byte(output), nil
 		}
 	}
 
-	oldCwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldCwd) })
-	if err := os.Chdir(repoDir); err != nil {
-		t.Fatal(err)
-	}
+	t.Chdir(repoDir)
 	return worktrees
 }
 
@@ -353,12 +238,5 @@ func runReviewLookupFailureTest(
 	t.Cleanup(func() { reviewRunFunc = oldRun })
 	reviewRunFunc = run
 
-	oldCwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldCwd) })
-	if err := os.Chdir(repoDir); err != nil {
-		t.Fatal(err)
-	}
+	t.Chdir(repoDir)
 }
