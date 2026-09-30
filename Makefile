@@ -1,10 +1,15 @@
+BOLD  := \033[1m
+CYAN  := \033[36m
+GREEN := \033[32m
+RESET := \033[0m
+
+.DEFAULT_GOAL := help
+
 BUILD_DIR=./build
 BINARY_NAME=gmc
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILDTIME=$(shell date -u '+%Y-%m-%d %H:%M:%S UTC')
 LDFLAGS=-ldflags "-X github.com/samzong/gmc/cmd.Version=$(VERSION) -X 'github.com/samzong/gmc/cmd.BuildTime=$(BUILDTIME)'"
-GREEN := \033[32m
-RESET := \033[0m
 
 # Homebrew related variables
 CLEAN_VERSION=$(shell echo $(VERSION) | sed 's/^v//')
@@ -15,11 +20,8 @@ BRANCH_NAME=update-gmc-$(CLEAN_VERSION)
 # Adjust architecture definitions to match goreleaser output
 SUPPORTED_ARCHS = Darwin_x86_64 Darwin_arm64 Linux_x86_64 Linux_arm64
 
-.PHONY: help
-help:
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+# ── Build ────────────────────────────────────────────────────────────────────
 
-##@ Build
 .PHONY: build
 build: ## Build the binary
 	@echo "Building $(BINARY_NAME) $(VERSION)..."
@@ -50,7 +52,8 @@ clean: ## Clean build artifacts
 	@rm -rf $(BUILD_DIR)
 	@echo "Clean Command Done"
 
-##@ Development
+# ── Development ──────────────────────────────────────────────────────────────
+
 .PHONY: test
 test: ## Run tests
 	@echo "Running tests..."
@@ -85,17 +88,17 @@ tidy: ## Tidy go.mod and go.sum
 
 .PHONY: lint
 lint: ## Run code analysis
-	@echo "$(BLUE)Running code analysis...$(NC)"
+	@echo "Running code analysis..."
 	$(call ensure-external-tool,golangci-lint,$(GOLANGCI_LINT_INSTALL))
 	golangci-lint run
-	@echo "$(GREEN)Code analysis completed$(NC)"
+	@echo "$(GREEN)Code analysis completed$(RESET)"
 
 .PHONY: lint-fix
 lint-fix: ## Run code analysis with auto-fix
-	@echo "$(BLUE)Running code analysis with auto-fix...$(NC)"
+	@echo "Running code analysis with auto-fix..."
 	$(call ensure-external-tool,golangci-lint,$(GOLANGCI_LINT_INSTALL))
 	golangci-lint run --fix
-	@echo "$(GREEN)Code analysis and fixes completed$(NC)"
+	@echo "$(GREEN)Code analysis and fixes completed$(RESET)"
 
 .PHONY: man
 man: ## Generate man pages
@@ -104,7 +107,8 @@ man: ## Generate man pages
 	@go run cmd/gendoc/main.go
 	@echo "Man pages generated in docs/man/"
 
-##@ Release
+# ── Release ──────────────────────────────────────────────────────────────────
+
 .PHONY: update-homebrew
 update-homebrew: ## Update Homebrew formula
 	@echo "==> Starting Homebrew formula update process..."
@@ -219,9 +223,18 @@ update-homebrew: ## Update Homebrew formula
 	@rm -rf tmp
 	@echo "✅ Homebrew formula update process completed"
 
-##@ Quality
+# ── Quality ──────────────────────────────────────────────────────────────────
+
 .PHONY: check
 check: fmt lint test ## Run all quality checks (fmt, lint, test)
-	@echo "$(GREEN)All quality checks passed!$(NC)"
+	@echo "$(GREEN)All quality checks passed!$(RESET)"
 
-.DEFAULT_GOAL := help 
+# ── Help ─────────────────────────────────────────────────────────────────────
+
+.PHONY: help
+
+help: ## Show available targets
+	@awk 'BEGIN {FS = ":.*## "; printf "\n$(BOLD)gmc$(RESET) — parallel worktrees for AI agents, plus AI-generated commits\n"} \
+		/^# ── / {n = $$0; gsub(/(^# ── | (─)+$$)/, "", n); printf "\n$(BOLD)%s$(RESET)\n", n} \
+		/^[a-zA-Z0-9_-]+:.*## / {printf "  $(CYAN)make %-17s$(RESET) %s\n", $$1, $$2} \
+		END {printf "\n"}' $(MAKEFILE_LIST)
