@@ -66,6 +66,10 @@ func (c *Client) syncOneResource(repoRoot, targetRoot string, res SharedResource
 	if res.Strategy == "" {
 		return report, fmt.Errorf("shared resource '%s' missing 'strategy' field", res.Path)
 	}
+	if res.Strategy == StrategySymlink && isBuildOutputPath(res.Path) {
+		report.Warn(skippedBuildOutputLinkWarning(targetRoot, res))
+		return report, nil
+	}
 
 	srcPath, targetPath, skip, err := c.resolveSharedPaths(repoRoot, targetRoot, res)
 	if err != nil {
@@ -147,6 +151,27 @@ func (c *Client) syncOneResource(repoRoot, targetRoot string, res SharedResource
 		return report, fmt.Errorf("unknown strategy '%s' for resource '%s' (valid: copy, link)", res.Strategy, res.Path)
 	}
 	return report, nil
+}
+
+func skippedBuildOutputLinkWarning(targetRoot string, res SharedResource) string {
+	rulePath := res.rulePath
+	if rulePath == "" {
+		rulePath = res.Path
+	}
+	message := fmt.Sprintf("skipped linking build output directory %q; remove the rule with: %s",
+		res.Path, shareRemoveHint(rulePath, res.Origin))
+	targetPath, err := sanitizeTargetRelativePath(res.Path)
+	if err != nil {
+		return message
+	}
+	dstPath, err := filepath.Abs(filepath.Join(targetRoot, targetPath))
+	if err != nil {
+		return message
+	}
+	if info, err := os.Lstat(dstPath); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		message += fmt.Sprintf("; the existing link %s still shares the directory and must be removed manually", dstPath)
+	}
+	return message
 }
 
 func (c *Client) SyncAllSharedResources() (Report, error) {

@@ -34,6 +34,7 @@ var wtShareAddCmd = &cobra.Command{
 	Short: "Add or update a shared resource",
 	Long: `Add a rule that shares a path with worktrees: copy makes an independent copy, ` +
 		`link symlinks the primary worktree's source so writes are shared.
+Build output directories (target, build, dist, .next, .nuxt) cannot use the link strategy.
 Global rules apply only to new worktrees; run 'gmc wt share sync' to apply them to existing ones.`,
 	Example: "  gmc wt share add .env --strategy copy\n" +
 		"  gmc wt share add .local --strategy link --global\n" +

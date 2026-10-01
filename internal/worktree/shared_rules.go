@@ -33,6 +33,10 @@ func (c *Client) AddSharedResource(path string, strategy ResourceStrategy, globa
 	if err != nil {
 		return report, err
 	}
+	if strategy == StrategySymlink && isBuildOutputPath(path) {
+		return report, fmt.Errorf("refusing to link build output directory %q: a clean or rebuild in one worktree "+
+			"would affect every worktree; use --strategy copy or a build cache instead", filepath.ToSlash(path))
+	}
 	cfg, configPath, err := c.loadSharedScope(global)
 	if err != nil {
 		return report, err

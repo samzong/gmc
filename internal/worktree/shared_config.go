@@ -22,6 +22,7 @@ const (
 
 type SharedResource struct {
 	worktreeRelative bool
+	rulePath         string
 	Path             string           `yaml:"path" json:"path"`
 	Strategy         ResourceStrategy `yaml:"strategy,omitempty" json:"strategy,omitempty"`
 	Disabled         bool             `yaml:"disabled,omitempty" json:"disabled,omitempty"`

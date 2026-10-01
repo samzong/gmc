@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -65,8 +66,11 @@ func scanShareProjects(root string, rules []SharedResource) ([]DiscoverResult, [
 			if name == "target" && !shareRuleMatches(rules, rel) {
 				buildDirectories = append(buildDirectories, rel)
 			}
+			if slices.Contains(buildOutputDirectories, name) {
+				return filepath.SkipDir
+			}
 			switch name {
-			case "node_modules", ".venv", "venv", "vendor", "__pycache__", "target", "build", "dist", ".next", ".nuxt",
+			case "node_modules", ".venv", "venv", "vendor", "__pycache__",
 				".local", ".cache", ".turbo", ".tox", ".mypy_cache", ".pytest_cache":
 				return filepath.SkipDir
 			}
