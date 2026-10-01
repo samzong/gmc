@@ -211,7 +211,11 @@ func (e *Engine) Advance(opts AdvanceOptions) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
-	model := WorkflowNodeModel(nextNode, attempt.Model)
+	carriedModel := ""
+	if agent == attempt.Agent {
+		carriedModel = attempt.Model
+	}
+	model := WorkflowNodeModel(nextNode, carriedModel)
 	attempt.Agent = agent
 	attempt.Model = model
 	attempt.UpdatedAt = time.Now().UTC()

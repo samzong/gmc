@@ -69,3 +69,23 @@ func WorkflowNodeCommand(node WorkflowNode, agent, model, prompt string) ([]stri
 	}
 	return AgentCommand(agent, model, prompt)
 }
+
+func LaunchCommand(sum Summary) string {
+	if sum.Attempt == nil {
+		return ""
+	}
+	node, ok := sum.Task.WorkflowSnapshot.Nodes[sum.Task.CurrentNode]
+	if !ok {
+		return ""
+	}
+	argv, err := WorkflowNodeCommand(node, sum.Attempt.Agent, sum.Attempt.Model, launchPromptSentinel)
+	if err != nil {
+		return ""
+	}
+	if n := len(argv); n > 0 && argv[n-1] == launchPromptSentinel {
+		argv = argv[:n-1]
+	}
+	return shellJoin(argv)
+}
+
+const launchPromptSentinel = "\x00gmc-prompt"
