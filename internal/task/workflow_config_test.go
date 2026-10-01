@@ -38,13 +38,16 @@ func TestDefaultWorkflowConfigUsesEmbeddedWorkflow(t *testing.T) {
 
 	assert.Equal(t, "plan", wf.Start)
 	assert.Equal(t, "codex", wf.Nodes["plan"].Agent)
-	assert.Equal(t, "codex --dangerously-bypass-approvals-and-sandbox", wf.Nodes["plan"].Command)
+	assert.Empty(t, wf.Nodes["plan"].Command)
 	assert.Equal(t, []string{"systematic-debugging"}, wf.Nodes["plan"].Skills)
 	assert.Equal(t, "code", wf.Nodes["plan"].Next)
 	assert.Equal(t, "grok", wf.Nodes["code"].Agent)
-	assert.Equal(t, "grok --yolo", wf.Nodes["code"].Command)
+	assert.Empty(t, wf.Nodes["code"].Command)
 	assert.Equal(t, "cursor-agent", wf.Nodes["review"].Agent)
+	assert.Empty(t, wf.Nodes["review"].Command)
+	assert.Empty(t, wf.Nodes["review"].Skills)
 	assert.Equal(t, "ship", wf.Nodes["review"].Next)
+	assert.Empty(t, wf.Nodes["ship"].Command)
 	assert.Equal(t, "done", wf.Nodes["ship"].Next)
 
 	agent, err := WorkflowNodeAgent(wf.Nodes["plan"], "grok")

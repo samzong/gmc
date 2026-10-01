@@ -29,7 +29,7 @@ go install github.com/samzong/gmc@latest
 | `gmc wt clone <url> [--upstream <url>]` | Clone as `.bare/` + worktree layout, optionally register upstream |
 | `gmc wt add <name> [-b <base>] [--sync]` | New worktree on a new branch |
 | `gmc wt dup [N] [-b <base>]` | Fan out N sibling worktrees for parallel agents |
-| `gmc wt promote <temp> <name>` | Rename a `.dup-N` branch to a permanent name |
+| `gmc wt promote <candidate>` | Apply a candidate's changes into the current worktree |
 | `gmc wt list` | List all worktrees in the family |
 | `gmc wt switch` | Interactive switch between worktrees |
 | `gmc wt remove <name> [-D]` | Delete worktree (and optionally its branch) |

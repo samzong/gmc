@@ -4,7 +4,6 @@ start: plan
 nodes:
   plan:
     agent: codex
-    command: codex --dangerously-bypass-approvals-and-sandbox
     skills:
       - systematic-debugging
     prompt: |
@@ -16,7 +15,6 @@ nodes:
 
   code:
     agent: grok
-    command: grok --yolo
     skills:
       - verification-before-completion
     prompt: |
@@ -30,9 +28,6 @@ nodes:
 
   review:
     agent: cursor-agent
-    command: cursor-agent --yolo
-    skills:
-      - local-code-liability-review
     prompt: |
       Review the current diff only. Do not edit files.
       Focus on correctness, regressions, missing tests, and whether the code satisfies .gmc/TASK.md.
@@ -42,7 +37,6 @@ nodes:
 
   ship:
     agent: grok
-    command: grok --yolo
     skills:
       - verification-before-completion
     prompt: |

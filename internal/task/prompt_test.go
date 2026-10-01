@@ -78,3 +78,40 @@ func TestWorkflowNodeCommandOverride(t *testing.T) {
 		"do the task",
 	}, args)
 }
+
+func TestDefaultWorkflowNodeCommandHonorsModel(t *testing.T) {
+	wf, err := SelectWorkflow(DefaultWorkflowConfig(), "")
+	require.NoError(t, err)
+
+	args, err := WorkflowNodeCommand(wf.Nodes["plan"], "codex", "gpt-5", "p")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"codex", "-m", "gpt-5", "p"}, args)
+}
+
+func TestLaunchCommand(t *testing.T) {
+	wf, err := SelectWorkflow(DefaultWorkflowConfig(), "")
+	require.NoError(t, err)
+	summary := func(node, model string, nodes map[string]WorkflowNode) Summary {
+		return Summary{
+			Task:    Record{CurrentNode: node, WorkflowSnapshot: WorkflowDefinition{Nodes: nodes}},
+			Attempt: &AttemptRecord{Agent: "codex", Model: model},
+		}
+	}
+
+	assert.Equal(t, "codex", LaunchCommand(summary("plan", "", wf.Nodes)))
+	assert.Equal(t, "codex -m gpt-5", LaunchCommand(summary("plan", "gpt-5", wf.Nodes)))
+
+	custom := map[string]WorkflowNode{
+		"plan": {ID: "plan", Command: "codex --dangerously-bypass-approvals-and-sandbox"},
+	}
+	assert.Equal(t, "codex --dangerously-bypass-approvals-and-sandbox", LaunchCommand(summary("plan", "gpt-5", custom)))
+
+	opencode := summary("plan", "", map[string]WorkflowNode{"plan": {ID: "plan", Agent: "opencode"}})
+	opencode.Attempt.Agent = "opencode"
+	assert.Equal(t, "opencode run", LaunchCommand(opencode))
+
+	assert.Equal(t, "", LaunchCommand(summary("done", "", wf.Nodes)))
+	noAttempt := summary("plan", "", wf.Nodes)
+	noAttempt.Attempt = nil
+	assert.Equal(t, "", LaunchCommand(noAttempt))
+}

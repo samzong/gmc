@@ -25,7 +25,10 @@ var taskCmd = &cobra.Command{
 	Short:   "Manage local AI coding tasks",
 	GroupID: "worktree",
 	Long: `Manage local AI coding tasks backed by a repo-family ledger.
-Workflow nodes come from ~/.config/gmc/workflow.yaml.`,
+Workflow nodes come from ~/.config/gmc/workflow.yaml.
+The built-in workflow starts each agent with its own default approval settings.
+A workflow.yaml file replaces the built-in workflow entirely. To run agents unattended,
+set node commands there, for example: command: codex --dangerously-bypass-approvals-and-sandbox`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return cmd.Help()
@@ -195,6 +198,7 @@ func runTaskStart(engine *task.Engine, args []string) error {
 		fmt.Fprintf(outWriter(), "  worktree: %s\n", sum.Attempt.Worktree)
 		fmt.Fprintf(outWriter(), "  branch: %s\n", sum.Attempt.Branch)
 		fmt.Fprintf(outWriter(), "  task brief: %s\n", sum.Attempt.ContextFile)
+		printTaskField("command", task.LaunchCommand(sum))
 		fmt.Fprintf(outWriter(), "  attach: gmc task attach %s\n", sum.Task.ID)
 	}
 	return nil
@@ -256,6 +260,7 @@ func runTaskAdvance(engine *task.Engine, args []string) error {
 	fmt.Fprintf(outWriter(), "Advanced task %s to %s\n", sum.Task.ID, sum.Task.State)
 	if sum.Attempt != nil && sum.Attempt.TmuxSession != "" {
 		fmt.Fprintf(outWriter(), "  tmux: %s\n", sum.Attempt.TmuxSession)
+		printTaskField("command", task.LaunchCommand(sum))
 		fmt.Fprintf(outWriter(), "  attach: gmc task attach %s\n", sum.Task.ID)
 	}
 	return nil
