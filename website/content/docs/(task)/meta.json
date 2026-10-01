@@ -9,7 +9,10 @@
     "task-attach",
     "task-show",
     "task-list",
+    "task-run",
     "task-advance",
+    "task-refresh",
+    "task-gc",
     "task-webui",
     "task-rm"
   ]

@@ -19,6 +19,8 @@ gmc wt share add '**/.local' --strategy link --global
 
 Adding a repository rule syncs its effective configuration to existing worktrees. Adding a global rule only saves the default; use `share sync` in a repository to apply it to existing worktrees. New worktrees apply effective rules before running configured hooks.
 
+Build output directories (`target`, `build`, `dist`, `.next`, `.nuxt`, matched case-insensitively and in glob rules) cannot use the `link` strategy: a `clean` in one worktree would delete the shared build output of every worktree. Use `copy` or leave them unshared. Link rules created before this restriction are skipped wherever rules are applied — `share sync` and new worktree creation alike — with a warning that prints the removal command; existing symlinks are left in place and must be deleted manually.
+
 ## Global and repository configuration
 
 Global defaults live under `worktree` in the selected gmc config file, normally `~/.config/gmc/config.yaml`. The selection follows `--config`, `GMC_CONFIG`, and the existing XDG/legacy fallback rules.

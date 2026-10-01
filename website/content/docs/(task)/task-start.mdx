@@ -28,4 +28,12 @@ gmc task start <task-id> --base main --model gpt-5
 
 ## Notes
 
+The built-in workflow starts each agent with its own approval settings;
+nothing bypasses prompts or sandboxes unless your `workflow.yaml` sets an
+explicit node `command`. The launched command is printed as `command:` so you
+can verify the flags.
+
+`--model` applies to the selected agent and carries to later nodes only while
+they use the same agent; switching agents drops it.
+
 Use a base branch when the task should not start from the current default.
