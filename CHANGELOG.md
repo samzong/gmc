@@ -1,6 +1,24 @@
 # Changelog
 
 
+## [v0.11.0] - 2026-10-01
+### Bug Fixes
+- **deps:** upgrade golang.org/x/text to v0.39.0 (CVE-2026-56852)
+- **security:** close repo-config, task-API and LLM-output defects ([#95](https://github.com/samzong/gmc/issues/95))
+- **task:** stop the built-in workflow from bypassing agent approvals ([#107](https://github.com/samzong/gmc/issues/107))
+- **worktree:** refuse linking build output directories ([#102](https://github.com/samzong/gmc/issues/102))
+- **worktree:** discover nested rust projects for caching ([#94](https://github.com/samzong/gmc/issues/94))
+
+### Code Refactoring
+- simplify CLI and core workflows ([#100](https://github.com/samzong/gmc/issues/100))
+
+### Features
+- **task:** add task refresh, task gc, and harden ledger writes ([#109](https://github.com/samzong/gmc/issues/109))
+- **task:** record runs and events and add gmc task run ([#108](https://github.com/samzong/gmc/issues/108))
+- **worktree:** list linked worktrees across the home directory ([#106](https://github.com/samzong/gmc/issues/106))
+- **worktree:** prune merged local branches without worktrees ([#98](https://github.com/samzong/gmc/issues/98))
+
+
 ## [v0.10.1] - 2026-09-09
 ### Features
 - **worktree:** cache Rust dependencies in new worktrees ([#92](https://github.com/samzong/gmc/issues/92))
@@ -261,7 +279,8 @@
 - **gma:** add option to automatically stage all changes ([#123](https://github.com/samzong/gmc/issues/123))
 
 
-[Unreleased]: https://github.com/samzong/gmc/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/samzong/gmc/compare/v0.11.0...HEAD
+[v0.11.0]: https://github.com/samzong/gmc/compare/v0.10.1...v0.11.0
 [v0.10.1]: https://github.com/samzong/gmc/compare/v0.10.0...v0.10.1
 [v0.10.0]: https://github.com/samzong/gmc/compare/v0.9.0...v0.10.0
 [v0.9.0]: https://github.com/samzong/gmc/compare/v0.8.1...v0.9.0
