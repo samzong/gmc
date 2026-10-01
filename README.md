@@ -31,6 +31,7 @@ go install github.com/samzong/gmc@latest
 | `gmc wt dup [N] [-b <base>]` | Fan out N sibling worktrees for parallel agents |
 | `gmc wt promote <candidate>` | Apply a candidate's changes into the current worktree |
 | `gmc wt list` | List all worktrees in the family |
+| `gmc wt list -A` | Scan home for repositories with linked worktrees; show each family's local status |
 | `gmc wt switch` | Interactive switch between worktrees |
 | `gmc wt remove <name> [-D]` | Delete worktree (and optionally its branch) |
 | `gmc wt sync` | Pull the base branch up to date |

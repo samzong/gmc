@@ -78,6 +78,36 @@ detached
 	assert.Equal(t, "(detached)", worktrees[0].Branch)
 }
 
+func TestParseWorktreeListLockedAndPrunableReasons(t *testing.T) {
+	input := `worktree /path/to/locked
+HEAD abc123
+branch refs/heads/locked
+locked in use
+
+worktree /path/to/prunable
+HEAD def456
+detached
+prunable gitdir file points to non-existent location
+
+worktree /path/to/flags
+HEAD 789abc
+branch refs/heads/flags
+locked
+prunable
+`
+
+	worktrees, err := parseWorktreeList(input)
+	require.NoError(t, err)
+	require.Len(t, worktrees, 3)
+
+	assert.True(t, worktrees[0].IsLocked)
+	assert.False(t, worktrees[0].IsPrunable)
+	assert.False(t, worktrees[1].IsLocked)
+	assert.True(t, worktrees[1].IsPrunable)
+	assert.True(t, worktrees[2].IsLocked)
+	assert.True(t, worktrees[2].IsPrunable)
+}
+
 func TestExtractProjectName(t *testing.T) {
 	tests := []struct {
 		url      string

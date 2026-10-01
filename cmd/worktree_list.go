@@ -6,13 +6,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/mattn/go-isatty"
 	"github.com/samzong/gmc/internal/stringsutil"
 	"github.com/samzong/gmc/internal/worktree"
+	"github.com/spf13/cobra"
 )
 
 type WorktreeJSON struct {
+	Repository     string `json:"repository,omitempty"`
+	Locked         bool   `json:"locked,omitempty"`
+	Prunable       bool   `json:"prunable,omitempty"`
 	Name           string `json:"name"`
 	Path           string `json:"path"`
 	Branch         string `json:"branch"`
@@ -26,6 +31,60 @@ type WorktreeJSON struct {
 	ReviewNumber   int    `json:"review_number,omitempty"`
 	ReviewState    string `json:"review_state,omitempty"`
 	ReviewURL      string `json:"review_url,omitempty"`
+}
+
+func runWorktreeListAll(cmd *cobra.Command) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "Scanning %s for worktrees...\n", sanitizeForTerminal(abbrevPath(home)))
+	result, err := worktree.Scan(home)
+	if err != nil {
+		return err
+	}
+	for _, warning := range result.Warnings {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", sanitizeForTerminal(warning.Error()))
+	}
+	if outputFormat() == "json" {
+		items := make([]WorktreeJSON, 0, len(result.Worktrees))
+		for _, wt := range result.Worktrees {
+			items = append(items, WorktreeJSON{
+				Repository: wt.Repository, Name: filepath.Base(wt.Path), Path: wt.Path,
+				Branch: wt.Branch, Commit: wt.Commit, Status: wt.Status, Locked: wt.IsLocked, Prunable: wt.IsPrunable,
+			})
+		}
+		return printJSON(cmd.OutOrStdout(), items)
+	}
+	if len(result.Worktrees) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "No linked worktrees found.")
+		return nil
+	}
+	writer := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+	repository := ""
+	for _, wt := range result.Worktrees {
+		if wt.Repository != repository {
+			if err := writer.Flush(); err != nil {
+				return err
+			}
+			if repository != "" {
+				fmt.Fprintln(cmd.OutOrStdout())
+			}
+			repository = wt.Repository
+			fmt.Fprintln(cmd.OutOrStdout(), sanitizeForTerminal(abbrevPath(repository)))
+			fmt.Fprintln(writer, "PATH\tBRANCH\tCOMMIT\tSTATUS")
+		}
+		status := wt.Status
+		if wt.IsLocked {
+			status += ", locked"
+		}
+		if wt.IsPrunable {
+			status += ", prunable"
+		}
+		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\n", sanitizeForTerminal(abbrevPath(wt.Path)),
+			sanitizeForTerminal(wt.Branch), stringsutil.ShortHash(wt.Commit, 7, ""), status)
+	}
+	return writer.Flush()
 }
 
 func filterBareWorktrees(worktrees []worktree.Info) []worktree.Info {

@@ -40,9 +40,7 @@ func (r Result) StderrString(trim bool) string {
 func (r Runner) command(args ...string) *exec.Cmd {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = r.Dir
-	if len(r.Env) > 0 {
-		cmd.Env = append(os.Environ(), r.Env...)
-	}
+	cmd.Env = r.Env
 	return cmd
 }
 
