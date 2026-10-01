@@ -5,12 +5,55 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
 const gmcTmuxSocket = "gmc-task"
 
 var tmuxSessionStarter = StartTmuxSession
+
+var tmuxSessionAlive = tmuxHasSession
+
+var tmuxReachable = tmuxAvailable
+
+var tmuxSessionAttached = func(profile TmuxProfile) bool {
+	args := append(tmuxBaseArgs(profile),
+		"list-sessions", "-F", "#{session_name}\t#{session_attached}")
+	out, err := exec.Command("tmux", args...).Output()
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		name, attached, ok := strings.Cut(line, "\t")
+		if !ok || name != profile.Session {
+			continue
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(attached))
+		return err == nil && n > 0
+	}
+	return false
+}
+
+var tmuxListSessions = func(socket string) ([]string, error) {
+	if !tmuxAvailable() {
+		return nil, nil
+	}
+	args := append(tmuxBaseArgs(TmuxProfile{Socket: socket}), "list-sessions", "-F", "#{session_name}")
+	out, err := exec.Command("tmux", args...).Output()
+	if err != nil {
+		return nil, nil
+	}
+	var names []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if name := strings.TrimSpace(line); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names, nil
+}
+
+var killTmuxSession = KillTmuxSession
 
 type TmuxProfile struct {
 	Session string
@@ -44,7 +87,7 @@ func AttachTmuxSession(profile TmuxProfile) error {
 	if !tmuxHasSession(profile) {
 		return fmt.Errorf("tmux session %q not found", profile.Session)
 	}
-	args := append(tmuxBaseArgs(profile), "attach-session", "-t", profile.Session)
+	args := append(tmuxBaseArgs(profile), "attach-session", "-t", tmuxTarget(profile.Session))
 	cmd := exec.Command("tmux", args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -56,7 +99,7 @@ func KillTmuxSession(profile TmuxProfile) error {
 	if !tmuxAvailable() || !tmuxHasSession(profile) {
 		return nil
 	}
-	args := append(tmuxBaseArgs(profile), "kill-session", "-t", profile.Session)
+	args := append(tmuxBaseArgs(profile), "kill-session", "-t", tmuxTarget(profile.Session))
 	out, err := exec.Command("tmux", args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("tmux kill-session: %w: %s", err, strings.TrimSpace(string(out)))
@@ -70,8 +113,12 @@ func tmuxAvailable() bool {
 }
 
 func tmuxHasSession(profile TmuxProfile) bool {
-	args := append(tmuxBaseArgs(profile), "has-session", "-t", profile.Session)
+	args := append(tmuxBaseArgs(profile), "has-session", "-t", tmuxTarget(profile.Session))
 	return exec.Command("tmux", args...).Run() == nil
+}
+
+func tmuxTarget(session string) string {
+	return "=" + session
 }
 
 func tmuxBaseArgs(profile TmuxProfile) []string {

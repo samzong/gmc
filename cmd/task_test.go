@@ -29,7 +29,9 @@ func TestTaskCommandsRegistered(t *testing.T) {
 		"advance",
 		"add",
 		"attach",
+		"gc",
 		"list",
+		"refresh",
 		"rm",
 		"run",
 		"show",
@@ -144,6 +146,61 @@ func TestRunTaskRunJSONStreamSplit(t *testing.T) {
 	assert.Equal(t, task.RunKindCommand, run.Kind)
 	assert.Contains(t, errw.String(), "out1")
 	assert.Contains(t, errw.String(), "err1")
+}
+
+func TestTaskRefreshGcArgValidation(t *testing.T) {
+	refresh := &cobra.Command{Use: "refresh", Args: cobra.MaximumNArgs(1)}
+	require.NoError(t, refresh.Args(refresh, []string{"t-1"}))
+	require.NoError(t, refresh.Args(refresh, nil))
+	require.Error(t, refresh.Args(refresh, []string{"a", "b"}))
+
+	gc := &cobra.Command{Use: "gc", Args: cobra.NoArgs}
+	require.NoError(t, gc.Args(gc, nil))
+	require.Error(t, gc.Args(gc, []string{"x"}))
+}
+
+func TestRunTaskRefreshText(t *testing.T) {
+	engine := newTaskRunTestEngine(t)
+	out, errw := new(bytes.Buffer), new(bytes.Buffer)
+	withWriters(t, out, errw)
+	setTestValue(t, &outputFlag.value, "text")
+
+	require.NoError(t, runTaskRefresh(engine, []string{"t-run"}))
+	assert.Contains(t, out.String(), "TASK")
+	assert.Contains(t, out.String(), "t-run")
+	assert.Contains(t, out.String(), "clean")
+}
+
+func TestRunTaskRefreshJSON(t *testing.T) {
+	engine := newTaskRunTestEngine(t)
+	out, errw := new(bytes.Buffer), new(bytes.Buffer)
+	withWriters(t, out, errw)
+	setTestValue(t, &outputFlag.value, "json")
+
+	require.NoError(t, runTaskRefresh(engine, []string{"t-run"}))
+	var results []task.RefreshResult
+	require.NoError(t, json.Unmarshal(out.Bytes(), &results))
+	require.Len(t, results, 1)
+	assert.Equal(t, "t-run", results[0].TaskID)
+	assert.Equal(t, "code", results[0].State)
+	assert.Equal(t, "clean", results[0].WorktreeStatus)
+	assert.Equal(t, "none", results[0].Session)
+}
+
+func TestRunTaskGcJSON(t *testing.T) {
+	engine := newTaskRunTestEngine(t)
+	out, errw := new(bytes.Buffer), new(bytes.Buffer)
+	withWriters(t, out, errw)
+	setTestValue(t, &outputFlag.value, "json")
+	setTestValue(t, &taskGcApply, false)
+
+	require.NoError(t, runTaskGc(engine, nil))
+	var items []task.GCItem
+	require.NoError(t, json.Unmarshal(out.Bytes(), &items))
+	for _, item := range items {
+		assert.NotEmpty(t, item.Kind)
+		assert.NotEmpty(t, item.Action)
+	}
 }
 
 func TestValidateTaskAddArgs(t *testing.T) {

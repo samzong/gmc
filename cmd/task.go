@@ -21,6 +21,7 @@ var (
 	taskAddFile    string
 	taskAdvanceTo  string
 	taskRmForce    bool
+	taskGcApply    bool
 )
 
 var taskCmd = &cobra.Command{
@@ -100,6 +101,33 @@ var taskRmCmd = &cobra.Command{
 	RunE: taskRunner(runTaskRm),
 }
 
+var taskRefreshCmd = &cobra.Command{
+	Use:   "refresh [task-id]",
+	Short: "Reconcile task records with runtime state",
+	Args:  cobra.MaximumNArgs(1),
+	Example: `  gmc task refresh
+  gmc task refresh 1`,
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) != 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return completeTaskIDs(cmd, args, toComplete)
+	},
+	RunE: taskRunner(runTaskRefresh),
+}
+
+var taskGcCmd = &cobra.Command{
+	Use:   "gc",
+	Short: "Show or apply task cleanup",
+	Long: `Show cleanup candidates for task tmux sessions and worktrees.
+By default this is a dry run; only --apply executes "kill" actions.
+Worktrees, branches, and task ledger files are never removed.`,
+	Example: `  gmc task gc
+  gmc task gc --apply`,
+	Args: cobra.NoArgs,
+	RunE: taskRunner(runTaskGc),
+}
+
 var taskRunCmd = &cobra.Command{
 	Use:   "run <task-id> -- <command> [args...]",
 	Short: "Run a command in the task worktree",
@@ -118,7 +146,7 @@ var taskRunCmd = &cobra.Command{
 
 func init() {
 	taskCmd.AddCommand(taskAddCmd, taskStartCmd, taskListCmd, taskShowCmd, taskAttachCmd,
-		taskAdvanceCmd, taskRmCmd, taskRunCmd)
+		taskAdvanceCmd, taskRmCmd, taskRunCmd, taskRefreshCmd, taskGcCmd)
 
 	taskAddCmd.Flags().StringVar(&taskAddFile, "file", "", "Read task source from file")
 	_ = taskAddCmd.MarkFlagFilename("file")
@@ -131,6 +159,9 @@ func init() {
 	taskAdvanceCmd.Flags().StringVar(&taskAdvanceTo, "to", "", "Workflow node to advance to")
 
 	taskRmCmd.Flags().BoolVarP(&taskRmForce, "force", "f", false, "Force worktree removal if dirty")
+
+	taskGcCmd.Flags().BoolVar(&taskGcApply, "apply", false,
+		`Kill live sessions marked "kill" (not attached, node finished or task done)`)
 
 	rootCmd.AddCommand(taskCmd)
 }
@@ -224,10 +255,11 @@ func runTaskAdd(engine *task.Engine, args []string) error {
 	if source == "" {
 		source = args[0]
 	}
-	rec, err := engine.CreateTask(source)
+	rec, warnings, err := engine.CreateTask(source)
 	if err != nil {
 		return err
 	}
+	printTaskWarnings(warnings)
 	if outputFormat() == "json" {
 		return printJSON(outWriter(), rec)
 	}
@@ -348,10 +380,12 @@ func runTaskRun(engine *task.Engine, dash int, args []string) error {
 		opts.Stdout = outWriter()
 		opts.Stderr = errWriter()
 	}
-	run, err := engine.Run(opts)
+	res, err := engine.Run(opts)
 	if err != nil {
 		return err
 	}
+	printTaskWarnings(res.Warnings)
+	run := res.Run
 	logs := ""
 	if stdoutPath, err := engine.RunLogPath(run.TaskID, run.Stdout); err == nil {
 		logs = stdoutPath
@@ -387,6 +421,85 @@ func runTaskRun(engine *task.Engine, dash int, args []string) error {
 		}
 		return exitcode.New(code, msg, nil)
 	}
+	return nil
+}
+
+func runTaskRefresh(engine *task.Engine, args []string) error {
+	ref := ""
+	if len(args) > 0 {
+		ref = args[0]
+	}
+	results, err := engine.Refresh(ref)
+	if err != nil {
+		return err
+	}
+	if outputFormat() == "json" {
+		return printJSON(outWriter(), results)
+	}
+	if len(results) == 0 {
+		fmt.Fprintln(outWriter(), "No tasks found.")
+		return nil
+	}
+	w := tabwriter.NewWriter(outWriter(), 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(w, "TASK\tSTATE\tWORKTREE\tSESSION\tUPDATED")
+	for _, res := range results {
+		worktree := res.WorktreeStatus
+		if worktree == "" {
+			worktree = "-"
+		}
+		session := res.Session
+		if session == "" {
+			session = "-"
+		}
+		updated := "-"
+		if len(res.Updated) > 0 {
+			updated = strconv.Itoa(len(res.Updated))
+		}
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", res.TaskID, res.State, worktree, session, updated)
+		for _, line := range res.Updated {
+			_, _ = fmt.Fprintf(w, "    %s\n", line)
+		}
+	}
+	_ = w.Flush()
+	return nil
+}
+
+func runTaskGc(engine *task.Engine, _ []string) error {
+	items, err := engine.GC(task.GCOptions{Apply: taskGcApply})
+	if err != nil {
+		return err
+	}
+	if outputFormat() == "json" {
+		return printJSON(outWriter(), items)
+	}
+	if len(items) == 0 {
+		fmt.Fprintln(outWriter(), "Nothing to clean up.")
+		return nil
+	}
+	w := tabwriter.NewWriter(outWriter(), 0, 0, 2, ' ', 0)
+	if taskGcApply {
+		_, _ = fmt.Fprintln(w, "TASK\tKIND\tTARGET\tACTION\tREASON\tRESULT")
+	} else {
+		_, _ = fmt.Fprintln(w, "TASK\tKIND\tTARGET\tACTION\tREASON")
+	}
+	for _, item := range items {
+		taskID := item.TaskID
+		if taskID == "" {
+			taskID = "-"
+		}
+		if taskGcApply {
+			result := item.Result
+			if result == "" {
+				result = "-"
+			}
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+				taskID, item.Kind, item.Target, item.Action, item.Reason, result)
+		} else {
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+				taskID, item.Kind, item.Target, item.Action, item.Reason)
+		}
+	}
+	_ = w.Flush()
 	return nil
 }
 
