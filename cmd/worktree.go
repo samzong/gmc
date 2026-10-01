@@ -75,7 +75,23 @@ var wtListCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
 	Short:   "List all worktrees",
-	RunE: func(_ *cobra.Command, _ []string) error {
+	Long: `List worktrees in the current repository.
+With -A, scan the home directory for repositories with linked worktrees.
+Include hidden directories and nested repositories. Omit repositories with only a main worktree.
+Show local status grouped by repository.
+Directory symlinks, Git metadata, node_modules, and on macOS ~/Library and ~/.Trash are not traversed.
+Unreadable directories are reported on stderr; scanning continues.
+--pr and --diff-base are available only for the current repository.`,
+	Example: `  gmc wt list
+  gmc wt list -A
+  gmc wt list -A -o json`,
+	Args:              cobra.NoArgs,
+	ValidArgsFunction: cobra.NoFileCompletions,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		all, _ := cmd.Flags().GetBool("all")
+		if all {
+			return runWorktreeListAll(cmd)
+		}
 		return runWorktreeList(newWorktreeClient(), false)
 	},
 }
@@ -199,6 +215,9 @@ func init() {
 		"Base branch/ref for worktree diff stats")
 	wtListCmd.Flags().StringVar(&wtDiffBase, "diff-base", "",
 		"Base branch/ref for worktree diff stats")
+	wtListCmd.Flags().BoolP("all", "A", false, "Find repositories with linked worktrees in the home directory")
+	wtListCmd.MarkFlagsMutuallyExclusive("all", "pr")
+	wtListCmd.MarkFlagsMutuallyExclusive("all", "diff-base")
 	wtRemoveCmd.ValidArgsFunction = completeWorktreeNames
 	wtPromoteCmd.ValidArgsFunction = completeWorktreeNames
 	_ = wtAddCmd.RegisterFlagCompletionFunc("base", completeBranchNames)

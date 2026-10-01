@@ -89,6 +89,8 @@ func (c *Client) InvalidateList() {
 }
 
 type Info struct {
+	Repository string
+	Status     string
 	Path       string
 	Branch     string
 	Commit     string
@@ -108,7 +110,18 @@ func (c *Client) List() ([]Info, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to list worktrees: %w", err)
 	}
-	return parseWorktreeList(string(result.Stdout))
+	return c.resolveWorktreeList(result.Stdout)
+}
+
+func (c *Client) resolveWorktreeList(output []byte) ([]Info, error) {
+	worktrees, err := parseWorktreeList(string(output))
+	if err == nil && len(worktrees) > 0 && !worktrees[0].IsBare {
+		root, rootErr := c.runner.Run("-C", worktrees[0].Path, "rev-parse", "--show-toplevel")
+		if rootErr == nil {
+			worktrees[0].Path = strings.TrimSuffix(string(root.Stdout), "\n")
+		}
+	}
+	return worktrees, err
 }
 
 func parseWorktreeList(output string) ([]Info, error) {
@@ -130,9 +143,9 @@ func parseWorktreeList(output string) ([]Info, error) {
 			current.Branch = strings.TrimPrefix(strings.TrimPrefix(line, "branch "), "refs/heads/")
 		case line == "bare":
 			current.IsBare = true
-		case line == "prunable":
+		case line == "prunable", strings.HasPrefix(line, "prunable "):
 			current.IsPrunable = true
-		case line == "locked":
+		case line == "locked", strings.HasPrefix(line, "locked "):
 			current.IsLocked = true
 		case strings.HasPrefix(line, "detached"):
 			current.Branch = "(detached)"
@@ -142,7 +155,11 @@ func parseWorktreeList(output string) ([]Info, error) {
 }
 
 func (c *Client) GetWorktreeStatus(path string) string {
-	result, err := c.runner.Run("-C", path, "status", "--porcelain")
+	return c.statusSummary("-C", path, "status", "--porcelain")
+}
+
+func (c *Client) statusSummary(args ...string) string {
+	result, err := c.runner.Run(args...)
 	if err != nil {
 		return "unknown"
 	}
