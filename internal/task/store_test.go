@@ -115,6 +115,105 @@ func TestStoreAllowsNestedLookingRefsInsideRoot(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestStoreEventsRoundTrip(t *testing.T) {
+	store := NewStore(t.TempDir())
+	require.NoError(t, store.CreateTask(Record{ID: "t-ev", State: TaskNew, Source: "x", CreatedAt: time.Now().UTC()}))
+
+	events, err := store.LoadEvents("t-ev")
+	require.NoError(t, err)
+	assert.Empty(t, events)
+
+	require.NoError(t, store.AppendEvent(EventRecord{Type: EventTaskCreated, TaskID: "t-ev"}))
+	require.NoError(t, store.AppendEvent(EventRecord{Type: EventRunStarted, TaskID: "t-ev", RunID: "r-1", Node: "plan"}))
+
+	events, err = store.LoadEvents("t-ev")
+	require.NoError(t, err)
+	require.Len(t, events, 2)
+	assert.Equal(t, EventTaskCreated, events[0].Type)
+	assert.Equal(t, EventRunStarted, events[1].Type)
+	assert.Equal(t, "r-1", events[1].RunID)
+	assert.False(t, events[0].Time.IsZero())
+}
+
+func TestStoreEventsMissingTaskDir(t *testing.T) {
+	store := NewStore(t.TempDir())
+	events, err := store.LoadEvents("t-missing")
+	require.NoError(t, err)
+	assert.Empty(t, events)
+}
+
+func TestStoreRunsRoundTrip(t *testing.T) {
+	store := NewStore(t.TempDir())
+	require.NoError(t, store.CreateTask(Record{ID: "t-runs", State: TaskNew, Source: "x", CreatedAt: time.Now().UTC()}))
+
+	runs, err := store.LoadRuns("t-runs")
+	require.NoError(t, err)
+	assert.Empty(t, runs)
+
+	base := time.Now().UTC().Truncate(time.Second)
+	require.NoError(t, store.SaveRun(RunRecord{
+		ID: "r-b", TaskID: "t-runs", Status: RunStatusPassed, StartedAt: base.Add(time.Minute),
+	}))
+	require.NoError(t, store.SaveRun(RunRecord{ID: "r-c", TaskID: "t-runs", Status: RunStatusFailed, StartedAt: base}))
+	require.NoError(t, store.SaveRun(RunRecord{ID: "r-a", TaskID: "t-runs", Status: RunStatusRunning, StartedAt: base}))
+
+	runs, err = store.LoadRuns("t-runs")
+	require.NoError(t, err)
+	require.Len(t, runs, 3)
+	assert.Equal(t, "r-a", runs[0].ID)
+	assert.Equal(t, "r-c", runs[1].ID)
+	assert.Equal(t, "r-b", runs[2].ID)
+	assert.Equal(t, RunStatusFailed, runs[1].Status)
+
+	sum, err := store.LoadSummary("t-runs")
+	require.NoError(t, err)
+	require.Len(t, sum.Runs, 3)
+	assert.Equal(t, "r-a", sum.Runs[0].ID)
+}
+
+func TestStoreSummaryWithoutRunsDir(t *testing.T) {
+	store := NewStore(t.TempDir())
+	require.NoError(t, store.CreateTask(Record{ID: "t-legacy", State: TaskNew, Source: "x", CreatedAt: time.Now().UTC()}))
+	require.NoError(t, store.SaveAttempt(AttemptRecord{ID: "attempt-1", TaskID: "t-legacy"}))
+
+	sum, err := store.LoadSummary("t-legacy")
+	require.NoError(t, err)
+	assert.Empty(t, sum.Runs)
+	require.NotNil(t, sum.Attempt)
+}
+
+func TestStoreLoadRunsSkipsCorruptFiles(t *testing.T) {
+	store := NewStore(t.TempDir())
+	require.NoError(t, store.CreateTask(Record{ID: "t-corrupt", State: TaskNew, Source: "x", CreatedAt: time.Now().UTC()}))
+	require.NoError(t, store.SaveRun(RunRecord{
+		ID: "r-ok", TaskID: "t-corrupt", Status: RunStatusPassed, StartedAt: time.Now().UTC(),
+	}))
+	runsDir := filepath.Join(store.root, "tasks", "t-corrupt", "runs")
+	require.NoError(t, os.WriteFile(filepath.Join(runsDir, "r-bad.yaml"), []byte("{{{not yaml"), 0o644))
+
+	runs, err := store.LoadRuns("t-corrupt")
+	require.NoError(t, err)
+	require.Len(t, runs, 1)
+	assert.Equal(t, "r-ok", runs[0].ID)
+
+	sum, err := store.LoadSummary("t-corrupt")
+	require.NoError(t, err)
+	require.Len(t, sum.Runs, 1)
+	require.NotEmpty(t, sum.Warnings)
+	assert.Contains(t, sum.Warnings[0], "r-bad.yaml")
+}
+
+func TestStoreRunLogPath(t *testing.T) {
+	store := NewStore(t.TempDir())
+	require.NoError(t, store.CreateTask(Record{ID: "t-log", State: TaskNew, Source: "x", CreatedAt: time.Now().UTC()}))
+
+	path, err := store.RunLogPath("t-log", RunLogRelPath("r-1", "stdout"))
+	require.NoError(t, err)
+	assert.True(t, filepath.IsAbs(path))
+	assert.Equal(t, filepath.Join("logs", "r-1.stdout.log"), filepath.FromSlash(RunLogRelPath("r-1", "stdout")))
+	assert.Equal(t, filepath.Join(store.root, "tasks", "t-log", "logs", "r-1.stdout.log"), path)
+}
+
 func TestEngineCreateTaskFromFile(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "todo.md")

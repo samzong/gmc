@@ -4,6 +4,30 @@ import "time"
 
 const TaskNew = "new"
 
+const (
+	RunKindAgent   = "agent"
+	RunKindCommand = "command"
+)
+
+const (
+	RunRuntimeTmux     = "tmux"
+	RunRuntimeHeadless = "headless"
+)
+
+const (
+	RunStatusRunning = "running"
+	RunStatusPassed  = "passed"
+	RunStatusFailed  = "failed"
+)
+
+const (
+	EventTaskCreated  = "task.created"
+	EventTaskStarted  = "task.started"
+	EventTaskAdvanced = "task.advanced"
+	EventRunStarted   = "run.started"
+	EventRunFinished  = "run.finished"
+)
+
 type Record struct {
 	ID               string             `json:"id" yaml:"id"`
 	Title            string             `json:"title,omitempty" yaml:"title,omitempty"`
@@ -42,9 +66,44 @@ type TmuxSessionRecord struct {
 	StartedAt time.Time `json:"started_at,omitempty" yaml:"started_at,omitempty"`
 }
 
+type RunRecord struct {
+	ID        string     `json:"id" yaml:"id"`
+	TaskID    string     `json:"task_id" yaml:"task_id"`
+	AttemptID string     `json:"attempt_id,omitempty" yaml:"attempt_id,omitempty"`
+	Node      string     `json:"node,omitempty" yaml:"node,omitempty"`
+	Kind      string     `json:"kind" yaml:"kind"`
+	Runtime   string     `json:"runtime" yaml:"runtime"`
+	Command   []string   `json:"command" yaml:"command"`
+	Cwd       string     `json:"cwd,omitempty" yaml:"cwd,omitempty"`
+	Session   string     `json:"session,omitempty" yaml:"session,omitempty"`
+	Socket    string     `json:"socket,omitempty" yaml:"socket,omitempty"`
+	PID       int        `json:"pid,omitempty" yaml:"pid,omitempty"`
+	Status    string     `json:"status" yaml:"status"`
+	ExitCode  *int       `json:"exit_code,omitempty" yaml:"exit_code,omitempty"`
+	Error     string     `json:"error,omitempty" yaml:"error,omitempty"`
+	StartedAt time.Time  `json:"started_at" yaml:"started_at"`
+	EndedAt   *time.Time `json:"ended_at,omitempty" yaml:"ended_at,omitempty"`
+	Stdout    string     `json:"stdout,omitempty" yaml:"stdout,omitempty"`
+	Stderr    string     `json:"stderr,omitempty" yaml:"stderr,omitempty"`
+}
+
+type EventRecord struct {
+	Time      time.Time `json:"ts"`
+	Type      string    `json:"type"`
+	TaskID    string    `json:"task_id"`
+	AttemptID string    `json:"attempt_id,omitempty"`
+	RunID     string    `json:"run_id,omitempty"`
+	Node      string    `json:"node,omitempty"`
+	Status    string    `json:"status,omitempty"`
+	ExitCode  *int      `json:"exit_code,omitempty"`
+	Message   string    `json:"message,omitempty"`
+}
+
 type Summary struct {
-	Task    Record         `json:"task"`
-	Attempt *AttemptRecord `json:"attempt,omitempty"`
+	Task     Record         `json:"task"`
+	Attempt  *AttemptRecord `json:"attempt,omitempty"`
+	Runs     []RunRecord    `json:"runs,omitempty"`
+	Warnings []string       `json:"warnings,omitempty"`
 }
 
 type WorkflowConfig struct {

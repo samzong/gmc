@@ -3,8 +3,11 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/samzong/gmc/internal/exitcode"
 	"github.com/samzong/gmc/internal/task"
@@ -97,8 +100,25 @@ var taskRmCmd = &cobra.Command{
 	RunE: taskRunner(runTaskRm),
 }
 
+var taskRunCmd = &cobra.Command{
+	Use:   "run <task-id> -- <command> [args...]",
+	Short: "Run a command in the task worktree",
+	Args:  validateTaskRunArgs,
+	Example: `  gmc task run 1 -- go test ./...
+  gmc task run t-20260614-120000-a1b2 -- make check`,
+	ValidArgsFunction: completeTaskRunArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		engine, err := newTaskEngine()
+		if err != nil {
+			return err
+		}
+		return runTaskRun(engine, cmd.ArgsLenAtDash(), args)
+	},
+}
+
 func init() {
-	taskCmd.AddCommand(taskAddCmd, taskStartCmd, taskListCmd, taskShowCmd, taskAttachCmd, taskAdvanceCmd, taskRmCmd)
+	taskCmd.AddCommand(taskAddCmd, taskStartCmd, taskListCmd, taskShowCmd, taskAttachCmd,
+		taskAdvanceCmd, taskRmCmd, taskRunCmd)
 
 	taskAddCmd.Flags().StringVar(&taskAddFile, "file", "", "Read task source from file")
 	_ = taskAddCmd.MarkFlagFilename("file")
@@ -115,6 +135,20 @@ func init() {
 	rootCmd.AddCommand(taskCmd)
 }
 
+func validateTaskRunArgs(cmd *cobra.Command, args []string) error {
+	dash := cmd.ArgsLenAtDash()
+	if dash < 0 {
+		return errors.New("missing -- separator: use 'gmc task run <task-id> -- <command> [args...]'")
+	}
+	if dash != 1 {
+		return errors.New("expected exactly one task id before --")
+	}
+	if len(args)-dash < 1 {
+		return errors.New("missing command after --")
+	}
+	return nil
+}
+
 func validateTaskAddArgs(cmd *cobra.Command, args []string) error {
 	if strings.TrimSpace(taskAddFile) != "" {
 		if len(args) > 0 {
@@ -128,6 +162,32 @@ func validateTaskAddArgs(cmd *cobra.Command, args []string) error {
 func completeTaskAgents(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	candidates := []string{"codex", "grok", "cursor-agent", "opencode"}
 	return completeStrings(candidates, toComplete), cobra.ShellCompDirectiveNoFileComp
+}
+
+func completeTaskIDs(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	engine, err := newTaskEngine()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	summaries, err := engine.ListTasks()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	ids := make([]string, 0, len(summaries))
+	for _, sum := range summaries {
+		ids = append(ids, sum.Task.ID)
+	}
+	return completeStrings(ids, toComplete), cobra.ShellCompDirectiveNoFileComp
+}
+
+func completeTaskRunArgs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if cmd.ArgsLenAtDash() >= 0 {
+		return nil, cobra.ShellCompDirectiveDefault
+	}
+	if len(args) != 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	return completeTaskIDs(cmd, args, toComplete)
 }
 
 func completeStrings(candidates []string, prefix string) []string {
@@ -188,6 +248,7 @@ func runTaskStart(engine *task.Engine, args []string) error {
 	if err != nil {
 		return err
 	}
+	printTaskWarnings(sum.Warnings)
 	if outputFormat() == "json" {
 		return printJSON(outWriter(), sum)
 	}
@@ -235,10 +296,17 @@ func runTaskShow(engine *task.Engine, args []string) error {
 	if err != nil {
 		return err
 	}
+	printTaskWarnings(sum.Warnings)
 	if outputFormat() == "json" {
 		return printJSON(outWriter(), sum)
 	}
-	printTaskDetail(sum)
+	eventsPath := ""
+	if path, err := engine.EventsPath(sum.Task.ID); err == nil {
+		if _, err := os.Stat(path); err == nil {
+			eventsPath = path
+		}
+	}
+	printTaskDetail(sum, eventsPath)
 	return nil
 }
 
@@ -254,6 +322,7 @@ func runTaskAdvance(engine *task.Engine, args []string) error {
 	if err != nil {
 		return err
 	}
+	printTaskWarnings(sum.Warnings)
 	if outputFormat() == "json" {
 		return printJSON(outWriter(), sum)
 	}
@@ -262,6 +331,61 @@ func runTaskAdvance(engine *task.Engine, args []string) error {
 		fmt.Fprintf(outWriter(), "  tmux: %s\n", sum.Attempt.TmuxSession)
 		printTaskField("command", task.LaunchCommand(sum))
 		fmt.Fprintf(outWriter(), "  attach: gmc task attach %s\n", sum.Task.ID)
+	}
+	return nil
+}
+
+func runTaskRun(engine *task.Engine, dash int, args []string) error {
+	opts := task.RunOptions{
+		TaskID:  args[0],
+		Command: args[dash:],
+	}
+	jsonMode := outputFormat() == "json"
+	if jsonMode {
+		opts.Stdout = errWriter()
+		opts.Stderr = errWriter()
+	} else {
+		opts.Stdout = outWriter()
+		opts.Stderr = errWriter()
+	}
+	run, err := engine.Run(opts)
+	if err != nil {
+		return err
+	}
+	logs := ""
+	if stdoutPath, err := engine.RunLogPath(run.TaskID, run.Stdout); err == nil {
+		logs = stdoutPath
+	}
+	if stderrPath, err := engine.RunLogPath(run.TaskID, run.Stderr); err == nil {
+		logs = strings.TrimSpace(logs + " " + stderrPath)
+	}
+	if jsonMode {
+		if err := printJSON(outWriter(), run); err != nil {
+			return err
+		}
+	} else if run.Status != task.RunStatusFailed {
+		line := fmt.Sprintf("Run %s %s", run.ID, run.Status)
+		if logs != "" {
+			line += "; logs: " + logs
+		}
+		fmt.Fprintln(errWriter(), line)
+	}
+	if run.Status == task.RunStatusFailed {
+		msg := fmt.Sprintf("run %s failed", run.ID)
+		if run.ExitCode != nil {
+			msg += fmt.Sprintf(" (exit %d)", *run.ExitCode)
+		}
+		if run.Error != "" {
+			msg += ": " + run.Error
+		}
+		if logs != "" {
+			msg += "; logs: " + logs
+		}
+		code := exitcode.General
+		if run.ExitCode != nil {
+			code = *run.ExitCode
+		}
+		return exitcode.New(code, msg, nil)
 	}
 	return nil
 }
@@ -277,7 +401,7 @@ func runTaskRm(engine *task.Engine, args []string) error {
 	return nil
 }
 
-func printTaskDetail(sum task.Summary) {
+func printTaskDetail(sum task.Summary, eventsPath string) {
 	fmt.Fprintf(outWriter(), "Task: %s\n", sum.Task.ID)
 	fmt.Fprintf(outWriter(), "  title: %s\n", task.DisplayTitle(sum.Task))
 	fmt.Fprintf(outWriter(), "  state: %s\n", sum.Task.State)
@@ -302,8 +426,28 @@ func printTaskDetail(sum task.Summary) {
 			}
 		}
 	}
+	if len(sum.Runs) > 0 {
+		fmt.Fprintln(outWriter(), "Runs:")
+		for _, run := range sum.Runs {
+			exit := "-"
+			if run.ExitCode != nil {
+				exit = strconv.Itoa(*run.ExitCode)
+			}
+			fmt.Fprintf(outWriter(), "    %s\t%s\t%s\t%s\t%s\t%s\n",
+				run.ID, run.Node, run.Kind, run.Status, exit, run.StartedAt.Format(time.RFC3339))
+		}
+	}
+	if eventsPath != "" {
+		fmt.Fprintf(outWriter(), "  events: %s\n", eventsPath)
+	}
 	fmt.Fprintln(outWriter(), "Source:")
 	fmt.Fprintln(outWriter(), indentLines(sum.Task.Source, "  "))
+}
+
+func printTaskWarnings(warnings []string) {
+	for _, warning := range warnings {
+		fmt.Fprintf(errWriter(), "warning: %s\n", warning)
+	}
 }
 
 func printTaskField(label, value string) {
