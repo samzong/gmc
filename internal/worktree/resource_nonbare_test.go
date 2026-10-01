@@ -396,3 +396,84 @@ func TestAutomaticSharingDoesNotBorrowTransientSources(t *testing.T) {
 		}
 	}
 }
+
+func TestAddSharedResourceRefusesLinkingBuildOutput(t *testing.T) {
+	repo := initTestRepo(t)
+	t.Chdir(repo)
+	globalPath := filepath.Join(t.TempDir(), "config.yaml")
+	globalConfig := []byte("worktree:\n  shared:\n    - path: .env\n      strategy: copy\n")
+	require.NoError(t, os.WriteFile(globalPath, globalConfig, 0o600))
+	repoPath := filepath.Join(repo, ".git", sharedConfigName)
+	repoConfig := []byte("shared:\n  - path: .env\n    strategy: copy\n")
+	require.NoError(t, os.WriteFile(repoPath, repoConfig, 0o644))
+	client := NewClient(Options{GlobalConfigPath: globalPath})
+	for _, global := range []bool{false, true} {
+		for _, path := range []string{"target", "Target", "**/target", "web/.next"} {
+			_, err := client.AddSharedResource(path, StrategySymlink, global)
+			require.ErrorContains(t, err, "refusing to link build output directory")
+		}
+	}
+	data, err := os.ReadFile(globalPath)
+	require.NoError(t, err)
+	assert.Equal(t, globalConfig, data)
+	data, err = os.ReadFile(repoPath)
+	require.NoError(t, err)
+	assert.Equal(t, repoConfig, data)
+	_, err = client.AddSharedResource("target", StrategyCopy, false)
+	require.NoError(t, err)
+	_, err = client.AddSharedResource(".local", StrategySymlink, false)
+	require.NoError(t, err)
+	cfg, _, err := client.LoadSharedConfig()
+	require.NoError(t, err)
+	assert.Equal(t, []SharedResource{
+		{Path: ".env", Strategy: StrategyCopy},
+		{Path: "target", Strategy: StrategyCopy},
+		{Path: ".local", Strategy: StrategySymlink},
+	}, cfg.Resources)
+}
+
+func TestSyncSkipsLinkingConfiguredBuildOutput(t *testing.T) {
+	repo := initTestRepo(t)
+	t.Chdir(repo)
+	globalPath := filepath.Join(t.TempDir(), "config.yaml")
+	writeFile(t, globalPath, "worktree:\n  shared:\n    - path: '**/dist'\n      strategy: link\n")
+	writeFile(t, filepath.Join(repo, ".git", sharedConfigName),
+		"shared:\n  - path: target\n    strategy: link\n  - path: .local\n    strategy: link\n")
+	for _, dir := range []string{"target", "web/dist", ".local"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(repo, dir), 0o755))
+	}
+	client := NewClient(Options{GlobalConfigPath: globalPath})
+	_, err := client.LoadEffectiveSharedConfig()
+	require.NoError(t, err)
+
+	fresh := t.TempDir()
+	report, err := client.syncSharedResourcesToPath(fresh, false)
+	require.NoError(t, err)
+	var warnings []string
+	for _, event := range report.Events {
+		if event.Level == EventWarn {
+			warnings = append(warnings, event.Message)
+		}
+	}
+	assert.ElementsMatch(t, []string{
+		`skipped linking build output directory "target"; remove the rule with: gmc wt share rm target`,
+		`skipped linking build output directory "web/dist"; remove the rule with: gmc wt share rm --global '**/dist'`,
+	}, warnings)
+	assertMissing(t, filepath.Join(fresh, "target"))
+	assertMissing(t, filepath.Join(fresh, "web/dist"))
+	linked, err := os.Lstat(filepath.Join(fresh, ".local"))
+	require.NoError(t, err)
+	assert.NotZero(t, linked.Mode()&os.ModeSymlink)
+
+	existing := t.TempDir()
+	require.NoError(t, os.Symlink(filepath.Join(repo, "target"), filepath.Join(existing, "target")))
+	report, err = client.syncSharedResourcesToPath(existing, false)
+	require.NoError(t, err)
+	assert.Contains(t, report.Events, Event{Level: EventWarn,
+		Message: `skipped linking build output directory "target"; remove the rule with: gmc wt share rm target; ` +
+			"the existing link " + filepath.Join(existing, "target") +
+			" still shares the directory and must be removed manually"})
+	destination, err := os.Readlink(filepath.Join(existing, "target"))
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(repo, "target"), destination)
+}

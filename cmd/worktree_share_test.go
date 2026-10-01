@@ -122,3 +122,17 @@ func TestHookListIndicesMatchEffectiveRemoval(t *testing.T) {
 	assert.False(t, hooks[0].Disabled)
 	assert.False(t, hooks[1].Disabled)
 }
+
+func TestShareAddRefusesLinkingBuildOutput(t *testing.T) {
+	repo := initCmdTestRepo(t)
+	t.Chdir(repo)
+	setTestValue(t, &shareStrategy, "link")
+	command := &cobra.Command{Use: "add"}
+	command.Flags().String("strategy", "copy", "")
+	command.Flags().Bool("global", false, "")
+	require.NoError(t, command.Flags().Set("strategy", "link"))
+	err := wtShareAddCmd.RunE(command, []string{"target"})
+	require.ErrorContains(t, err, "refusing to link build output directory")
+	_, err = os.Stat(filepath.Join(repo, ".git", "gmc-share.yml"))
+	assert.True(t, os.IsNotExist(err))
+}

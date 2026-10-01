@@ -1,5 +1,7 @@
 package worktree
 
+import "slices"
+
 type EventLevel string
 
 const (
@@ -25,7 +27,12 @@ func (r *Report) Warn(message string) {
 }
 
 func (r *Report) Merge(other Report) {
-	r.Events = append(r.Events, other.Events...)
+	for _, event := range other.Events {
+		if event.Level == EventWarn && slices.Contains(r.Events, event) {
+			continue
+		}
+		r.Events = append(r.Events, event)
+	}
 }
 
 func (r *Report) Add(level EventLevel, message string) {

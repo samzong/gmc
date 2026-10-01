@@ -6,11 +6,28 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/samzong/gmc/internal/gitcmd"
 )
+
+var buildOutputDirectories = []string{"target", "build", "dist", ".next", ".nuxt"}
+
+func isBuildOutputPath(resourcePath string) bool {
+	return slices.Contains(buildOutputDirectories, strings.ToLower(path.Base(filepath.ToSlash(resourcePath))))
+}
+
+func shareRemoveHint(rulePath, origin string) string {
+	if strings.ContainsAny(rulePath, "*?[") {
+		rulePath = "'" + rulePath + "'"
+	}
+	if origin == "global" {
+		return "gmc wt share rm --global " + rulePath
+	}
+	return "gmc wt share rm " + rulePath
+}
 
 func (c *Client) NormalizeSharedResourcePath(path string) (string, error) {
 	trimmed := strings.TrimSpace(path)
@@ -319,6 +336,7 @@ func (c *Client) expandSharedResources(rules []SharedResource) ([]SharedResource
 			continue
 		}
 		rule.worktreeRelative = sharedRuleUsesPrimary(rule)
+		rule.rulePath = rule.Path
 		rule.Path = resourcePath
 		if excluded := sharedExcludedChild(rules, rule, ordered); excluded != "" {
 			return nil, fmt.Errorf("cannot exclude %s inside shared directory %s; "+
