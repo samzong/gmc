@@ -3,10 +3,19 @@
 package task
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"syscall"
 )
+
+var processAlive = func(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
 
 func runNotifySignals() []os.Signal {
 	return []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGPIPE}

@@ -220,7 +220,7 @@ func TestEngineCreateTaskFromFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(source, []byte("# Todo\n\nShip it."), 0o644))
 
 	engine := NewEngine(NewStore(dir), nil)
-	rec, err := engine.CreateTask(source)
+	rec, _, err := engine.CreateTask(source)
 	require.NoError(t, err)
 	assert.Equal(t, TaskNew, rec.State)
 	assert.Equal(t, source, rec.SourceFile)
@@ -229,7 +229,7 @@ func TestEngineCreateTaskFromFile(t *testing.T) {
 
 func TestEngineAdvanceBeforeStart(t *testing.T) {
 	engine := NewEngine(NewStore(t.TempDir()), nil)
-	rec, err := engine.CreateTask("demo")
+	rec, _, err := engine.CreateTask("demo")
 	require.NoError(t, err)
 
 	_, err = engine.Advance(AdvanceOptions{TaskID: rec.ID})
@@ -240,7 +240,7 @@ func TestEngineAdvanceBeforeStart(t *testing.T) {
 func TestEngineRemoveTaskWithoutAttempt(t *testing.T) {
 	store := NewStore(t.TempDir())
 	engine := NewEngine(store, nil)
-	rec, err := engine.CreateTask("demo")
+	rec, _, err := engine.CreateTask("demo")
 	require.NoError(t, err)
 
 	require.NoError(t, engine.Remove(rec.ID, RemoveOptions{}))
@@ -250,7 +250,7 @@ func TestEngineRemoveTaskWithoutAttempt(t *testing.T) {
 
 func TestEngineRemoveTaskWithMissingWorktree(t *testing.T) {
 	engine, store := newTestEngineWithGit(t)
-	rec, err := engine.CreateTask("orphan worktree")
+	rec, _, err := engine.CreateTask("orphan worktree")
 	require.NoError(t, err)
 	require.NoError(t, store.SaveAttempt(AttemptRecord{
 		ID:       "attempt-1",
@@ -262,4 +262,27 @@ func TestEngineRemoveTaskWithMissingWorktree(t *testing.T) {
 	require.NoError(t, engine.Remove(rec.ID, RemoveOptions{Force: true}))
 	_, err = store.LoadTask(rec.ID)
 	require.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestWriteYAMLPreservesPermissions(t *testing.T) {
+	store := NewStore(t.TempDir())
+	require.NoError(t, store.CreateTask(Record{ID: "t-x", State: TaskNew, Source: "x"}))
+	require.NoError(t, store.SaveRun(RunRecord{
+		ID: "r-1", TaskID: "t-x", Kind: RunKindCommand, Status: RunStatusRunning,
+	}))
+
+	dir, err := store.taskDir("t-x")
+	require.NoError(t, err)
+	runPath := filepath.Join(dir, "runs", "r-1.yaml")
+	info, err := os.Stat(runPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o644), info.Mode().Perm())
+
+	require.NoError(t, os.Chmod(runPath, 0o600))
+	require.NoError(t, store.SaveRun(RunRecord{
+		ID: "r-1", TaskID: "t-x", Kind: RunKindCommand, Status: RunStatusPassed,
+	}))
+	info, err = os.Stat(runPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 }

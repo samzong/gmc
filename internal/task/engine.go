@@ -45,14 +45,16 @@ type RunOptions struct {
 	Stderr  io.Writer
 }
 
+var storeAppendEvent = (*Store).AppendEvent
+
 func NewEngine(store *Store, wt *worktree.Client) *Engine {
 	return &Engine{store: store, wt: wt}
 }
 
-func (e *Engine) CreateTask(input string) (Record, error) {
+func (e *Engine) CreateTask(input string) (Record, []string, error) {
 	source, sourceFile, err := loadTaskSource(input)
 	if err != nil {
-		return Record{}, err
+		return Record{}, nil, err
 	}
 	issue := ParseIssueNumber(input)
 	now := time.Now().UTC()
@@ -67,12 +69,10 @@ func (e *Engine) CreateTask(input string) (Record, error) {
 		UpdatedAt:  now,
 	}
 	if err := e.store.CreateTask(rec); err != nil {
-		return Record{}, err
+		return Record{}, nil, err
 	}
-	if err := e.store.AppendEvent(EventRecord{Type: EventTaskCreated, TaskID: rec.ID}); err != nil {
-		return Record{}, err
-	}
-	return rec, nil
+	warnings := appendWarning(nil, storeAppendEvent(e.store, EventRecord{Type: EventTaskCreated, TaskID: rec.ID}))
+	return rec, warnings, nil
 }
 
 func (e *Engine) ListTasks() ([]Summary, error) {
@@ -168,7 +168,7 @@ func (e *Engine) Start(opts StartOptions) (Summary, error) {
 
 	var warnings []string
 	started := EventRecord{Type: EventTaskStarted, TaskID: taskID, AttemptID: attempt.ID, Node: node.ID}
-	warnings = appendWarning(warnings, e.store.AppendEvent(started))
+	warnings = appendWarning(warnings, storeAppendEvent(e.store, started))
 	warnings = append(warnings, e.recordAgentRun(attempt, node.ID, command)...)
 	return e.loadSummaryWithWarnings(taskID, warnings)
 }
@@ -225,7 +225,7 @@ func (e *Engine) Advance(opts AdvanceOptions) (Summary, error) {
 		if err := e.store.writeTask(rec); err != nil {
 			return Summary{}, err
 		}
-		warnings := appendWarning(nil, e.store.AppendEvent(advancedEvent))
+		warnings := appendWarning(nil, storeAppendEvent(e.store, advancedEvent))
 		return e.loadSummaryWithWarnings(taskID, warnings)
 	}
 	nextNode, ok := workflow.Nodes[next]
@@ -257,32 +257,32 @@ func (e *Engine) Advance(opts AdvanceOptions) (Summary, error) {
 	}
 
 	var warnings []string
-	warnings = appendWarning(warnings, e.store.AppendEvent(advancedEvent))
+	warnings = appendWarning(warnings, storeAppendEvent(e.store, advancedEvent))
 	warnings = append(warnings, e.recordAgentRun(attempt, next, command)...)
 	return e.loadSummaryWithWarnings(taskID, warnings)
 }
 
-func (e *Engine) Run(opts RunOptions) (RunRecord, error) {
+func (e *Engine) Run(opts RunOptions) (RunResult, error) {
 	if len(opts.Command) == 0 || strings.TrimSpace(opts.Command[0]) == "" {
-		return RunRecord{}, errors.New("command is required")
+		return RunResult{}, errors.New("command is required")
 	}
 	taskID, err := e.store.ResolveTaskID(opts.TaskID)
 	if err != nil {
-		return RunRecord{}, err
+		return RunResult{}, err
 	}
 	rec, err := e.store.LoadTask(taskID)
 	if err != nil {
-		return RunRecord{}, err
+		return RunResult{}, err
 	}
 	attempt, err := e.store.LoadAttempt(taskID)
 	if err != nil {
-		return RunRecord{}, err
+		return RunResult{}, err
 	}
 	if strings.TrimSpace(attempt.Worktree) == "" {
-		return RunRecord{}, fmt.Errorf("task %s has no worktree", taskID)
+		return RunResult{}, fmt.Errorf("task %s has no worktree", taskID)
 	}
 	if info, err := os.Stat(attempt.Worktree); err != nil || !info.IsDir() {
-		return RunRecord{}, fmt.Errorf("task %s worktree missing: %s", taskID, attempt.Worktree)
+		return RunResult{}, fmt.Errorf("task %s worktree missing: %s", taskID, attempt.Worktree)
 	}
 	now := time.Now().UTC()
 	run := RunRecord{
@@ -302,46 +302,43 @@ func (e *Engine) Run(opts RunOptions) (RunRecord, error) {
 	run.Stderr = RunLogRelPath(run.ID, "stderr")
 	stdoutPath, err := e.store.RunLogPath(taskID, run.Stdout)
 	if err != nil {
-		return RunRecord{}, err
+		return RunResult{}, err
 	}
 	stderrPath, err := e.store.RunLogPath(taskID, run.Stderr)
 	if err != nil {
-		return RunRecord{}, err
+		return RunResult{}, err
 	}
 	if err := os.MkdirAll(filepath.Dir(stdoutPath), 0o755); err != nil {
-		return RunRecord{}, err
+		return RunResult{}, err
 	}
 	stdoutFile, err := os.Create(stdoutPath)
 	if err != nil {
-		return RunRecord{}, err
+		return RunResult{}, err
 	}
 	defer stdoutFile.Close()
 	stderrFile, err := os.Create(stderrPath)
 	if err != nil {
-		return RunRecord{}, err
+		return RunResult{}, err
 	}
 	defer stderrFile.Close()
 
 	if err := e.store.SaveRun(run); err != nil {
-		return RunRecord{}, err
+		return RunResult{}, err
 	}
-	if err := e.store.AppendEvent(EventRecord{
+	var warnings []string
+	warnings = appendWarning(warnings, storeAppendEvent(e.store, EventRecord{
 		Type:      EventRunStarted,
 		TaskID:    taskID,
 		AttemptID: attempt.ID,
 		RunID:     run.ID,
 		Node:      run.Node,
 		Status:    RunStatusRunning,
-	}); err != nil {
-		return RunRecord{}, err
-	}
-	finish := func() (RunRecord, error) {
+	}))
+	finish := func() RunResult {
 		ended := time.Now().UTC()
 		run.EndedAt = &ended
-		if err := e.store.SaveRun(run); err != nil {
-			return run, err
-		}
-		if err := e.store.AppendEvent(EventRecord{
+		warnings = appendWarning(warnings, e.store.SaveRun(run))
+		warnings = appendWarning(warnings, storeAppendEvent(e.store, EventRecord{
 			Type:      EventRunFinished,
 			TaskID:    taskID,
 			AttemptID: attempt.ID,
@@ -350,10 +347,8 @@ func (e *Engine) Run(opts RunOptions) (RunRecord, error) {
 			Status:    run.Status,
 			ExitCode:  run.ExitCode,
 			Message:   run.Error,
-		}); err != nil {
-			return run, err
-		}
-		return run, nil
+		}))
+		return RunResult{Run: run, Warnings: warnings}
 	}
 
 	cmd := exec.Command(opts.Command[0], opts.Command[1:]...)
@@ -369,7 +364,7 @@ func (e *Engine) Run(opts RunOptions) (RunRecord, error) {
 	if err := cmd.Start(); err != nil {
 		run.Status = RunStatusFailed
 		run.Error = err.Error()
-		return finish()
+		return finish(), nil
 	}
 	waitErr := cmd.Wait()
 	switch {
@@ -400,7 +395,7 @@ func (e *Engine) Run(opts RunOptions) (RunRecord, error) {
 			run.Error = waitErr.Error()
 		}
 	}
-	return finish()
+	return finish(), nil
 }
 
 type ignoreWriteErrors struct {
@@ -507,7 +502,7 @@ func (e *Engine) recordAgentRun(attempt AttemptRecord, nodeID string, command []
 	if err := e.store.SaveRun(run); err != nil {
 		return []string{fmt.Sprintf("record run %s: %v", run.ID, err)}
 	}
-	return appendWarning(nil, e.store.AppendEvent(EventRecord{
+	return appendWarning(nil, storeAppendEvent(e.store, EventRecord{
 		Type:      EventRunStarted,
 		TaskID:    attempt.TaskID,
 		AttemptID: attempt.ID,

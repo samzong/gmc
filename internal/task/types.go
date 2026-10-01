@@ -18,6 +18,8 @@ const (
 	RunStatusRunning = "running"
 	RunStatusPassed  = "passed"
 	RunStatusFailed  = "failed"
+	RunStatusExited  = "exited"
+	RunStatusLost    = "lost"
 )
 
 const (
@@ -26,6 +28,9 @@ const (
 	EventTaskAdvanced = "task.advanced"
 	EventRunStarted   = "run.started"
 	EventRunFinished  = "run.finished"
+	EventRunExited    = "run.exited"
+	EventRunLost      = "run.lost"
+	EventGCKilled     = "gc.killed"
 )
 
 type Record struct {
@@ -104,6 +109,33 @@ type Summary struct {
 	Attempt  *AttemptRecord `json:"attempt,omitempty"`
 	Runs     []RunRecord    `json:"runs,omitempty"`
 	Warnings []string       `json:"warnings,omitempty"`
+}
+
+type RunResult struct {
+	Run      RunRecord
+	Warnings []string
+}
+
+type RefreshResult struct {
+	TaskID         string   `json:"task_id"`
+	State          string   `json:"state"`
+	Worktree       string   `json:"worktree"`
+	WorktreeStatus string   `json:"worktree_status"`
+	Session        string   `json:"session"`
+	Updated        []string `json:"updated,omitempty"`
+}
+
+type GCOptions struct {
+	Apply bool
+}
+
+type GCItem struct {
+	TaskID string `json:"task_id"`
+	Kind   string `json:"kind"`
+	Target string `json:"target"`
+	Action string `json:"action"`
+	Reason string `json:"reason"`
+	Result string `json:"result,omitempty"`
 }
 
 type WorkflowConfig struct {

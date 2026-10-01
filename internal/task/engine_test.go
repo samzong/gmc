@@ -46,7 +46,7 @@ func TestEngineStartCommandOverride(t *testing.T) {
 	}
 
 	engine, store := newTestEngineWithGit(t)
-	rec, err := engine.CreateTask("override test")
+	rec, _, err := engine.CreateTask("override test")
 	require.NoError(t, err)
 
 	override := "custom-agent --yolo"
@@ -118,7 +118,7 @@ nodes:
 			}
 
 			engine, _ := newTestEngineWithGit(t)
-			rec, err := engine.CreateTask("model carry test")
+			rec, _, err := engine.CreateTask("model carry test")
 			require.NoError(t, err)
 			_, err = engine.Start(StartOptions{TaskID: rec.ID, Model: "gpt-5"})
 			require.NoError(t, err)
@@ -161,7 +161,7 @@ func eventTypes(events []EventRecord) []string {
 func TestEngineStartRecordsRunAndEvents(t *testing.T) {
 	stubTmuxStarter(t)
 	engine, store := newTestEngineWithGit(t)
-	rec, err := engine.CreateTask("demo task")
+	rec, _, err := engine.CreateTask("demo task")
 	require.NoError(t, err)
 
 	sum, err := engine.Start(StartOptions{TaskID: rec.ID, Agent: "codex"})
@@ -194,7 +194,7 @@ func TestEngineStartRecordsRunAndEvents(t *testing.T) {
 func TestEngineAdvanceRecordsRunAndEvents(t *testing.T) {
 	stubTmuxStarter(t)
 	engine, store := newTestEngineWithGit(t)
-	rec, err := engine.CreateTask("demo task")
+	rec, _, err := engine.CreateTask("demo task")
 	require.NoError(t, err)
 	started, err := engine.Start(StartOptions{TaskID: rec.ID, Agent: "codex"})
 	require.NoError(t, err)
@@ -224,7 +224,7 @@ func TestEngineAdvanceRecordsRunAndEvents(t *testing.T) {
 func TestEngineAdvanceToDoneOnlyEmitsAdvanced(t *testing.T) {
 	stubTmuxStarter(t)
 	engine, store := newTestEngineWithGit(t)
-	rec, err := engine.CreateTask("demo task")
+	rec, _, err := engine.CreateTask("demo task")
 	require.NoError(t, err)
 	_, err = engine.Start(StartOptions{TaskID: rec.ID, Agent: "codex"})
 	require.NoError(t, err)
@@ -268,13 +268,14 @@ func TestEngineRunHeadlessFailedExit(t *testing.T) {
 	engine, store, workDir := newRunTestEngine(t)
 
 	var stdout, stderr bytes.Buffer
-	run, err := engine.Run(RunOptions{
+	res, err := engine.Run(RunOptions{
 		TaskID:  "t-run",
 		Command: []string{"sh", "-c", "echo out; echo err 1>&2; exit 3"},
 		Stdout:  &stdout,
 		Stderr:  &stderr,
 	})
 	require.NoError(t, err)
+	run := res.Run
 	assert.Equal(t, RunStatusFailed, run.Status)
 	require.NotNil(t, run.ExitCode)
 	assert.Equal(t, 3, *run.ExitCode)
@@ -318,8 +319,9 @@ func TestEngineRunHeadlessFailedExit(t *testing.T) {
 func TestEngineRunHeadlessPassed(t *testing.T) {
 	engine, _, _ := newRunTestEngine(t)
 
-	run, err := engine.Run(RunOptions{TaskID: "t-run", Command: []string{"true"}})
+	res, err := engine.Run(RunOptions{TaskID: "t-run", Command: []string{"true"}})
 	require.NoError(t, err)
+	run := res.Run
 	assert.Equal(t, RunStatusPassed, run.Status)
 	assert.Nil(t, run.ExitCode)
 }
@@ -327,8 +329,9 @@ func TestEngineRunHeadlessPassed(t *testing.T) {
 func TestEngineRunHeadlessStartFailure(t *testing.T) {
 	engine, _, _ := newRunTestEngine(t)
 
-	run, err := engine.Run(RunOptions{TaskID: "t-run", Command: []string{"gmc-nonexistent-binary-xyz"}})
+	res, err := engine.Run(RunOptions{TaskID: "t-run", Command: []string{"gmc-nonexistent-binary-xyz"}})
 	require.NoError(t, err)
+	run := res.Run
 	assert.Equal(t, RunStatusFailed, run.Status)
 	assert.NotEmpty(t, run.Error)
 	assert.Nil(t, run.ExitCode)
@@ -372,13 +375,14 @@ func TestEngineRunSwallowsConsoleWriteErrors(t *testing.T) {
 	engine, store, _ := newRunTestEngine(t)
 
 	var stderr bytes.Buffer
-	run, err := engine.Run(RunOptions{
+	res, err := engine.Run(RunOptions{
 		TaskID:  "t-run",
 		Command: []string{"sh", "-c", "yes abcdefghij | head -c 100000"},
 		Stdout:  &failAfterWriter{remaining: 10},
 		Stderr:  &stderr,
 	})
 	require.NoError(t, err)
+	run := res.Run
 	assert.Equal(t, RunStatusPassed, run.Status)
 
 	stdoutPath, err := store.RunLogPath("t-run", run.Stdout)
@@ -394,8 +398,9 @@ func TestEngineRunSignalTerminatedChild(t *testing.T) {
 	}
 	engine, _, _ := newRunTestEngine(t)
 
-	run, err := engine.Run(RunOptions{TaskID: "t-run", Command: []string{"sh", "-c", "kill -INT $$"}})
+	res, err := engine.Run(RunOptions{TaskID: "t-run", Command: []string{"sh", "-c", "kill -INT $$"}})
 	require.NoError(t, err)
+	run := res.Run
 	assert.Equal(t, RunStatusFailed, run.Status)
 	require.NotNil(t, run.ExitCode)
 	assert.Equal(t, 130, *run.ExitCode)
@@ -409,11 +414,12 @@ func TestEngineRunBackgroundChildDoesNotHang(t *testing.T) {
 	engine, store, _ := newRunTestEngine(t)
 
 	start := time.Now()
-	run, err := engine.Run(RunOptions{
+	res, err := engine.Run(RunOptions{
 		TaskID:  "t-run",
 		Command: []string{"sh", "-c", "sleep 3 & echo started"},
 	})
 	require.NoError(t, err)
+	run := res.Run
 	assert.Less(t, time.Since(start), 3*time.Second)
 	assert.Equal(t, RunStatusPassed, run.Status)
 

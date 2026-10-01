@@ -47,7 +47,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "source is required")
 		return
 	}
-	rec, err := s.engine.CreateTask(source)
+	rec, _, err := s.engine.CreateTask(source)
 	writeResult(w, http.StatusCreated, rec, err)
 }
 
