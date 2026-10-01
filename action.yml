@@ -7,7 +7,7 @@ branding:
 
 inputs:
   args:
-    description: "Extra args for generate mode (e.g. '-a --issue 123 --branch ""add auth""')"
+    description: "Extra args for generate mode (e.g. '-a --issue 123 --branch \"add auth\"')"
     required: false
     default: ""
   apikey:
@@ -48,7 +48,7 @@ runs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.25.x'
+        go-version: '1.27.x'
 
     - name: Build gmc
       shell: bash
