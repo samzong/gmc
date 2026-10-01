@@ -84,7 +84,7 @@ func TestConnectionAcceptsTokenLimitedResponse(t *testing.T) {
 		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&request)) {
 			return
 		}
-		assert.Equal(t, 1, request.MaxTokens)
+		assert.Equal(t, 1, request.MaxTokens) //nolint:staticcheck // asserts the max_tokens wire field
 		assert.Zero(t, request.Temperature)
 		assert.Equal(t, []openai.ChatCompletionMessage{
 			{Role: openai.ChatMessageRoleUser, Content: "Reply with OK."},

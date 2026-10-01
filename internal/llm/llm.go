@@ -84,7 +84,7 @@ func (c *Client) TestConnection(model string) error {
 	_, err := c.complete(openai.ChatCompletionRequest{
 		Model:       model,
 		Messages:    []openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleUser, Content: "Reply with OK."}},
-		MaxTokens:   1,
+		MaxTokens:   1, //nolint:staticcheck // max_tokens is the field OpenAI-compatible providers accept
 		Temperature: 0,
 	})
 	return err
