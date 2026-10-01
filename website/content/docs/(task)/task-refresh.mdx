@@ -1,0 +1,35 @@
+---
+title: Refresh
+description: Reconcile task records with runtime state.
+---
+
+`gmc task refresh` updates stored records to match what is actually running.
+
+## Usage
+
+```bash
+gmc task refresh
+gmc task refresh <task-id>
+```
+
+Without an argument it refreshes every task.
+
+## What it updates
+
+- Agent runs marked `running` whose tmux session is gone become `exited`.
+- Headless runs marked `running` whose supervising `gmc` process is gone
+  become `lost`.
+- The reported session state (`alive`, `gone`, `none`, `unknown`) and
+  worktree status are rechecked. When tmux is not reachable the state is
+  `unknown` and running runs are left untouched.
+
+## JSON
+
+```bash
+gmc task refresh -o json
+```
+
+## Notes
+
+Refresh only corrects records for processes that are already gone. It never
+kills sessions or removes files — that is `gmc task gc` and `gmc task rm`.

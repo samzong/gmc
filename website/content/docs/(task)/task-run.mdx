@@ -1,0 +1,37 @@
+---
+title: Run
+description: Run a command in a task worktree.
+---
+
+`gmc task run` runs a command in the task worktree and records it in the
+ledger.
+
+## Usage
+
+```bash
+gmc task run <task-id> -- go test ./...
+gmc task run <task-id> -- make check
+```
+
+## What is recorded
+
+Each run stores its command, working directory, start and end times, status,
+and — on failure — its exit code. Output streams are kept as logs under the
+task's `logs/` directory. In text mode the log path is printed on stderr; in
+`-o json` mode the run record's `stdout`/`stderr` fields carry the paths.
+
+`-o json` prints the run record on stdout while the command's own output goes
+to stderr, so the JSON stays parseable.
+
+## Exit codes
+
+`gmc task run` exits with the command's exit code, or `128 + signal` when the
+command is killed by a signal. A command that cannot be started exits 1 with
+the run recorded as `failed` and no exit code.
+
+## Notes
+
+Ledger write failures are reported as warnings instead of losing the run
+result. Use `gmc task show <task-id>` to list recorded runs. If `gmc` itself
+is killed mid-run, the record stays `running` until `gmc task refresh` marks
+it `lost`.

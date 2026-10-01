@@ -1,0 +1,34 @@
+---
+title: GC
+description: Preview or apply task cleanup.
+---
+
+`gmc task gc` shows cleanup candidates for task tmux sessions and worktrees.
+Every candidate is listed with its action and reason.
+
+## Usage
+
+```bash
+gmc task gc
+gmc task gc --apply
+```
+
+The default is a dry run. `--apply` executes only `kill` actions.
+
+## What it checks
+
+- Live tmux sessions on the `gmc-task` socket are kept when attached or when
+  they belong to the task's current workflow node. They are proposed for
+  `kill` when the task is done or the session belongs to a finished node.
+- Live sessions not referenced by any task are listed and kept.
+- Task worktrees are kept when dirty or missing. A clean worktree on a done
+  task is listed as `suggest` with the `gmc task rm` command to run.
+
+`gc` never removes worktrees, branches, or ledger files; `--apply` only kills
+tmux sessions.
+
+## JSON
+
+```bash
+gmc task gc -o json
+```

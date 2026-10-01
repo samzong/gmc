@@ -93,14 +93,28 @@ template: |
 
 ## Task workflow
 
-`gmc task` uses an embedded plan -> code -> review -> ship workflow when no user workflow is configured. The default reference lives at `internal/task/default_workflow.yaml`.
+`gmc task` manages local AI coding tasks on a repo-family ledger: worktree, agent session, runs, events, and logs.
 
-To customize it:
+```bash
+gmc task add "Fix worktree cleanup"
+gmc task start <task-id>                  # create worktree, launch agent in tmux
+gmc task run <task-id> -- go test ./...   # headless run, recorded with logs
+gmc task advance <task-id>                # move to the next workflow node
+gmc task show <task-id>                   # status, runs, warnings
+gmc task refresh                          # reconcile records with runtime state
+gmc task gc                               # dry-run cleanup; --apply kills live, unattached sessions of finished nodes or done tasks
+```
+
+It uses an embedded plan -> code -> review -> ship workflow when no user workflow is configured. The built-in workflow runs each agent with its own approval settings — nothing bypasses prompts or sandboxes. The launched command is printed as `command:` on start and advance. The default reference lives at `internal/task/default_workflow.yaml`.
+
+To customize it — or to run agents unattended by setting explicit node commands:
 
 ```bash
 mkdir -p ~/.config/gmc
 cp internal/task/default_workflow.yaml ~/.config/gmc/workflow.yaml
 ```
+
+A `workflow.yaml` replaces the built-in workflow entirely.
 
 ## Shell completion
 

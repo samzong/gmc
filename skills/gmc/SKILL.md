@@ -58,6 +58,7 @@ Copy this checklist and check off items as you complete them:
 - `gmc wt add <name> --sync`
 - `gmc wt add <name> -b <branch>`
 - `gmc wt ls`
+- `gmc wt list -A`
 - `gmc wt rm <name>`
 - `gmc wt rm -D <name>`
 - `gmc wt prune`
@@ -97,6 +98,7 @@ Copy this checklist and check off items as you complete them:
 - For manual control, use `gmc wt share add`, `gmc wt share ls`, `gmc wt share rm`, or `gmc wt share sync`
 - Prefer `copy` for env files or local config
 - Prefer `link` for large identical directories such as `node_modules` or `.venv`
+- Build output directories (`target`, `build`, `dist`, `.next`, `.nuxt`) cannot be linked — use `copy` or leave them unshared
 
 ## Confirmation gates
 

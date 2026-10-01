@@ -31,6 +31,25 @@ gmc wt remove feature-login -f
 gmc wt prune -f
 ```
 
+## Find worktrees across repositories
+
+```bash
+gmc wt list -A
+```
+
+This scans the home directory for repositories with linked worktrees, so stale
+families outside the current repository show up too.
+
+## Task cleanup
+
+```bash
+gmc task gc
+```
+
+Dry-run by default; lists stale task sessions and clean worktrees of finished
+tasks with their reasons. `--apply` kills live, unattached sessions of
+finished nodes or done tasks — it never touches worktrees or files.
+
 ## Notes
 
 Force cleanup can discard dirty worktree state. Inspect the worktree before using it.

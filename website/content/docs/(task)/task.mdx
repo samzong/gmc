@@ -3,7 +3,9 @@ title: Overview
 description: Manage local AI coding tasks.
 ---
 
-`gmc task` manages local AI coding tasks backed by a repo-family ledger.
+`gmc task` manages local AI coding tasks backed by a repo-family ledger. Each
+task records its worktree, agent session, runs, events, and logs under the
+repository's Git common directory.
 
 The default workflow is plan -> code -> review -> ship.
 
@@ -25,10 +27,32 @@ Workflow nodes come from:
 ~/.gmc/workflow.yaml
 ```
 
-If no user workflow exists, `gmc` uses the embedded default workflow.
+If no user workflow exists, `gmc` uses the embedded default workflow. The
+built-in workflow starts each agent with its own approval settings; nothing
+bypasses prompts or sandboxes. A `workflow.yaml` replaces the built-in
+workflow entirely — to run agents unattended, set explicit node commands such
+as `command: codex --dangerously-bypass-approvals-and-sandbox`.
+
+## Runs and events
+
+`gmc task run <task-id> -- <command>` runs a command in the task worktree and
+records it in the ledger with logs, exit code on failure, and timing. `gmc task show`
+lists recorded runs, and state changes are recorded in the task's
+`events.jsonl` on a best-effort basis.
+
+## Maintenance
+
+`gmc task refresh` reconciles records with runtime state: agent runs whose
+tmux session is gone become `exited`, and headless runs whose supervising
+process is gone become `lost`. `gmc task gc` previews cleanup — dry-run by
+default, `--apply` kills live, unattached sessions of finished nodes or done
+tasks; worktrees, branches, and ledger files are never removed.
 
 ## Related
 
+- `gmc task run`
+- `gmc task refresh`
+- `gmc task gc`
 - `gmc task webui`
 - `gmc task attach`
 - `gmc wt dup --task`

@@ -27,3 +27,20 @@ gmc wt list --diff-base main
 ```
 
 Use this when the default base branch is not the right comparison point.
+
+## Scan the home directory
+
+```bash
+gmc wt list -A
+gmc wt list -A -o json
+```
+
+`-A` scans the home directory for repositories that have linked worktrees and
+shows each family's local status grouped by repository. Hidden directories and
+nested repositories are included; repositories with only a main worktree are
+omitted. Directory symlinks, Git metadata, `node_modules`, and on macOS
+`~/Library` and `~/.Trash` are not traversed. Unreadable directories are
+reported on stderr while scanning continues.
+
+`--pr` and `--diff-base` apply only to the current repository and cannot be
+combined with `-A`.
