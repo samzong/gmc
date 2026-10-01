@@ -1,10 +1,12 @@
 package task
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -135,19 +137,149 @@ func (s *Store) LoadAttempt(taskID string) (AttemptRecord, error) {
 	return rec, nil
 }
 
+func (s *Store) SaveRun(run RunRecord) error {
+	dir, err := s.taskDir(run.TaskID)
+	if err != nil {
+		return err
+	}
+	runsDir := filepath.Join(dir, "runs")
+	if err := os.MkdirAll(runsDir, 0o755); err != nil {
+		return err
+	}
+	return writeYAML(filepath.Join(runsDir, run.ID+".yaml"), run)
+}
+
+func (s *Store) LoadRuns(taskID string) ([]RunRecord, error) {
+	runs, _, err := s.loadRuns(taskID)
+	return runs, err
+}
+
+func (s *Store) loadRuns(taskID string) ([]RunRecord, []string, error) {
+	dir, err := s.taskDir(taskID)
+	if err != nil {
+		return nil, nil, err
+	}
+	runsDir := filepath.Join(dir, "runs")
+	entries, err := os.ReadDir(runsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil, nil
+		}
+		return nil, nil, err
+	}
+	var runs []RunRecord
+	var warnings []string
+	for _, ent := range entries {
+		if ent.IsDir() || !strings.HasSuffix(ent.Name(), ".yaml") {
+			continue
+		}
+		path := filepath.Join(runsDir, ent.Name())
+		var run RunRecord
+		if err := readYAML(path, &run); err != nil {
+			warnings = append(warnings, fmt.Sprintf("skipped corrupt run file %s: %v", path, err))
+			continue
+		}
+		runs = append(runs, run)
+	}
+	sort.Slice(runs, func(i, j int) bool {
+		if runs[i].StartedAt.Equal(runs[j].StartedAt) {
+			return runs[i].ID < runs[j].ID
+		}
+		return runs[i].StartedAt.Before(runs[j].StartedAt)
+	})
+	return runs, warnings, nil
+}
+
+func (s *Store) AppendEvent(ev EventRecord) error {
+	dir, err := s.taskDir(ev.TaskID)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if ev.Time.IsZero() {
+		ev.Time = time.Now().UTC()
+	}
+	data, err := json.Marshal(ev)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "events.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(append(data, '\n'))
+	return err
+}
+
+func (s *Store) LoadEvents(taskID string) ([]EventRecord, error) {
+	dir, err := s.taskDir(taskID)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var events []EventRecord
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var ev EventRecord
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			return nil, err
+		}
+		events = append(events, ev)
+	}
+	return events, nil
+}
+
+func RunLogRelPath(runID, stream string) string {
+	return filepath.ToSlash(filepath.Join("logs", runID+"."+stream+".log"))
+}
+
+func (s *Store) RunLogPath(taskID, relPath string) (string, error) {
+	dir, err := s.taskDir(taskID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, filepath.FromSlash(relPath)), nil
+}
+
+func (s *Store) EventsPath(taskID string) (string, error) {
+	dir, err := s.taskDir(taskID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "events.jsonl"), nil
+}
+
 func (s *Store) LoadSummary(taskID string) (Summary, error) {
 	rec, err := s.LoadTask(taskID)
 	if err != nil {
 		return Summary{}, err
 	}
+	runs, warnings, err := s.loadRuns(taskID)
+	if err != nil {
+		return Summary{}, err
+	}
+	sum := Summary{Task: rec, Runs: runs, Warnings: warnings}
 	attempt, err := s.LoadAttempt(taskID)
 	if err != nil {
 		if errors.Is(err, ErrNoAttempt) {
-			return Summary{Task: rec}, nil
+			return sum, nil
 		}
 		return Summary{}, err
 	}
-	return Summary{Task: rec, Attempt: &attempt}, nil
+	sum.Attempt = &attempt
+	return sum, nil
 }
 
 func (s *Store) ListSummaries() ([]Summary, error) {
@@ -229,5 +361,23 @@ func writeYAML(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return nil
 }

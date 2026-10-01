@@ -20,6 +20,14 @@ func NewTaskID(now time.Time) string {
 	return "t-" + now.UTC().Format("20060102-150405") + "-" + hex.EncodeToString(b[:])
 }
 
+func NewRunID(now time.Time) string {
+	var b [2]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "r-" + now.UTC().Format("20060102-150405")
+	}
+	return "r-" + now.UTC().Format("20060102-150405") + "-" + hex.EncodeToString(b[:])
+}
+
 func DisplayTitle(rec Record) string {
 	if strings.TrimSpace(rec.Title) != "" {
 		return rec.Title

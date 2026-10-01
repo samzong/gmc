@@ -3,7 +3,10 @@ package task
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -35,6 +38,13 @@ type RemoveOptions struct {
 	Force bool
 }
 
+type RunOptions struct {
+	TaskID  string
+	Command []string
+	Stdout  io.Writer
+	Stderr  io.Writer
+}
+
 func NewEngine(store *Store, wt *worktree.Client) *Engine {
 	return &Engine{store: store, wt: wt}
 }
@@ -57,6 +67,9 @@ func (e *Engine) CreateTask(input string) (Record, error) {
 		UpdatedAt:  now,
 	}
 	if err := e.store.CreateTask(rec); err != nil {
+		return Record{}, err
+	}
+	if err := e.store.AppendEvent(EventRecord{Type: EventTaskCreated, TaskID: rec.ID}); err != nil {
 		return Record{}, err
 	}
 	return rec, nil
@@ -142,18 +155,22 @@ func (e *Engine) Start(opts StartOptions) (Summary, error) {
 	if strings.TrimSpace(opts.Command) != "" {
 		cmdNode.Command = strings.TrimSpace(opts.Command)
 	}
-	attempt, err = e.runWorkflowNode(attempt, cmdNode, BuildWorkflowNodePrompt(rec, node))
+	attempt, command, err := e.runWorkflowNode(attempt, cmdNode, BuildWorkflowNodePrompt(rec, node))
 	if err != nil {
 		return Summary{}, err
 	}
 	if err := e.store.SaveAttempt(attempt); err != nil {
 		return Summary{}, err
 	}
-
 	if err := e.store.writeTask(rec); err != nil {
 		return Summary{}, err
 	}
-	return e.store.LoadSummary(taskID)
+
+	var warnings []string
+	started := EventRecord{Type: EventTaskStarted, TaskID: taskID, AttemptID: attempt.ID, Node: node.ID}
+	warnings = appendWarning(warnings, e.store.AppendEvent(started))
+	warnings = append(warnings, e.recordAgentRun(attempt, node.ID, command)...)
+	return e.loadSummaryWithWarnings(taskID, warnings)
 }
 
 func (e *Engine) Advance(opts AdvanceOptions) (Summary, error) {
@@ -197,11 +214,19 @@ func (e *Engine) Advance(opts AdvanceOptions) (Summary, error) {
 	rec.CurrentNode = next
 	rec.State = next
 	rec.UpdatedAt = time.Now().UTC()
+	advancedEvent := EventRecord{
+		Type:      EventTaskAdvanced,
+		TaskID:    taskID,
+		AttemptID: attempt.ID,
+		Node:      next,
+		Message:   fmt.Sprintf("from %s to %s", current, next),
+	}
 	if next == "done" {
 		if err := e.store.writeTask(rec); err != nil {
 			return Summary{}, err
 		}
-		return e.store.LoadSummary(taskID)
+		warnings := appendWarning(nil, e.store.AppendEvent(advancedEvent))
+		return e.loadSummaryWithWarnings(taskID, warnings)
 	}
 	nextNode, ok := workflow.Nodes[next]
 	if !ok {
@@ -220,7 +245,7 @@ func (e *Engine) Advance(opts AdvanceOptions) (Summary, error) {
 	attempt.Model = model
 	attempt.UpdatedAt = time.Now().UTC()
 	prompt := BuildWorkflowNodePrompt(rec, nextNode)
-	attempt, err = e.runWorkflowNode(attempt, nextNode, prompt)
+	attempt, command, err := e.runWorkflowNode(attempt, nextNode, prompt)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -230,7 +255,176 @@ func (e *Engine) Advance(opts AdvanceOptions) (Summary, error) {
 	if err := e.store.writeTask(rec); err != nil {
 		return Summary{}, err
 	}
-	return e.store.LoadSummary(taskID)
+
+	var warnings []string
+	warnings = appendWarning(warnings, e.store.AppendEvent(advancedEvent))
+	warnings = append(warnings, e.recordAgentRun(attempt, next, command)...)
+	return e.loadSummaryWithWarnings(taskID, warnings)
+}
+
+func (e *Engine) Run(opts RunOptions) (RunRecord, error) {
+	if len(opts.Command) == 0 || strings.TrimSpace(opts.Command[0]) == "" {
+		return RunRecord{}, errors.New("command is required")
+	}
+	taskID, err := e.store.ResolveTaskID(opts.TaskID)
+	if err != nil {
+		return RunRecord{}, err
+	}
+	rec, err := e.store.LoadTask(taskID)
+	if err != nil {
+		return RunRecord{}, err
+	}
+	attempt, err := e.store.LoadAttempt(taskID)
+	if err != nil {
+		return RunRecord{}, err
+	}
+	if strings.TrimSpace(attempt.Worktree) == "" {
+		return RunRecord{}, fmt.Errorf("task %s has no worktree", taskID)
+	}
+	if info, err := os.Stat(attempt.Worktree); err != nil || !info.IsDir() {
+		return RunRecord{}, fmt.Errorf("task %s worktree missing: %s", taskID, attempt.Worktree)
+	}
+	now := time.Now().UTC()
+	run := RunRecord{
+		ID:        NewRunID(now),
+		TaskID:    taskID,
+		AttemptID: attempt.ID,
+		Node:      strings.TrimSpace(rec.CurrentNode),
+		Kind:      RunKindCommand,
+		Runtime:   RunRuntimeHeadless,
+		Command:   append([]string(nil), opts.Command...),
+		Cwd:       attempt.Worktree,
+		PID:       os.Getpid(),
+		Status:    RunStatusRunning,
+		StartedAt: now,
+	}
+	run.Stdout = RunLogRelPath(run.ID, "stdout")
+	run.Stderr = RunLogRelPath(run.ID, "stderr")
+	stdoutPath, err := e.store.RunLogPath(taskID, run.Stdout)
+	if err != nil {
+		return RunRecord{}, err
+	}
+	stderrPath, err := e.store.RunLogPath(taskID, run.Stderr)
+	if err != nil {
+		return RunRecord{}, err
+	}
+	if err := os.MkdirAll(filepath.Dir(stdoutPath), 0o755); err != nil {
+		return RunRecord{}, err
+	}
+	stdoutFile, err := os.Create(stdoutPath)
+	if err != nil {
+		return RunRecord{}, err
+	}
+	defer stdoutFile.Close()
+	stderrFile, err := os.Create(stderrPath)
+	if err != nil {
+		return RunRecord{}, err
+	}
+	defer stderrFile.Close()
+
+	if err := e.store.SaveRun(run); err != nil {
+		return RunRecord{}, err
+	}
+	if err := e.store.AppendEvent(EventRecord{
+		Type:      EventRunStarted,
+		TaskID:    taskID,
+		AttemptID: attempt.ID,
+		RunID:     run.ID,
+		Node:      run.Node,
+		Status:    RunStatusRunning,
+	}); err != nil {
+		return RunRecord{}, err
+	}
+	finish := func() (RunRecord, error) {
+		ended := time.Now().UTC()
+		run.EndedAt = &ended
+		if err := e.store.SaveRun(run); err != nil {
+			return run, err
+		}
+		if err := e.store.AppendEvent(EventRecord{
+			Type:      EventRunFinished,
+			TaskID:    taskID,
+			AttemptID: attempt.ID,
+			RunID:     run.ID,
+			Node:      run.Node,
+			Status:    run.Status,
+			ExitCode:  run.ExitCode,
+			Message:   run.Error,
+		}); err != nil {
+			return run, err
+		}
+		return run, nil
+	}
+
+	cmd := exec.Command(opts.Command[0], opts.Command[1:]...)
+	cmd.Dir = attempt.Worktree
+	cmd.Stdout = runLogWriter(stdoutFile, opts.Stdout)
+	cmd.Stderr = runLogWriter(stderrFile, opts.Stderr)
+	cmd.WaitDelay = 2 * time.Second
+
+	sigCh := make(chan os.Signal, 3)
+	signal.Notify(sigCh, runNotifySignals()...)
+	defer signal.Stop(sigCh)
+
+	if err := cmd.Start(); err != nil {
+		run.Status = RunStatusFailed
+		run.Error = err.Error()
+		return finish()
+	}
+	waitErr := cmd.Wait()
+	switch {
+	case waitErr == nil:
+		run.Status = RunStatusPassed
+	case errors.Is(waitErr, exec.ErrWaitDelay):
+		if ps := cmd.ProcessState; ps != nil && ps.ExitCode() != 0 {
+			run.Status = RunStatusFailed
+			code := ps.ExitCode()
+			run.ExitCode = &code
+		} else {
+			run.Status = RunStatusPassed
+		}
+	default:
+		run.Status = RunStatusFailed
+		var exitErr *exec.ExitError
+		if errors.As(waitErr, &exitErr) {
+			if code, sig, ok := signaledExit(exitErr); ok {
+				exitCode := code
+				run.ExitCode = &exitCode
+				run.Error = "signal: " + sig
+			} else if code := exitErr.ExitCode(); code >= 0 {
+				run.ExitCode = &code
+			} else {
+				run.Error = waitErr.Error()
+			}
+		} else {
+			run.Error = waitErr.Error()
+		}
+	}
+	return finish()
+}
+
+type ignoreWriteErrors struct {
+	w io.Writer
+}
+
+func (w ignoreWriteErrors) Write(p []byte) (int, error) {
+	_, _ = w.w.Write(p)
+	return len(p), nil
+}
+
+func runLogWriter(logFile io.Writer, extra io.Writer) io.Writer {
+	if extra == nil {
+		return logFile
+	}
+	return io.MultiWriter(logFile, ignoreWriteErrors{extra})
+}
+
+func (e *Engine) RunLogPath(taskID, relPath string) (string, error) {
+	return e.store.RunLogPath(taskID, relPath)
+}
+
+func (e *Engine) EventsPath(taskID string) (string, error) {
+	return e.store.EventsPath(taskID)
 }
 
 func (e *Engine) Attach(taskRef string) error {
@@ -275,21 +469,68 @@ func (e *Engine) findWorktree(dirName, branchName string) (string, string, error
 	return "", "", fmt.Errorf("worktree %q not found after creation", dirName)
 }
 
-func (e *Engine) runWorkflowNode(attempt AttemptRecord, node WorkflowNode, prompt string) (AttemptRecord, error) {
+func (e *Engine) runWorkflowNode(attempt AttemptRecord, node WorkflowNode,
+	prompt string) (AttemptRecord, []string, error) {
 	if attempt.Worktree == "" {
-		return AttemptRecord{}, errors.New("attempt has no worktree")
+		return AttemptRecord{}, nil, errors.New("attempt has no worktree")
 	}
 	command, err := WorkflowNodeCommand(node, attempt.Agent, attempt.Model, prompt)
 	if err != nil {
-		return AttemptRecord{}, err
+		return AttemptRecord{}, nil, err
 	}
 	session := TmuxSessionName(attempt.TaskID, attempt.ID, node.ID, strconv.Itoa(len(attempt.TmuxSessions)+1))
 	profile, err := tmuxSessionStarter(session, attempt.Worktree, command)
 	if err != nil {
-		return AttemptRecord{}, err
+		return AttemptRecord{}, nil, err
 	}
 	attempt = recordTmuxSession(attempt, node.ID, profile, command)
-	return attempt, nil
+	return attempt, command, nil
+}
+
+func (e *Engine) recordAgentRun(attempt AttemptRecord, nodeID string, command []string) []string {
+	run := RunRecord{
+		ID:        NewRunID(time.Now().UTC()),
+		TaskID:    attempt.TaskID,
+		AttemptID: attempt.ID,
+		Node:      nodeID,
+		Kind:      RunKindAgent,
+		Runtime:   RunRuntimeTmux,
+		Command:   command,
+		Cwd:       attempt.Worktree,
+		Status:    RunStatusRunning,
+		StartedAt: time.Now().UTC(),
+	}
+	if n := len(attempt.TmuxSessions); n > 0 {
+		run.Session = attempt.TmuxSessions[n-1].Session
+		run.Socket = attempt.TmuxSessions[n-1].Socket
+	}
+	if err := e.store.SaveRun(run); err != nil {
+		return []string{fmt.Sprintf("record run %s: %v", run.ID, err)}
+	}
+	return appendWarning(nil, e.store.AppendEvent(EventRecord{
+		Type:      EventRunStarted,
+		TaskID:    attempt.TaskID,
+		AttemptID: attempt.ID,
+		RunID:     run.ID,
+		Node:      nodeID,
+		Status:    RunStatusRunning,
+	}))
+}
+
+func appendWarning(warnings []string, err error) []string {
+	if err != nil {
+		return append(warnings, err.Error())
+	}
+	return warnings
+}
+
+func (e *Engine) loadSummaryWithWarnings(taskID string, warnings []string) (Summary, error) {
+	sum, err := e.store.LoadSummary(taskID)
+	if err != nil {
+		return Summary{}, err
+	}
+	sum.Warnings = append(sum.Warnings, warnings...)
+	return sum, nil
 }
 
 func recordTmuxSession(attempt AttemptRecord, nodeID string, profile TmuxProfile, command []string) AttemptRecord {
