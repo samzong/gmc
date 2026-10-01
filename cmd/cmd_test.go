@@ -3,7 +3,9 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +39,7 @@ func TestRootCommand(t *testing.T) {
 }
 
 func TestInitConfig(t *testing.T) {
+	isolateConfigFile(t)
 	viper.Reset()
 
 	cfgFile = ""
@@ -88,8 +91,8 @@ func TestHandleErrors(t *testing.T) {
 }
 
 func TestCommitFlow_DryRun(t *testing.T) {
+	chdirStagedTempRepo(t)
 	configureTestLLM()
-	viper.Set("api_base", "http://127.0.0.1:1")
 
 	cfg, err := config.GetConfig()
 	assert.NoError(t, err)
@@ -107,13 +110,7 @@ func TestCommitFlow_DryRun(t *testing.T) {
 	flow := workflow.NewCommitFlow(gitClient, llmClient, cfg, opts)
 	err = flow.Run([]string{})
 
-	if err != nil {
-		assert.True(t,
-			errors.Is(err, workflow.ErrNoChanges) ||
-				strings.Contains(err.Error(), "failed to generate commit message") ||
-				strings.Contains(err.Error(), "failed to get git diff"),
-			"Expected workflow-related error: %v", err)
-	}
+	require.ErrorIs(t, err, llm.ErrLLM)
 }
 
 func TestCommandFlags(t *testing.T) {
@@ -142,19 +139,12 @@ func TestGenerateAndCommit(t *testing.T) {
 	setTestValue(t, &branchDesc, "")
 	setTestValue(t, &addAll, false)
 	setTestValue(t, &verbose, false)
-
+	chdirStagedTempRepo(t)
 	configureTestLLM()
 
 	err := generateAndCommit(strings.NewReader(""), []string{})
 
-	if err != nil {
-		errorMsg := err.Error()
-		assert.True(t,
-			strings.Contains(errorMsg, "failed to get git diff") ||
-				strings.Contains(errorMsg, "failed to generate commit message") ||
-				strings.Contains(errorMsg, "no changes detected"),
-			"Error should be related to git or LLM operations: %s", errorMsg)
-	}
+	require.ErrorIs(t, err, llm.ErrLLM)
 }
 
 func TestConfigCommands(t *testing.T) {
@@ -184,26 +174,26 @@ func TestRootCommandWithConfigError(t *testing.T) {
 
 func TestRootCommandSuccess(t *testing.T) {
 	setTestValue(t, &configErr, nil)
-
+	setTestValue(t, &branchDesc, "")
+	setTestValue(t, &addAll, false)
+	chdirStagedTempRepo(t)
 	configureTestLLM()
-
-	configErr = nil
 
 	err := rootCmd.RunE(rootCmd, []string{})
 
-	if err != nil {
-		assert.NotContains(t, err.Error(), "configuration error")
-	}
+	require.ErrorIs(t, err, llm.ErrLLM)
+	assert.NotContains(t, err.Error(), "configuration error")
 }
 
 func TestExecute(t *testing.T) {
-	assert.NotNil(t, Execute)
+	isolateConfigFile(t)
+	var out strings.Builder
+	withWriters(t, &out, io.Discard)
+	rootCmd.SetArgs([]string{"version"})
+	t.Cleanup(func() { rootCmd.SetArgs(nil) })
 
-	configureTestLLM()
-
-	assert.NotPanics(t, func() {
-		_ = Execute()
-	})
+	require.NoError(t, Execute())
+	assert.Contains(t, out.String(), "gmc version "+Version)
 }
 
 func TestExtractFilesFromDiff(t *testing.T) {
@@ -225,6 +215,20 @@ diff --git a/cmd/root.go b/cmd/root.go
 func configureTestLLM() {
 	viper.Reset()
 	viper.Set("api_key", "test-api-key")
+	viper.Set("api_base", "http://127.0.0.1:1/v1")
 	viper.Set("model", "gpt-3.5-turbo")
 	viper.Set("role", "Developer")
+}
+
+func isolateConfigFile(t *testing.T) {
+	t.Helper()
+	t.Setenv("GMC_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+}
+
+func chdirStagedTempRepo(t *testing.T) {
+	t.Helper()
+	repo := initCmdTestRepo(t)
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "change.txt"), []byte("change\n"), 0o644))
+	runGitCmd(t, repo, "add", "change.txt")
+	t.Chdir(repo)
 }

@@ -12,6 +12,7 @@ import (
 )
 
 func TestSkillCommandInstallsBundledSkill(t *testing.T) {
+	isolateConfigFile(t)
 	home := t.TempDir()
 	var out bytes.Buffer
 	cmd := kitupcobra.NewSkillCommand(kitupcobra.Options{

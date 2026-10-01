@@ -11,8 +11,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func isolateGitIdentity(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"GIT_AUTHOR_NAME",
+		"GIT_AUTHOR_EMAIL",
+		"GIT_AUTHOR_DATE",
+		"GIT_COMMITTER_NAME",
+		"GIT_COMMITTER_EMAIL",
+		"GIT_COMMITTER_DATE",
+	} {
+		t.Setenv(key, "")
+		require.NoError(t, os.Unsetenv(key))
+	}
+}
+
 func setupRepo(t *testing.T) *Client {
 	t.Helper()
+	isolateGitIdentity(t)
 	t.Chdir(t.TempDir())
 	for _, args := range [][]string{
 		{"init", "-b", "main"},
