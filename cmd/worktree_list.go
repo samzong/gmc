@@ -38,9 +38,6 @@ type WorktreeJSON struct {
 type worktreeSizes map[string]worktree.AllocatedSize
 
 func loadWorktreeSizes(w io.Writer, worktrees []worktree.Info) worktreeSizes {
-	if !wtShowSize {
-		return nil
-	}
 	paths := make([]string, 0, len(worktrees))
 	for _, wt := range worktrees {
 		paths = append(paths, wt.Path)
@@ -112,10 +109,7 @@ func runWorktreeListAll(cmd *cobra.Command) error {
 	writer := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 	repository := ""
 	sizeWidth := sizes.width()
-	sizeHeading := ""
-	if sizes != nil {
-		sizeHeading = fmt.Sprintf("%*s\t", sizeWidth, "SIZE")
-	}
+	sizeHeading := fmt.Sprintf("%*s\t", sizeWidth, "SIZE")
 	for _, wt := range result.Worktrees {
 		if wt.Repository != repository {
 			if err := writer.Flush(); err != nil {
@@ -135,10 +129,7 @@ func runWorktreeListAll(cmd *cobra.Command) error {
 		if wt.IsPrunable {
 			status += ", prunable"
 		}
-		sizeColumn := ""
-		if sizes != nil {
-			sizeColumn = fmt.Sprintf("%*s\t", sizeWidth, sizes.text(wt.Path))
-		}
+		sizeColumn := fmt.Sprintf("%*s\t", sizeWidth, sizes.text(wt.Path))
 		fmt.Fprintf(writer, "%s\t%s\t%s\t%s%s\n", sanitizeForTerminal(abbrevPath(wt.Path)),
 			sanitizeForTerminal(wt.Branch), stringsutil.ShortHash(wt.Commit, 7, ""), sizeColumn, status)
 	}
@@ -401,14 +392,9 @@ func printWorktreeTable(
 	if reviews != nil {
 		reviewHeading = fmt.Sprintf("%-*s ", maxPR, "PR")
 	}
-	sizeWidth := 0
-	sizeHeading := ""
-	if sizes != nil {
-		sizeWidth = sizes.width()
-		sizeHeading = fmt.Sprintf("%*s  ", sizeWidth, "SIZE")
-	}
-	fmt.Fprintf(writer, "%-*s %-*s %-8s %s%sSTATUS\n", maxName, "NAME", maxBranch, "BRANCH", "COMMIT",
-		reviewHeading, sizeHeading)
+	sizeWidth := sizes.width()
+	fmt.Fprintf(writer, "%-*s %-*s %-8s %s%*s  STATUS\n", maxName, "NAME", maxBranch, "BRANCH", "COMMIT",
+		reviewHeading, sizeWidth, "SIZE")
 
 	for _, wt := range worktrees {
 		name := displayWorktreeName(root, wt.Path)
@@ -421,11 +407,8 @@ func printWorktreeTable(
 			display := formatWorktreeReviewDisplay(reviews, wt.Branch, links)
 			reviewColumn = padVisibleRight(display, runewidth.StringWidth(text), maxPR) + " "
 		}
-		sizeColumn := ""
-		if sizes != nil {
-			text := sizes.text(wt.Path)
-			sizeColumn = padVisibleLeft(text, runewidth.StringWidth(text), sizeWidth) + "  "
-		}
+		sizeText := sizes.text(wt.Path)
+		sizeColumn := padVisibleLeft(sizeText, runewidth.StringWidth(sizeText), sizeWidth) + "  "
 		fmt.Fprintf(writer, "%s %s %-8s %s%s%s\n",
 			padVisibleRight(name, runewidth.StringWidth(name), maxName),
 			padVisibleRight(wt.Branch, runewidth.StringWidth(wt.Branch), maxBranch),

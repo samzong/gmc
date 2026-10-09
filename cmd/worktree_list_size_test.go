@@ -34,9 +34,8 @@ func TestWorktreeListSizeColumn(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(linked, "data.bin"), make([]byte, 64*1024), 0o600))
 	t.Chdir(repo)
 
-	run := func(t *testing.T, size bool, format string) (string, string) {
+	run := func(t *testing.T, format string) (string, string) {
 		t.Helper()
-		setTestValue(t, &wtShowSize, size)
 		setTestValue(t, &outputFlag.value, format)
 		var out, errOut bytes.Buffer
 		withWriters(t, &out, &errOut)
@@ -44,19 +43,13 @@ func TestWorktreeListSizeColumn(t *testing.T) {
 		return out.String(), errOut.String()
 	}
 
-	plain, _ := run(t, false, "text")
-	assert.NotContains(t, plain, "SIZE")
-	assert.Regexp(t, regexp.MustCompile(`(?m)^NAME +BRANCH +COMMIT +STATUS$`), plain)
-
-	sized, errOut := run(t, true, "text")
+	sized, errOut := run(t, "text")
 	assert.Empty(t, errOut)
 	assert.Equal(t, []string{"NAME", "BRANCH", "COMMIT", "SIZE", "STATUS"}, headerColumns(t, sized, "NAME"))
 	assert.Regexp(t, regexp.MustCompile(`(?m)feature-wt +feature/size +[0-9a-f]{7} +[0-9.]+[KM] +1 untracked$`), sized)
 
 	var items []WorktreeJSON
-	rawPlain, _ := run(t, false, "json")
-	assert.NotContains(t, rawPlain, "allocated_bytes")
-	rawSized, _ := run(t, true, "json")
+	rawSized, _ := run(t, "json")
 	require.NoError(t, json.Unmarshal([]byte(rawSized), &items))
 	require.Len(t, items, 2)
 	for _, item := range items {
@@ -69,7 +62,6 @@ func TestWorktreeTableSizeAfterPRAndFailureRow(t *testing.T) {
 	repoDir, client, out := newWorktreeOutputTest(t)
 	missing := filepath.Join(repoDir, "gone")
 	var warnings bytes.Buffer
-	setTestValue(t, &wtShowSize, true)
 	worktrees := []worktree.Info{
 		{Path: repoDir, Branch: "feature/ok", Commit: strings.Repeat("a", 40)},
 		{Path: missing, Branch: "feature/gone", Commit: strings.Repeat("b", 40)},
@@ -102,7 +94,6 @@ func TestWorktreeListAllSize(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Chdir(t.TempDir())
-	setTestValue(t, &wtShowSize, true)
 
 	for _, format := range []string{"text", "json"} {
 		t.Run(format, func(t *testing.T) {
@@ -137,7 +128,6 @@ func TestWorktreeListSizeAlignsWideNames(t *testing.T) {
 	runGitCmd(t, repo, "worktree", "add", "-b", "功能/测试", filepath.Join(parent, "功能-测试"), "main")
 	runGitCmd(t, repo, "worktree", "add", "-b", "feature/ascii", filepath.Join(parent, "feature-ascii"), "main")
 	t.Chdir(repo)
-	setTestValue(t, &wtShowSize, true)
 	setTestValue(t, &outputFlag.value, "text")
 	var out bytes.Buffer
 	withWriters(t, &out, &out)
