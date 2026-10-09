@@ -26,10 +26,7 @@ func colorEnabled(w io.Writer) bool {
 }
 
 func colorAllowed(terminal bool) bool {
-	if _, set := os.LookupEnv("NO_COLOR"); set {
-		return false
-	}
-	return terminal
+	return terminal && os.Getenv("NO_COLOR") == ""
 }
 
 func paint(text, code string, enabled bool) string {

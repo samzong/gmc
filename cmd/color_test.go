@@ -16,8 +16,10 @@ import (
 var sgrPattern = regexp.MustCompile("\x1b\\[[0-9;]*m")
 
 func TestColorAllowedRespectsNoColor(t *testing.T) {
-	t.Setenv("NO_COLOR", "")
+	t.Setenv("NO_COLOR", "1")
 	assert.False(t, colorAllowed(true))
+	t.Setenv("NO_COLOR", "")
+	assert.True(t, colorAllowed(true))
 	require.NoError(t, os.Unsetenv("NO_COLOR"))
 	assert.True(t, colorAllowed(true))
 	assert.False(t, colorAllowed(false))
