@@ -59,7 +59,6 @@ Copy this checklist and check off items as you complete them:
 - `gmc wt add <name> -b <branch>`
 - `gmc wt ls`
 - `gmc wt list -A`
-- `gmc wt list --size`
 - `gmc wt rm <name>`
 - `gmc wt rm -D <name>`
 - `gmc wt prune`

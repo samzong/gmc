@@ -22,7 +22,6 @@ var (
 	wtAddPR        int
 	wtShowPR       bool
 	wtDiffBase     string
-	wtShowSize     bool
 )
 
 var wtCmd = &cobra.Command{
@@ -83,14 +82,15 @@ Show local status grouped by repository.
 Directory symlinks, Git metadata, node_modules, and on macOS ~/Library and ~/.Trash are not traversed.
 Unreadable directories are reported on stderr; scanning continues.
 --pr and --diff-base are available only for the current repository.
---size adds a SIZE column with the allocated disk space of each worktree directory.
-It walks every file without following symlinks, skips the top-level .git and .bare entries,
+The SIZE column shows the allocated disk space of each worktree directory.
+Measuring walks every file without following symlinks, skips the top-level .git and .bare entries,
 counts hard links once per worktree, and shows "-" with a warning when a worktree cannot be measured.
-Sizes of different worktrees can overlap and do not add up to reclaimable space.`,
+Sizes of different worktrees can overlap and do not add up to reclaimable space.
+Colors are used only when stdout is a terminal; set NO_COLOR to a non-empty value or TERM=dumb to disable them.
+Piped and JSON output never contain colors.`,
 	Example: `  gmc wt list
-  gmc wt list --size
   gmc wt list -A
-  gmc wt list -A --size -o json`,
+  gmc wt list -A -o json`,
 	Args:              cobra.NoArgs,
 	ValidArgsFunction: cobra.NoFileCompletions,
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -221,10 +221,6 @@ func init() {
 		"Base branch/ref for worktree diff stats")
 	wtListCmd.Flags().StringVar(&wtDiffBase, "diff-base", "",
 		"Base branch/ref for worktree diff stats")
-	wtCmd.Flags().BoolVar(&wtShowSize, "size", false,
-		"Show allocated disk space for each worktree")
-	wtListCmd.Flags().BoolVar(&wtShowSize, "size", false,
-		"Show allocated disk space for each worktree")
 	wtListCmd.Flags().BoolP("all", "A", false, "Find repositories with linked worktrees in the home directory")
 	wtListCmd.MarkFlagsMutuallyExclusive("all", "pr")
 	wtListCmd.MarkFlagsMutuallyExclusive("all", "diff-base")

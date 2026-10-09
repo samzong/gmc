@@ -30,9 +30,8 @@ go install github.com/samzong/gmc@latest
 | `gmc wt add <name> [-b <base>] [--sync]` | New worktree on a new branch |
 | `gmc wt dup [N] [-b <base>]` | Fan out N sibling worktrees for parallel agents |
 | `gmc wt promote <candidate>` | Apply a candidate's changes into the current worktree |
-| `gmc wt list` | List all worktrees in the family |
+| `gmc wt list` | List all worktrees in the family with each one's allocated disk size |
 | `gmc wt list -A` | Scan home for repositories with linked worktrees; show each family's local status |
-| `gmc wt list --size` | Add a SIZE column with each worktree's allocated disk space (also works with `-A`) |
 | `gmc wt switch` | Interactive switch between worktrees |
 | `gmc wt remove <name> [-D]` | Delete worktree (and optionally its branch) |
 | `gmc wt sync` | Pull the base branch up to date |

@@ -10,7 +10,7 @@ import (
 	"sync"
 )
 
-const diskUsageWorkers = 2
+const diskUsageWorkers = 4
 
 var errAllocatedOverflow = errors.New("allocated size overflows uint64")
 

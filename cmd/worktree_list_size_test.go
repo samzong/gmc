@@ -34,9 +34,8 @@ func TestWorktreeListSizeColumn(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(linked, "data.bin"), make([]byte, 64*1024), 0o600))
 	t.Chdir(repo)
 
-	run := func(t *testing.T, size bool, format string) (string, string) {
+	run := func(t *testing.T, format string) (string, string) {
 		t.Helper()
-		setTestValue(t, &wtShowSize, size)
 		setTestValue(t, &outputFlag.value, format)
 		var out, errOut bytes.Buffer
 		withWriters(t, &out, &errOut)
@@ -44,19 +43,14 @@ func TestWorktreeListSizeColumn(t *testing.T) {
 		return out.String(), errOut.String()
 	}
 
-	plain, _ := run(t, false, "text")
-	assert.NotContains(t, plain, "SIZE")
-	assert.Regexp(t, regexp.MustCompile(`(?m)^NAME +BRANCH +COMMIT +STATUS$`), plain)
-
-	sized, errOut := run(t, true, "text")
+	sized, errOut := run(t, "text")
 	assert.Empty(t, errOut)
+	assert.NotContains(t, sized, "\x1b[")
 	assert.Equal(t, []string{"NAME", "BRANCH", "COMMIT", "SIZE", "STATUS"}, headerColumns(t, sized, "NAME"))
 	assert.Regexp(t, regexp.MustCompile(`(?m)feature-wt +feature/size +[0-9a-f]{7} +[0-9.]+[KM] +1 untracked$`), sized)
 
 	var items []WorktreeJSON
-	rawPlain, _ := run(t, false, "json")
-	assert.NotContains(t, rawPlain, "allocated_bytes")
-	rawSized, _ := run(t, true, "json")
+	rawSized, _ := run(t, "json")
 	require.NoError(t, json.Unmarshal([]byte(rawSized), &items))
 	require.Len(t, items, 2)
 	for _, item := range items {
@@ -69,7 +63,6 @@ func TestWorktreeTableSizeAfterPRAndFailureRow(t *testing.T) {
 	repoDir, client, out := newWorktreeOutputTest(t)
 	missing := filepath.Join(repoDir, "gone")
 	var warnings bytes.Buffer
-	setTestValue(t, &wtShowSize, true)
 	worktrees := []worktree.Info{
 		{Path: repoDir, Branch: "feature/ok", Commit: strings.Repeat("a", 40)},
 		{Path: missing, Branch: "feature/gone", Commit: strings.Repeat("b", 40)},
@@ -78,7 +71,7 @@ func TestWorktreeTableSizeAfterPRAndFailureRow(t *testing.T) {
 
 	printWorktreeTable(client, worktrees, map[string]worktree.ReviewInfo{
 		"feature/ok": {Number: 7, State: "OPEN"},
-	}, nil, sizes)
+	}, nil, sizes, false)
 
 	assert.Equal(t, []string{"NAME", "BRANCH", "COMMIT", "PR", "SIZE", "STATUS"}, headerColumns(t, out.String(), "NAME"))
 	assert.Regexp(t, regexp.MustCompile(`(?m)feature/gone +bbbbbbb +- +- +`), out.String())
@@ -102,7 +95,6 @@ func TestWorktreeListAllSize(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Chdir(t.TempDir())
-	setTestValue(t, &wtShowSize, true)
 
 	for _, format := range []string{"text", "json"} {
 		t.Run(format, func(t *testing.T) {
@@ -131,21 +123,8 @@ func TestWorktreeListAllSize(t *testing.T) {
 	}
 }
 
-func TestWorktreeListSizeAlignsWideNames(t *testing.T) {
-	repo := initCmdTestRepo(t)
-	parent := filepath.Dir(repo)
-	runGitCmd(t, repo, "worktree", "add", "-b", "功能/测试", filepath.Join(parent, "功能-测试"), "main")
-	runGitCmd(t, repo, "worktree", "add", "-b", "feature/ascii", filepath.Join(parent, "feature-ascii"), "main")
-	t.Chdir(repo)
-	setTestValue(t, &wtShowSize, true)
-	setTestValue(t, &outputFlag.value, "text")
-	var out bytes.Buffer
-	withWriters(t, &out, &out)
-	require.NoError(t, runWorktreeList(worktree.NewClient(worktree.Options{}), false))
-
-	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
-	require.Len(t, lines, 4)
-	assert.Contains(t, out.String(), "功能-测试")
+func assertColumnsAligned(t *testing.T, lines []string) {
+	t.Helper()
 	sizeEnds := map[int]bool{}
 	statusStarts := map[int]bool{}
 	for _, line := range lines {
@@ -155,6 +134,49 @@ func TestWorktreeListSizeAlignsWideNames(t *testing.T) {
 		sizeEnds[runewidth.StringWidth(line[:size])] = true
 		statusStarts[runewidth.StringWidth(line[:status])] = true
 	}
-	assert.Len(t, sizeEnds, 1, out.String())
-	assert.Len(t, statusStarts, 1, out.String())
+	assert.Len(t, sizeEnds, 1, strings.Join(lines, "\n"))
+	assert.Len(t, statusStarts, 1, strings.Join(lines, "\n"))
+}
+
+func TestWorktreeListSizeAlignsWideNames(t *testing.T) {
+	repo := initCmdTestRepo(t)
+	parent := filepath.Dir(repo)
+	runGitCmd(t, repo, "worktree", "add", "-b", "功能/测试", filepath.Join(parent, "功能-测试"), "main")
+	runGitCmd(t, repo, "worktree", "add", "-b", "feature/ascii", filepath.Join(parent, "feature-ascii"), "main")
+	t.Chdir(repo)
+	setTestValue(t, &outputFlag.value, "text")
+	var out bytes.Buffer
+	withWriters(t, &out, &out)
+	require.NoError(t, runWorktreeList(worktree.NewClient(worktree.Options{}), false))
+
+	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	require.Len(t, lines, 4)
+	assert.Contains(t, out.String(), "功能-测试")
+	assertColumnsAligned(t, lines)
+}
+
+func TestWorktreeListAllAlignsWideNames(t *testing.T) {
+	repo := initCmdTestRepo(t)
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	agents := filepath.Join(home, ".codex", "worktrees")
+	runGitCmd(t, repo, "worktree", "add", "-b", "功能/测试", filepath.Join(agents, "功能-测试"))
+	runGitCmd(t, repo, "worktree", "add", "-b", "feature/ascii", filepath.Join(agents, "feature-ascii"))
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Chdir(t.TempDir())
+	setTestValue(t, &outputFlag.value, "text")
+
+	var out, progress bytes.Buffer
+	command := &cobra.Command{Use: "list", Args: wtListCmd.Args, RunE: wtListCmd.RunE}
+	command.Flags().BoolP("all", "A", false, "")
+	command.SetOut(&out)
+	command.SetErr(&progress)
+	command.SetArgs([]string{"-A"})
+	require.NoError(t, command.Execute())
+
+	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	require.Len(t, lines, 5)
+	assert.Contains(t, out.String(), "~/.codex/worktrees/功能-测试")
+	assertColumnsAligned(t, lines[1:])
 }
