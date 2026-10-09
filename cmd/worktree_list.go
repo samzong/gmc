@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/mattn/go-isatty"
+	"github.com/mattn/go-runewidth"
 	"github.com/samzong/gmc/internal/stringsutil"
 	"github.com/samzong/gmc/internal/worktree"
 	"github.com/spf13/cobra"
@@ -74,7 +75,7 @@ func (s worktreeSizes) text(path string) string {
 func (s worktreeSizes) width() int {
 	width := len("SIZE")
 	for path := range s {
-		width = max(width, len(s.text(path)))
+		width = max(width, runewidth.StringWidth(s.text(path)))
 	}
 	return width
 }
@@ -360,6 +361,13 @@ func padVisibleRight(text string, visibleLen int, width int) string {
 	return text + strings.Repeat(" ", width-visibleLen)
 }
 
+func padVisibleLeft(text string, visibleLen int, width int) string {
+	if visibleLen >= width {
+		return text
+	}
+	return strings.Repeat(" ", width-visibleLen) + text
+}
+
 func printWorktreeTable(
 	wtClient *worktree.Client,
 	worktrees []worktree.Info,
@@ -380,9 +388,9 @@ func printWorktreeTable(
 	maxPR := len("PR")
 	for _, wt := range worktrees {
 		name := displayWorktreeName(root, wt.Path)
-		maxName = max(maxName, len(name))
-		maxBranch = max(maxBranch, len(wt.Branch))
-		maxPR = max(maxPR, len(formatWorktreeReview(reviews, wt.Branch)))
+		maxName = max(maxName, runewidth.StringWidth(name))
+		maxBranch = max(maxBranch, runewidth.StringWidth(wt.Branch))
+		maxPR = max(maxPR, runewidth.StringWidth(formatWorktreeReview(reviews, wt.Branch)))
 	}
 
 	maxName += 2
@@ -411,14 +419,17 @@ func printWorktreeTable(
 		if reviews != nil {
 			text := formatWorktreeReview(reviews, wt.Branch)
 			display := formatWorktreeReviewDisplay(reviews, wt.Branch, links)
-			reviewColumn = padVisibleRight(display, len(text), maxPR) + " "
+			reviewColumn = padVisibleRight(display, runewidth.StringWidth(text), maxPR) + " "
 		}
 		sizeColumn := ""
 		if sizes != nil {
-			sizeColumn = fmt.Sprintf("%*s  ", sizeWidth, sizes.text(wt.Path))
+			text := sizes.text(wt.Path)
+			sizeColumn = padVisibleLeft(text, runewidth.StringWidth(text), sizeWidth) + "  "
 		}
-		fmt.Fprintf(writer, "%-*s %-*s %-8s %s%s%s\n", maxName, name, maxBranch, wt.Branch, shortCommit,
-			reviewColumn, sizeColumn, status)
+		fmt.Fprintf(writer, "%s %s %-8s %s%s%s\n",
+			padVisibleRight(name, runewidth.StringWidth(name), maxName),
+			padVisibleRight(wt.Branch, runewidth.StringWidth(wt.Branch), maxBranch),
+			shortCommit, reviewColumn, sizeColumn, status)
 	}
 }
 

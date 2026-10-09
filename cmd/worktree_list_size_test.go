@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mattn/go-runewidth"
 	"github.com/samzong/gmc/internal/worktree"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -128,4 +129,32 @@ func TestWorktreeListAllSize(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWorktreeListSizeAlignsWideNames(t *testing.T) {
+	repo := initCmdTestRepo(t)
+	parent := filepath.Dir(repo)
+	runGitCmd(t, repo, "worktree", "add", "-b", "功能/测试", filepath.Join(parent, "功能-测试"), "main")
+	runGitCmd(t, repo, "worktree", "add", "-b", "feature/ascii", filepath.Join(parent, "feature-ascii"), "main")
+	t.Chdir(repo)
+	setTestValue(t, &wtShowSize, true)
+	setTestValue(t, &outputFlag.value, "text")
+	var out bytes.Buffer
+	withWriters(t, &out, &out)
+	require.NoError(t, runWorktreeList(worktree.NewClient(worktree.Options{}), false))
+
+	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	require.Len(t, lines, 4)
+	assert.Contains(t, out.String(), "功能-测试")
+	sizeEnds := map[int]bool{}
+	statusStarts := map[int]bool{}
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		status := strings.LastIndex(line, fields[len(fields)-1])
+		size := strings.LastIndex(line[:status], fields[len(fields)-2]) + len(fields[len(fields)-2])
+		sizeEnds[runewidth.StringWidth(line[:size])] = true
+		statusStarts[runewidth.StringWidth(line[:status])] = true
+	}
+	assert.Len(t, sizeEnds, 1, out.String())
+	assert.Len(t, statusStarts, 1, out.String())
 }
