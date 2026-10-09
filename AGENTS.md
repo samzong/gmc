@@ -198,7 +198,7 @@ make man            # regenerate docs/man/
 make clean          # remove ./build/
 ```
 
-Go **1.24+**. Key deps: Cobra, Viper, `go-openai` (OpenAI-compatible API).
+Go **1.25.8+**. Key deps: Cobra, Viper, `go-openai` (OpenAI-compatible API).
 
 ## Release (only when doing release work)
 
