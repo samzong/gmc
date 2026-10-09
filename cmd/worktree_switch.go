@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/charmbracelet/huh"
+	"charm.land/huh/v2"
 	"github.com/samzong/gmc/internal/shell"
 	"github.com/samzong/gmc/internal/worktree"
 	"github.com/spf13/cobra"
