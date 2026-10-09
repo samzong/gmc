@@ -54,3 +54,8 @@ large trees take longer to list. Symlinks are not followed, the top-level
 worktree. Sizes of different worktrees can overlap and are not reclaimable
 space. A worktree that cannot be measured shows `-` with a warning on stderr.
 With `-o json`, the size is reported as `allocated_bytes`.
+
+## Color
+
+Output is colored only when stdout is a terminal; set `NO_COLOR` or
+`TERM=dumb` to disable colors. Piped and JSON output never contain colors.

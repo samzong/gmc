@@ -208,7 +208,7 @@ func TestPrintWorktreeTable_WithReviewStates(t *testing.T) {
 			HeadBranch: "feature/pr-text",
 			URL:        "https://github.com/example/repo/pull/42",
 		},
-	}, nil, nil)
+	}, nil, nil, false)
 
 	output := out.String()
 	assert.Contains(t, output, "PR")

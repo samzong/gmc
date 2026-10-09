@@ -45,6 +45,7 @@ func TestWorktreeListSizeColumn(t *testing.T) {
 
 	sized, errOut := run(t, "text")
 	assert.Empty(t, errOut)
+	assert.NotContains(t, sized, "\x1b[")
 	assert.Equal(t, []string{"NAME", "BRANCH", "COMMIT", "SIZE", "STATUS"}, headerColumns(t, sized, "NAME"))
 	assert.Regexp(t, regexp.MustCompile(`(?m)feature-wt +feature/size +[0-9a-f]{7} +[0-9.]+[KM] +1 untracked$`), sized)
 
@@ -70,7 +71,7 @@ func TestWorktreeTableSizeAfterPRAndFailureRow(t *testing.T) {
 
 	printWorktreeTable(client, worktrees, map[string]worktree.ReviewInfo{
 		"feature/ok": {Number: 7, State: "OPEN"},
-	}, nil, sizes)
+	}, nil, sizes, false)
 
 	assert.Equal(t, []string{"NAME", "BRANCH", "COMMIT", "PR", "SIZE", "STATUS"}, headerColumns(t, out.String(), "NAME"))
 	assert.Regexp(t, regexp.MustCompile(`(?m)feature/gone +bbbbbbb +- +- +`), out.String())

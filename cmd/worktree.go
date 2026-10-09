@@ -85,7 +85,9 @@ Unreadable directories are reported on stderr; scanning continues.
 The SIZE column shows the allocated disk space of each worktree directory.
 Measuring walks every file without following symlinks, skips the top-level .git and .bare entries,
 counts hard links once per worktree, and shows "-" with a warning when a worktree cannot be measured.
-Sizes of different worktrees can overlap and do not add up to reclaimable space.`,
+Sizes of different worktrees can overlap and do not add up to reclaimable space.
+Colors are used only when stdout is a terminal; set NO_COLOR or TERM=dumb to disable them.
+Piped and JSON output never contain colors.`,
 	Example: `  gmc wt list
   gmc wt list -A
   gmc wt list -A -o json`,

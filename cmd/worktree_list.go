@@ -105,12 +105,13 @@ func runWorktreeListAll(cmd *cobra.Command) error {
 		fmt.Fprintln(cmd.OutOrStdout(), "No linked worktrees found.")
 		return nil
 	}
-	printWorktreeListAll(cmd.OutOrStdout(), result.Worktrees, sizes)
+	printWorktreeListAll(cmd.OutOrStdout(), result.Worktrees, sizes, colorEnabled(cmd.OutOrStdout()))
 	return nil
 }
 
-func printWorktreeListAll(w io.Writer, worktrees []worktree.Info, sizes worktreeSizes) {
+func printWorktreeListAll(w io.Writer, worktrees []worktree.Info, sizes worktreeSizes, color bool) {
 	sizeWidth := sizes.width()
+	current := currentWorktreePath(worktrees)
 	for start := 0; start < len(worktrees); {
 		end := start + 1
 		for end < len(worktrees) && worktrees[end].Repository == worktrees[start].Repository {
@@ -120,12 +121,14 @@ func printWorktreeListAll(w io.Writer, worktrees []worktree.Info, sizes worktree
 			fmt.Fprintln(w)
 		}
 		fmt.Fprintln(w, sanitizeForTerminal(abbrevPath(worktrees[start].Repository)))
-		printWorktreeListAllGroup(w, worktrees[start:end], sizes, sizeWidth)
+		printWorktreeListAllGroup(w, worktrees[start:end], sizes, sizeWidth, current, color)
 		start = end
 	}
 }
 
-func printWorktreeListAllGroup(w io.Writer, worktrees []worktree.Info, sizes worktreeSizes, sizeWidth int) {
+func printWorktreeListAllGroup(
+	w io.Writer, worktrees []worktree.Info, sizes worktreeSizes, sizeWidth int, current string, color bool,
+) {
 	rows := [][]string{{"PATH", "BRANCH", "COMMIT", "SIZE", "STATUS"}}
 	for _, wt := range worktrees {
 		status := wt.Status
@@ -144,12 +147,23 @@ func printWorktreeListAllGroup(w io.Writer, worktrees []worktree.Info, sizes wor
 			widths[i] = max(widths[i], runewidth.StringWidth(row[i]))
 		}
 	}
-	for _, row := range rows {
+	for index, row := range rows {
+		var line strings.Builder
 		for i, width := range widths {
-			fmt.Fprint(w, padVisibleRight(row[i], runewidth.StringWidth(row[i]), width+2))
+			cell := row[i]
+			if i == 0 && index > 0 && worktrees[index-1].Path == current {
+				cell = paint(cell, sgrBold, color)
+			}
+			line.WriteString(padVisibleRight(cell, runewidth.StringWidth(row[i]), width+2))
 		}
-		fmt.Fprint(w, padVisibleLeft(row[3], runewidth.StringWidth(row[3]), sizeWidth), "  ")
-		fmt.Fprintln(w, row[4])
+		if index == 0 {
+			line.WriteString(padVisibleLeft(row[3], runewidth.StringWidth(row[3]), sizeWidth) + "  " + row[4])
+			fmt.Fprintln(w, paint(line.String(), sgrDim, color))
+			continue
+		}
+		line.WriteString(padVisibleLeft(colorSize(row[3], color), runewidth.StringWidth(row[3]), sizeWidth) + "  ")
+		line.WriteString(colorStatus(row[4], color))
+		fmt.Fprintln(w, line.String())
 	}
 }
 
@@ -190,7 +204,7 @@ func runWorktreeList(wtClient *worktree.Client, showCurrent bool) error {
 		fmt.Fprintln(outWriter(), "No worktrees found.")
 		return nil
 	}
-	printWorktreeTable(wtClient, worktrees, reviews.Reviews, diffStats, sizes)
+	printWorktreeTable(wtClient, worktrees, reviews.Reviews, diffStats, sizes, colorEnabled(outWriter()))
 	if cwd, err := os.Getwd(); showCurrent && err == nil {
 		for _, wt := range worktrees {
 			if strings.HasPrefix(cwd, wt.Path) {
@@ -382,6 +396,7 @@ func printWorktreeTable(
 	reviews map[string]worktree.ReviewInfo,
 	diffStats map[string]worktree.DiffStat,
 	sizes worktreeSizes,
+	color bool,
 ) {
 	if len(worktrees) == 0 {
 		return
@@ -410,8 +425,10 @@ func printWorktreeTable(
 		reviewHeading = fmt.Sprintf("%-*s ", maxPR, "PR")
 	}
 	sizeWidth := sizes.width()
-	fmt.Fprintf(writer, "%-*s %-*s %-8s %s%*s  STATUS\n", maxName, "NAME", maxBranch, "BRANCH", "COMMIT",
+	heading := fmt.Sprintf("%-*s %-*s %-8s %s%*s  STATUS", maxName, "NAME", maxBranch, "BRANCH", "COMMIT",
 		reviewHeading, sizeWidth, "SIZE")
+	fmt.Fprintln(writer, paint(heading, sgrDim, color))
+	current := currentWorktreePath(worktrees)
 
 	for _, wt := range worktrees {
 		name := displayWorktreeName(root, wt.Path)
@@ -421,15 +438,19 @@ func printWorktreeTable(
 		reviewColumn := ""
 		if reviews != nil {
 			text := formatWorktreeReview(reviews, wt.Branch)
-			display := formatWorktreeReviewDisplay(reviews, wt.Branch, links)
+			display := colorReview(reviews, wt.Branch, formatWorktreeReviewDisplay(reviews, wt.Branch, links), color)
 			reviewColumn = padVisibleRight(display, runewidth.StringWidth(text), maxPR) + " "
 		}
 		sizeText := sizes.text(wt.Path)
-		sizeColumn := padVisibleLeft(sizeText, runewidth.StringWidth(sizeText), sizeWidth) + "  "
+		sizeColumn := padVisibleLeft(colorSize(sizeText, color), runewidth.StringWidth(sizeText), sizeWidth) + "  "
+		nameCell := name
+		if wt.Path == current {
+			nameCell = paint(name, sgrBold, color)
+		}
 		fmt.Fprintf(writer, "%s %s %-8s %s%s%s\n",
-			padVisibleRight(name, runewidth.StringWidth(name), maxName),
+			padVisibleRight(nameCell, runewidth.StringWidth(name), maxName),
 			padVisibleRight(wt.Branch, runewidth.StringWidth(wt.Branch), maxBranch),
-			shortCommit, reviewColumn, sizeColumn, status)
+			shortCommit, reviewColumn, sizeColumn, colorStatus(status, color))
 	}
 }
 
