@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/mattn/go-isatty"
 	"github.com/mattn/go-runewidth"
@@ -106,22 +105,29 @@ func runWorktreeListAll(cmd *cobra.Command) error {
 		fmt.Fprintln(cmd.OutOrStdout(), "No linked worktrees found.")
 		return nil
 	}
-	writer := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-	repository := ""
+	printWorktreeListAll(cmd.OutOrStdout(), result.Worktrees, sizes)
+	return nil
+}
+
+func printWorktreeListAll(w io.Writer, worktrees []worktree.Info, sizes worktreeSizes) {
 	sizeWidth := sizes.width()
-	sizeHeading := fmt.Sprintf("%*s\t", sizeWidth, "SIZE")
-	for _, wt := range result.Worktrees {
-		if wt.Repository != repository {
-			if err := writer.Flush(); err != nil {
-				return err
-			}
-			if repository != "" {
-				fmt.Fprintln(cmd.OutOrStdout())
-			}
-			repository = wt.Repository
-			fmt.Fprintln(cmd.OutOrStdout(), sanitizeForTerminal(abbrevPath(repository)))
-			fmt.Fprintf(writer, "PATH\tBRANCH\tCOMMIT\t%sSTATUS\n", sizeHeading)
+	for start := 0; start < len(worktrees); {
+		end := start + 1
+		for end < len(worktrees) && worktrees[end].Repository == worktrees[start].Repository {
+			end++
 		}
+		if start > 0 {
+			fmt.Fprintln(w)
+		}
+		fmt.Fprintln(w, sanitizeForTerminal(abbrevPath(worktrees[start].Repository)))
+		printWorktreeListAllGroup(w, worktrees[start:end], sizes, sizeWidth)
+		start = end
+	}
+}
+
+func printWorktreeListAllGroup(w io.Writer, worktrees []worktree.Info, sizes worktreeSizes, sizeWidth int) {
+	rows := [][]string{{"PATH", "BRANCH", "COMMIT", "SIZE", "STATUS"}}
+	for _, wt := range worktrees {
 		status := wt.Status
 		if wt.IsLocked {
 			status += ", locked"
@@ -129,11 +135,22 @@ func runWorktreeListAll(cmd *cobra.Command) error {
 		if wt.IsPrunable {
 			status += ", prunable"
 		}
-		sizeColumn := fmt.Sprintf("%*s\t", sizeWidth, sizes.text(wt.Path))
-		fmt.Fprintf(writer, "%s\t%s\t%s\t%s%s\n", sanitizeForTerminal(abbrevPath(wt.Path)),
-			sanitizeForTerminal(wt.Branch), stringsutil.ShortHash(wt.Commit, 7, ""), sizeColumn, status)
+		rows = append(rows, []string{sanitizeForTerminal(abbrevPath(wt.Path)), sanitizeForTerminal(wt.Branch),
+			stringsutil.ShortHash(wt.Commit, 7, ""), sizes.text(wt.Path), status})
 	}
-	return writer.Flush()
+	widths := make([]int, 3)
+	for _, row := range rows {
+		for i := range widths {
+			widths[i] = max(widths[i], runewidth.StringWidth(row[i]))
+		}
+	}
+	for _, row := range rows {
+		for i, width := range widths {
+			fmt.Fprint(w, padVisibleRight(row[i], runewidth.StringWidth(row[i]), width+2))
+		}
+		fmt.Fprint(w, padVisibleLeft(row[3], runewidth.StringWidth(row[3]), sizeWidth), "  ")
+		fmt.Fprintln(w, row[4])
+	}
 }
 
 func filterBareWorktrees(worktrees []worktree.Info) []worktree.Info {

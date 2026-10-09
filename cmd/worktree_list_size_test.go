@@ -122,6 +122,21 @@ func TestWorktreeListAllSize(t *testing.T) {
 	}
 }
 
+func assertColumnsAligned(t *testing.T, lines []string) {
+	t.Helper()
+	sizeEnds := map[int]bool{}
+	statusStarts := map[int]bool{}
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		status := strings.LastIndex(line, fields[len(fields)-1])
+		size := strings.LastIndex(line[:status], fields[len(fields)-2]) + len(fields[len(fields)-2])
+		sizeEnds[runewidth.StringWidth(line[:size])] = true
+		statusStarts[runewidth.StringWidth(line[:status])] = true
+	}
+	assert.Len(t, sizeEnds, 1, strings.Join(lines, "\n"))
+	assert.Len(t, statusStarts, 1, strings.Join(lines, "\n"))
+}
+
 func TestWorktreeListSizeAlignsWideNames(t *testing.T) {
 	repo := initCmdTestRepo(t)
 	parent := filepath.Dir(repo)
@@ -136,15 +151,31 @@ func TestWorktreeListSizeAlignsWideNames(t *testing.T) {
 	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
 	require.Len(t, lines, 4)
 	assert.Contains(t, out.String(), "功能-测试")
-	sizeEnds := map[int]bool{}
-	statusStarts := map[int]bool{}
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		status := strings.LastIndex(line, fields[len(fields)-1])
-		size := strings.LastIndex(line[:status], fields[len(fields)-2]) + len(fields[len(fields)-2])
-		sizeEnds[runewidth.StringWidth(line[:size])] = true
-		statusStarts[runewidth.StringWidth(line[:status])] = true
-	}
-	assert.Len(t, sizeEnds, 1, out.String())
-	assert.Len(t, statusStarts, 1, out.String())
+	assertColumnsAligned(t, lines)
+}
+
+func TestWorktreeListAllAlignsWideNames(t *testing.T) {
+	repo := initCmdTestRepo(t)
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	agents := filepath.Join(home, ".codex", "worktrees")
+	runGitCmd(t, repo, "worktree", "add", "-b", "功能/测试", filepath.Join(agents, "功能-测试"))
+	runGitCmd(t, repo, "worktree", "add", "-b", "feature/ascii", filepath.Join(agents, "feature-ascii"))
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Chdir(t.TempDir())
+	setTestValue(t, &outputFlag.value, "text")
+
+	var out, progress bytes.Buffer
+	command := &cobra.Command{Use: "list", Args: wtListCmd.Args, RunE: wtListCmd.RunE}
+	command.Flags().BoolP("all", "A", false, "")
+	command.SetOut(&out)
+	command.SetErr(&progress)
+	command.SetArgs([]string{"-A"})
+	require.NoError(t, command.Execute())
+
+	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	require.Len(t, lines, 5)
+	assert.Contains(t, out.String(), "~/.codex/worktrees/功能-测试")
+	assertColumnsAligned(t, lines[1:])
 }
