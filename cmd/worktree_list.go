@@ -15,22 +15,68 @@ import (
 )
 
 type WorktreeJSON struct {
-	Repository     string `json:"repository,omitempty"`
-	Locked         bool   `json:"locked,omitempty"`
-	Prunable       bool   `json:"prunable,omitempty"`
-	Name           string `json:"name"`
-	Path           string `json:"path"`
-	Branch         string `json:"branch"`
-	Commit         string `json:"commit"`
-	Status         string `json:"status"`
-	DiffBase       string `json:"diff_base,omitempty"`
-	ChangedFiles   *int   `json:"changed_files,omitempty"`
-	Insertions     *int   `json:"insertions,omitempty"`
-	Deletions      *int   `json:"deletions,omitempty"`
-	ReviewProvider string `json:"review_provider,omitempty"`
-	ReviewNumber   int    `json:"review_number,omitempty"`
-	ReviewState    string `json:"review_state,omitempty"`
-	ReviewURL      string `json:"review_url,omitempty"`
+	Repository     string  `json:"repository,omitempty"`
+	Locked         bool    `json:"locked,omitempty"`
+	Prunable       bool    `json:"prunable,omitempty"`
+	Name           string  `json:"name"`
+	Path           string  `json:"path"`
+	Branch         string  `json:"branch"`
+	Commit         string  `json:"commit"`
+	Status         string  `json:"status"`
+	DiffBase       string  `json:"diff_base,omitempty"`
+	ChangedFiles   *int    `json:"changed_files,omitempty"`
+	Insertions     *int    `json:"insertions,omitempty"`
+	Deletions      *int    `json:"deletions,omitempty"`
+	ReviewProvider string  `json:"review_provider,omitempty"`
+	ReviewNumber   int     `json:"review_number,omitempty"`
+	ReviewState    string  `json:"review_state,omitempty"`
+	ReviewURL      string  `json:"review_url,omitempty"`
+	AllocatedBytes *uint64 `json:"allocated_bytes,omitempty"`
+}
+
+type worktreeSizes map[string]worktree.AllocatedSize
+
+func loadWorktreeSizes(w io.Writer, worktrees []worktree.Info) worktreeSizes {
+	if !wtShowSize {
+		return nil
+	}
+	paths := make([]string, 0, len(worktrees))
+	for _, wt := range worktrees {
+		paths = append(paths, wt.Path)
+	}
+	sizes := make(worktreeSizes, len(paths))
+	for _, size := range worktree.MeasureAllocatedAll(paths) {
+		sizes[size.Path] = size
+		if size.Err != nil {
+			fmt.Fprintf(w, "Warning: cannot measure size of %s: %s\n",
+				sanitizeForTerminal(abbrevPath(size.Path)), sanitizeForTerminal(size.Err.Error()))
+		}
+	}
+	return sizes
+}
+
+func (s worktreeSizes) bytes(path string) *uint64 {
+	size, ok := s[path]
+	if !ok || size.Err != nil {
+		return nil
+	}
+	return &size.Bytes
+}
+
+func (s worktreeSizes) text(path string) string {
+	bytes := s.bytes(path)
+	if bytes == nil {
+		return "-"
+	}
+	return worktree.FormatAllocatedSize(*bytes)
+}
+
+func (s worktreeSizes) width() int {
+	width := len("SIZE")
+	for path := range s {
+		width = max(width, len(s.text(path)))
+	}
+	return width
 }
 
 func runWorktreeListAll(cmd *cobra.Command) error {
@@ -46,12 +92,14 @@ func runWorktreeListAll(cmd *cobra.Command) error {
 	for _, warning := range result.Warnings {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", sanitizeForTerminal(warning.Error()))
 	}
+	sizes := loadWorktreeSizes(cmd.ErrOrStderr(), result.Worktrees)
 	if outputFormat() == "json" {
 		items := make([]WorktreeJSON, 0, len(result.Worktrees))
 		for _, wt := range result.Worktrees {
 			items = append(items, WorktreeJSON{
 				Repository: wt.Repository, Name: filepath.Base(wt.Path), Path: wt.Path,
 				Branch: wt.Branch, Commit: wt.Commit, Status: wt.Status, Locked: wt.IsLocked, Prunable: wt.IsPrunable,
+				AllocatedBytes: sizes.bytes(wt.Path),
 			})
 		}
 		return printJSON(cmd.OutOrStdout(), items)
@@ -62,6 +110,11 @@ func runWorktreeListAll(cmd *cobra.Command) error {
 	}
 	writer := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 	repository := ""
+	sizeWidth := sizes.width()
+	sizeHeading := ""
+	if sizes != nil {
+		sizeHeading = fmt.Sprintf("%*s\t", sizeWidth, "SIZE")
+	}
 	for _, wt := range result.Worktrees {
 		if wt.Repository != repository {
 			if err := writer.Flush(); err != nil {
@@ -72,7 +125,7 @@ func runWorktreeListAll(cmd *cobra.Command) error {
 			}
 			repository = wt.Repository
 			fmt.Fprintln(cmd.OutOrStdout(), sanitizeForTerminal(abbrevPath(repository)))
-			fmt.Fprintln(writer, "PATH\tBRANCH\tCOMMIT\tSTATUS")
+			fmt.Fprintf(writer, "PATH\tBRANCH\tCOMMIT\t%sSTATUS\n", sizeHeading)
 		}
 		status := wt.Status
 		if wt.IsLocked {
@@ -81,8 +134,12 @@ func runWorktreeListAll(cmd *cobra.Command) error {
 		if wt.IsPrunable {
 			status += ", prunable"
 		}
-		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\n", sanitizeForTerminal(abbrevPath(wt.Path)),
-			sanitizeForTerminal(wt.Branch), stringsutil.ShortHash(wt.Commit, 7, ""), status)
+		sizeColumn := ""
+		if sizes != nil {
+			sizeColumn = fmt.Sprintf("%*s\t", sizeWidth, sizes.text(wt.Path))
+		}
+		fmt.Fprintf(writer, "%s\t%s\t%s\t%s%s\n", sanitizeForTerminal(abbrevPath(wt.Path)),
+			sanitizeForTerminal(wt.Branch), stringsutil.ShortHash(wt.Commit, 7, ""), sizeColumn, status)
 	}
 	return writer.Flush()
 }
@@ -109,8 +166,10 @@ func runWorktreeList(wtClient *worktree.Client, showCurrent bool) error {
 	if err != nil {
 		return err
 	}
+	sizes := loadWorktreeSizes(errWriter(), worktrees)
 	if outputFormat() == "json" {
-		if err := printJSON(outWriter(), buildWorktreeJSON(wtClient, worktrees, reviews.Reviews, diffStats)); err != nil {
+		items := buildWorktreeJSON(wtClient, worktrees, reviews.Reviews, diffStats, sizes)
+		if err := printJSON(outWriter(), items); err != nil {
 			return err
 		}
 		printReviewWarning(errWriter(), reviews)
@@ -122,7 +181,7 @@ func runWorktreeList(wtClient *worktree.Client, showCurrent bool) error {
 		fmt.Fprintln(outWriter(), "No worktrees found.")
 		return nil
 	}
-	printWorktreeTable(wtClient, worktrees, reviews.Reviews, diffStats)
+	printWorktreeTable(wtClient, worktrees, reviews.Reviews, diffStats, sizes)
 	if cwd, err := os.Getwd(); showCurrent && err == nil {
 		for _, wt := range worktrees {
 			if strings.HasPrefix(cwd, wt.Path) {
@@ -306,6 +365,7 @@ func printWorktreeTable(
 	worktrees []worktree.Info,
 	reviews map[string]worktree.ReviewInfo,
 	diffStats map[string]worktree.DiffStat,
+	sizes worktreeSizes,
 ) {
 	if len(worktrees) == 0 {
 		return
@@ -333,7 +393,14 @@ func printWorktreeTable(
 	if reviews != nil {
 		reviewHeading = fmt.Sprintf("%-*s ", maxPR, "PR")
 	}
-	fmt.Fprintf(writer, "%-*s %-*s %-8s %sSTATUS\n", maxName, "NAME", maxBranch, "BRANCH", "COMMIT", reviewHeading)
+	sizeWidth := 0
+	sizeHeading := ""
+	if sizes != nil {
+		sizeWidth = sizes.width()
+		sizeHeading = fmt.Sprintf("%*s  ", sizeWidth, "SIZE")
+	}
+	fmt.Fprintf(writer, "%-*s %-*s %-8s %s%sSTATUS\n", maxName, "NAME", maxBranch, "BRANCH", "COMMIT",
+		reviewHeading, sizeHeading)
 
 	for _, wt := range worktrees {
 		name := displayWorktreeName(root, wt.Path)
@@ -346,7 +413,12 @@ func printWorktreeTable(
 			display := formatWorktreeReviewDisplay(reviews, wt.Branch, links)
 			reviewColumn = padVisibleRight(display, len(text), maxPR) + " "
 		}
-		fmt.Fprintf(writer, "%-*s %-*s %-8s %s%s\n", maxName, name, maxBranch, wt.Branch, shortCommit, reviewColumn, status)
+		sizeColumn := ""
+		if sizes != nil {
+			sizeColumn = fmt.Sprintf("%*s  ", sizeWidth, sizes.text(wt.Path))
+		}
+		fmt.Fprintf(writer, "%-*s %-*s %-8s %s%s%s\n", maxName, name, maxBranch, wt.Branch, shortCommit,
+			reviewColumn, sizeColumn, status)
 	}
 }
 
@@ -355,17 +427,19 @@ func buildWorktreeJSON(
 	worktrees []worktree.Info,
 	reviews map[string]worktree.ReviewInfo,
 	diffStats map[string]worktree.DiffStat,
+	sizes worktreeSizes,
 ) []WorktreeJSON {
 	root := getDisplayRoot(wtClient)
 	result := make([]WorktreeJSON, 0, len(worktrees))
 	for _, wt := range worktrees {
 		stat, hasStat := diffStats[wt.Path]
 		item := WorktreeJSON{
-			Name:   displayWorktreeName(root, wt.Path),
-			Path:   wt.Path,
-			Branch: wt.Branch,
-			Commit: wt.Commit,
-			Status: resolveWorktreeStatus(wtClient, root, wt),
+			Name:           displayWorktreeName(root, wt.Path),
+			Path:           wt.Path,
+			Branch:         wt.Branch,
+			Commit:         wt.Commit,
+			Status:         resolveWorktreeStatus(wtClient, root, wt),
+			AllocatedBytes: sizes.bytes(wt.Path),
 		}
 		if hasStat && stat.HasChanges() {
 			item.DiffBase = stat.Base

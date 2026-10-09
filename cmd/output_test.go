@@ -172,7 +172,7 @@ func TestBuildWorktreeJSON_WithReviewStates(t *testing.T) {
 			Files:      2,
 			Insertions: 4,
 		},
-	})
+	}, nil)
 
 	require.Len(t, items, 1)
 	assert.Equal(t, "main", items[0].DiffBase)
@@ -208,7 +208,7 @@ func TestPrintWorktreeTable_WithReviewStates(t *testing.T) {
 			HeadBranch: "feature/pr-text",
 			URL:        "https://github.com/example/repo/pull/42",
 		},
-	}, nil)
+	}, nil, nil)
 
 	output := out.String()
 	assert.Contains(t, output, "PR")
