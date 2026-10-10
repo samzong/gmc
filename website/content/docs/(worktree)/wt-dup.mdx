@@ -25,6 +25,16 @@ gmc wt dup 3 --task todo.md
 
 `--task` can be repeated to copy more context files into each candidate.
 
+## JSON output
+
+```bash
+gmc wt dup 3 -o json
+```
+
+Prints one result per candidate with the same fields as `gmc wt add -o json`.
+Creation stops at the first failing candidate; the array lists the candidates
+already created plus the failed one, and the command exits non-zero.
+
 ## Notes
 
 Candidate names use `.dup-N`. Promote the one you want to keep with `gmc wt promote`.

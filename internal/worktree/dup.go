@@ -98,14 +98,15 @@ type DupOptions struct {
 	TaskFiles  []string
 }
 
+type DupItem struct {
+	CreateResult
+	RelativePath string
+}
+
 type DupResult struct {
-	Worktrees     []string
-	WorktreePaths []string
-	RelativePaths []string
-	Branches      []string
-	TaskFiles     []string
-	Warnings      []string
-	BaseBranch    string
+	Items      []DupItem
+	TaskFiles  []string
+	BaseBranch string
 }
 
 func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
@@ -143,57 +144,59 @@ func (c *Client) Dup(opts DupOptions) (*DupResult, error) {
 
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 	dupResult := &DupResult{
-		Worktrees:     make([]string, 0, opts.Count),
-		WorktreePaths: make([]string, 0, opts.Count),
-		RelativePaths: make([]string, 0, opts.Count),
-		Branches:      make([]string, 0, opts.Count),
-		TaskFiles:     taskPaths,
-		BaseBranch:    opts.BaseBranch,
+		Items:      make([]DupItem, 0, opts.Count),
+		TaskFiles:  taskPaths,
+		BaseBranch: opts.BaseBranch,
 	}
 
 	for i := 1; i <= opts.Count; i++ {
 		dirName := fmt.Sprintf(".dup-%d", i)
-		branchName := fmt.Sprintf("_dup/%s/%s-%d", opts.BaseBranch, timestamp, i)
 		targetPath := filepath.Join(targetRoot, dirName)
-
-		if _, err := os.Stat(targetPath); err == nil {
-			return nil, fmt.Errorf("directory already exists: %s", targetPath)
+		item := DupItem{
+			CreateResult: CreateResult{
+				Name:   dirName,
+				Path:   targetPath,
+				Branch: fmt.Sprintf("_dup/%s/%s-%d", opts.BaseBranch, timestamp, i),
+				Base:   opts.BaseBranch,
+			},
 		}
-
-		args := []string{"-C", c.repoDir, "worktree", "add", "-b", branchName, targetPath, opts.BaseBranch}
-		runResult, err := c.runner.RunLogged(args...)
+		err := c.createDupWorktree(&item, taskFiles)
+		item.Err = err
+		if item.Created {
+			item.RelativePath = relativePathFrom(relativeBase, item.Path)
+			c.InvalidateList()
+		}
+		dupResult.Items = append(dupResult.Items, item)
 		if err != nil {
-			return nil, gitutil.WrapGitError("failed to create worktree "+dirName, runResult, err)
+			return dupResult, err
 		}
-		if err := c.ensureAddedWorktreeConfig(targetPath); err != nil {
-			return nil, err
-		}
-
-		sharedReport, err := c.prepareNewWorktree(targetPath)
-		if err != nil {
-			dupResult.Warnings = append(
-				dupResult.Warnings,
-				fmt.Sprintf("Warning: failed to sync shared resources for %s: %v", dirName, err),
-			)
-		}
-		for _, event := range sharedReport.Events {
-			if event.Level == EventWarn {
-				dupResult.Warnings = append(dupResult.Warnings, event.Message)
-			}
-		}
-		if err := c.copyDupTaskFiles(taskFiles, targetPath); err != nil {
-			return nil, err
-		}
-
-		dupResult.Worktrees = append(dupResult.Worktrees, dirName)
-		dupResult.WorktreePaths = append(dupResult.WorktreePaths, targetPath)
-		dupResult.RelativePaths = append(dupResult.RelativePaths, relativePathFrom(relativeBase, targetPath))
-		dupResult.Branches = append(dupResult.Branches, branchName)
 	}
 
-	c.InvalidateList()
-
 	return dupResult, nil
+}
+
+func (c *Client) createDupWorktree(item *DupItem, taskFiles []dupTaskFile) error {
+	if _, err := os.Stat(item.Path); err == nil {
+		return fmt.Errorf("directory already exists: %s", item.Path)
+	}
+
+	args := []string{"-C", c.repoDir, "worktree", "add", "-b", item.Branch, item.Path, item.Base}
+	runResult, err := c.runner.RunLogged(args...)
+	if err != nil {
+		return gitutil.WrapGitError("failed to create worktree "+item.Name, runResult, err)
+	}
+	item.Created = true
+	if err := c.ensureAddedWorktreeConfig(item.Path); err != nil {
+		return err
+	}
+
+	sharedReport, err := c.prepareNewWorktree(item.Path)
+	if err != nil {
+		item.Warnings = append(item.Warnings,
+			fmt.Sprintf("Warning: failed to sync shared resources for %s: %v", item.Name, err))
+	}
+	item.Warnings = append(item.Warnings, sharedReport.Warnings()...)
+	return c.copyDupTaskFiles(taskFiles, item.Path)
 }
 
 func (c *Client) resolveDupBaseBranch(override string) string {

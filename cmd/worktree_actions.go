@@ -2,35 +2,67 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
 	"github.com/samzong/gmc/internal/worktree"
 )
 
+type WorktreeCreateJSON struct {
+	Name     string   `json:"name"`
+	Path     string   `json:"path,omitempty"`
+	Branch   string   `json:"branch,omitempty"`
+	Base     string   `json:"base,omitempty"`
+	Created  bool     `json:"created"`
+	Error    string   `json:"error,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
+}
+
+func newWorktreeCreateJSON(result worktree.CreateResult) WorktreeCreateJSON {
+	item := WorktreeCreateJSON{
+		Name:     result.Name,
+		Path:     result.Path,
+		Branch:   result.Branch,
+		Base:     result.Base,
+		Created:  result.Created,
+		Warnings: result.Warnings,
+	}
+	if result.Err != nil {
+		item.Error = result.Err.Error()
+	}
+	return item
+}
+
+func worktreeReportWriter() io.Writer {
+	if outputFormat() == "json" {
+		return errWriter()
+	}
+	return outWriter()
+}
+
 func runWorktreeAdd(wtClient *worktree.Client, names []string) error {
 	if wtAddPR > 0 {
 		return runWorktreeAddPR(wtClient, wtAddPR)
 	}
+	items := make([]WorktreeCreateJSON, 0, len(names))
+	err := addWorktrees(wtClient, names, &items)
+	if outputFormat() == "json" {
+		if jsonErr := printJSON(outWriter(), items); jsonErr != nil {
+			return jsonErr
+		}
+	}
+	return err
+}
 
-	baseBranch := wtBaseBranch
-	if wtAddSync {
-		if baseBranch == "" {
-			resolved, err := wtClient.ResolveSyncBaseBranch("")
-			if err != nil {
-				return err
-			}
-			baseBranch = resolved
+func addWorktrees(wtClient *worktree.Client, names []string, items *[]WorktreeCreateJSON) error {
+	reportOut := worktreeReportWriter()
+	baseBranch, err := syncBeforeAdd(wtClient, reportOut)
+	if err != nil {
+		for _, name := range names {
+			*items = append(*items, WorktreeCreateJSON{Name: name, Error: err.Error()})
 		}
-		syncOpts := worktree.SyncOptions{
-			BaseBranch: baseBranch,
-			DryRun:     false,
-		}
-		report, err := wtClient.Sync(syncOpts)
-		printWorktreeReport(report)
-		if err != nil {
-			return err
-		}
+		return err
 	}
 	opts := worktree.AddOptions{
 		BaseBranch: baseBranch,
@@ -38,8 +70,9 @@ func runWorktreeAdd(wtClient *worktree.Client, names []string) error {
 	}
 	var failed []string
 	for _, name := range names {
-		report, err := wtClient.Add(name, opts)
-		printWorktreeReport(report)
+		result, err := wtClient.Add(name, opts)
+		printWorktreeReportTo(result.Report, reportOut)
+		*items = append(*items, newWorktreeCreateJSON(result.CreateResult))
 		if err != nil {
 			fmt.Fprintf(errWriter(), "Error adding '%s': %v\n", name, err)
 			failed = append(failed, name)
@@ -51,9 +84,32 @@ func runWorktreeAdd(wtClient *worktree.Client, names []string) error {
 	return nil
 }
 
+func syncBeforeAdd(wtClient *worktree.Client, reportOut io.Writer) (string, error) {
+	baseBranch := wtBaseBranch
+	if !wtAddSync {
+		return baseBranch, nil
+	}
+	if baseBranch == "" {
+		resolved, err := wtClient.ResolveSyncBaseBranch("")
+		if err != nil {
+			return "", err
+		}
+		baseBranch = resolved
+	}
+	report, err := wtClient.Sync(worktree.SyncOptions{BaseBranch: baseBranch, DryRun: false})
+	printWorktreeReportTo(report, reportOut)
+	return baseBranch, err
+}
+
 func runWorktreeAddPR(wtClient *worktree.Client, prNumber int) error {
-	report, err := wtClient.AddPR(prNumber, "")
-	printWorktreeReport(report)
+	result, err := wtClient.AddPR(prNumber, "")
+	printWorktreeReportTo(result.Report, worktreeReportWriter())
+	if outputFormat() == "json" {
+		items := []WorktreeCreateJSON{newWorktreeCreateJSON(result.CreateResult)}
+		if jsonErr := printJSON(outWriter(), items); jsonErr != nil {
+			return jsonErr
+		}
+	}
 	return err
 }
 
@@ -143,27 +199,28 @@ func runWorktreeDup(wtClient *worktree.Client, args []string) error {
 	}
 
 	result, err := wtClient.Dup(opts)
+	if outputFormat() == "json" {
+		return printWorktreeDupJSON(result, err)
+	}
 	if err != nil {
 		return err
 	}
-	for _, warning := range result.Warnings {
-		fmt.Fprintln(errWriter(), warning)
+	for _, item := range result.Items {
+		for _, warning := range item.Warnings {
+			fmt.Fprintln(errWriter(), warning)
+		}
 	}
 
-	fmt.Fprintf(outWriter(), "Created %d worktrees based on '%s':\n", len(result.Worktrees), result.BaseBranch)
-	for i, wt := range result.Worktrees {
-		relPath := wt
-		if i < len(result.RelativePaths) && result.RelativePaths[i] != "" {
-			relPath = result.RelativePaths[i]
+	fmt.Fprintf(outWriter(), "Created %d worktrees based on '%s':\n", len(result.Items), result.BaseBranch)
+	for _, item := range result.Items {
+		relPath := item.Name
+		if item.RelativePath != "" {
+			relPath = item.RelativePath
 		}
-		absPath := ""
-		if i < len(result.WorktreePaths) {
-			absPath = result.WorktreePaths[i]
-		}
-		if absPath == "" {
-			fmt.Fprintf(outWriter(), "  %s -> %s\n", relPath, result.Branches[i])
+		if item.Path == "" {
+			fmt.Fprintf(outWriter(), "  %s -> %s\n", relPath, item.Branch)
 		} else {
-			fmt.Fprintf(outWriter(), "  %s (%s) -> %s\n", relPath, absPath, result.Branches[i])
+			fmt.Fprintf(outWriter(), "  %s (%s) -> %s\n", relPath, item.Path, item.Branch)
 		}
 	}
 	if len(result.TaskFiles) > 0 {
@@ -181,6 +238,22 @@ func runWorktreeDup(wtClient *worktree.Client, args []string) error {
 	fmt.Fprintln(outWriter(), "  5. Clean up: gmc wt rm <other-worktrees> -D")
 
 	return nil
+}
+
+func printWorktreeDupJSON(result *worktree.DupResult, dupErr error) error {
+	items := []WorktreeCreateJSON{}
+	if result != nil {
+		for _, item := range result.Items {
+			for _, warning := range item.Warnings {
+				fmt.Fprintln(errWriter(), warning)
+			}
+			items = append(items, newWorktreeCreateJSON(item.CreateResult))
+		}
+	}
+	if err := printJSON(outWriter(), items); err != nil {
+		return err
+	}
+	return dupErr
 }
 
 func runWorktreePromote(wtClient *worktree.Client, candidate string) error {

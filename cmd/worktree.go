@@ -39,9 +39,15 @@ var wtAddCmd = &cobra.Command{
 	Use:   "add [name...]",
 	Short: "Create new worktrees with new branches",
 	Long: `Create one or more worktrees, each on a new branch named after its directory.
-With -b and no name, the worktree name is derived from the base branch.`,
+With -b and no name, the worktree name is derived from the base branch.
+With -o json, stdout is a JSON array with one result per name: name, path, branch,
+base (omitted when an existing branch is checked out), created, error, and warnings.
+Progress and hook output go to stderr. If any name fails, the exit code is non-zero,
+the array still lists every name, and worktrees already created are kept.
+With --pr, the array has one item named pr/NUMBER whose base is REMOTE/pull/NUMBER/head.`,
 	Example: `  gmc wt add feature-login
-  gmc wt add -b feat/existing-branch`,
+  gmc wt add -b feat/existing-branch
+  gmc wt add feat-a feat-b -o json`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if addPRMode(cmd) {
 			if wtAddPR <= 0 {
@@ -86,6 +92,9 @@ The SIZE column shows the allocated disk space of each worktree directory.
 Measuring walks every file without following symlinks, skips the top-level .git and .bare entries,
 counts hard links once per worktree, and shows "-" with a warning when a worktree cannot be measured.
 Sizes of different worktrees can overlap and do not add up to reclaimable space.
+With -o json, a worktree whose size cannot be measured has no allocated_bytes and gets
+"issues": [{"source": "size", "code": "...", "message": "..."}], where code is one of
+not_found, permission_denied, overflow, or scan_failed.
 Colors are used only when stdout is a terminal; set NO_COLOR to a non-empty value or TERM=dumb to disable them.
 Piped and JSON output never contain colors.`,
 	Example: `  gmc wt list
@@ -138,11 +147,15 @@ var wtCloneCmd = &cobra.Command{
 var wtDupCmd = &cobra.Command{
 	Use:   "dup [count]",
 	Short: "Fan out worktrees for parallel AI agents",
-	Long: `Create N sibling worktrees on temporary branches (_dup/<base>/<timestamp>-<n>) for parallel agents.
-Defaults to 2 worktrees from the current branch. Promote the winner with 'gmc wt promote'.`,
+	Long: `Create N sibling worktrees on temporary branches (_dup/BASE/TIMESTAMP-N) for parallel agents.
+Defaults to 2 worktrees from the current branch. Promote the winner with 'gmc wt promote'.
+With -o json, stdout is a JSON array with one result per candidate, using the same fields as
+'gmc wt add -o json'. Creation stops at the first failing candidate: the array lists the
+candidates already created plus the failed one, and the exit code is non-zero.`,
 	Example: `  gmc wt dup
   gmc wt dup 3 -b main
-  gmc wt dup 3 --task todo.md`,
+  gmc wt dup 3 --task todo.md
+  gmc wt dup 3 -o json`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		return runWorktreeDup(newWorktreeClient(), args)

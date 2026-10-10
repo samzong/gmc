@@ -82,6 +82,11 @@ Copy this checklist and check off items as you complete them:
 - Use `-b <branch>` only if the user provided a base branch or asked for one
 - Use `--sync` only when the user wants the latest base first
 - After creation, report the worktree path
+- When you need the result programmatically, run `gmc wt add <name> -o json`, `gmc wt add --pr <number> -o json`, or `gmc wt dup [N] -o json`:
+  stdout is an array of `{name, path, branch, base, created, error, warnings}`. Continue with
+  items where `created` is true, even if the command exits non-zero; report `error` and `warnings`
+- `gmc wt list -o json` adds `allocated_bytes`; when a size cannot be measured it is omitted and
+  `issues: [{source: "size", code, message}]` explains why
 
 ## Workflow: prune merged worktrees
 

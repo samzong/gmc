@@ -278,6 +278,9 @@ func (c *Client) runHooks(worktreeRoot string, hooks []Hook, report *Report) err
 		cmd := exec.Command("sh", "-c", hook.Cmd)
 		cmd.Dir = worktreeRoot
 		cmd.Stdout = os.Stdout
+		if c.hookOutput != nil {
+			cmd.Stdout = c.hookOutput
+		}
 		cmd.Stderr = os.Stderr
 
 		if err := cmd.Run(); err != nil {

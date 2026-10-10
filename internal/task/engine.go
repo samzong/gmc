@@ -123,7 +123,8 @@ func (e *Engine) Start(opts StartOptions) (Summary, error) {
 	attemptID := "attempt-1"
 	wtDir := WorktreeDirName(taskID, attemptID)
 	wtBranch := WorktreeBranchName(taskID, attemptID)
-	if _, err := e.wt.Add(wtDir, worktree.AddOptions{BaseBranch: opts.BaseBranch, Branch: wtBranch}); err != nil {
+	added, err := e.wt.Add(wtDir, worktree.AddOptions{BaseBranch: opts.BaseBranch, Branch: wtBranch})
+	if err != nil {
 		return Summary{}, fmt.Errorf("create worktree: %w", err)
 	}
 
@@ -167,6 +168,9 @@ func (e *Engine) Start(opts StartOptions) (Summary, error) {
 	}
 
 	var warnings []string
+	for _, warning := range added.Warnings {
+		warnings = append(warnings, strings.TrimPrefix(warning, "Warning: "))
+	}
 	started := EventRecord{Type: EventTaskStarted, TaskID: taskID, AttemptID: attempt.ID, Node: node.ID}
 	warnings = appendWarning(warnings, storeAppendEvent(e.store, started))
 	warnings = append(warnings, e.recordAgentRun(attempt, node.ID, command)...)

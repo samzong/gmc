@@ -15,23 +15,30 @@ import (
 )
 
 type WorktreeJSON struct {
-	Repository     string  `json:"repository,omitempty"`
-	Locked         bool    `json:"locked,omitempty"`
-	Prunable       bool    `json:"prunable,omitempty"`
-	Name           string  `json:"name"`
-	Path           string  `json:"path"`
-	Branch         string  `json:"branch"`
-	Commit         string  `json:"commit"`
-	Status         string  `json:"status"`
-	DiffBase       string  `json:"diff_base,omitempty"`
-	ChangedFiles   *int    `json:"changed_files,omitempty"`
-	Insertions     *int    `json:"insertions,omitempty"`
-	Deletions      *int    `json:"deletions,omitempty"`
-	ReviewProvider string  `json:"review_provider,omitempty"`
-	ReviewNumber   int     `json:"review_number,omitempty"`
-	ReviewState    string  `json:"review_state,omitempty"`
-	ReviewURL      string  `json:"review_url,omitempty"`
-	AllocatedBytes *uint64 `json:"allocated_bytes,omitempty"`
+	Repository     string              `json:"repository,omitempty"`
+	Locked         bool                `json:"locked,omitempty"`
+	Prunable       bool                `json:"prunable,omitempty"`
+	Name           string              `json:"name"`
+	Path           string              `json:"path"`
+	Branch         string              `json:"branch"`
+	Commit         string              `json:"commit"`
+	Status         string              `json:"status"`
+	DiffBase       string              `json:"diff_base,omitempty"`
+	ChangedFiles   *int                `json:"changed_files,omitempty"`
+	Insertions     *int                `json:"insertions,omitempty"`
+	Deletions      *int                `json:"deletions,omitempty"`
+	ReviewProvider string              `json:"review_provider,omitempty"`
+	ReviewNumber   int                 `json:"review_number,omitempty"`
+	ReviewState    string              `json:"review_state,omitempty"`
+	ReviewURL      string              `json:"review_url,omitempty"`
+	AllocatedBytes *uint64             `json:"allocated_bytes,omitempty"`
+	Issues         []WorktreeIssueJSON `json:"issues,omitempty"`
+}
+
+type WorktreeIssueJSON struct {
+	Source  string `json:"source"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 type worktreeSizes map[string]worktree.AllocatedSize
@@ -58,6 +65,14 @@ func (s worktreeSizes) bytes(path string) *uint64 {
 		return nil
 	}
 	return &size.Bytes
+}
+
+func (s worktreeSizes) issues(path string) []WorktreeIssueJSON {
+	size, ok := s[path]
+	if !ok || size.Err == nil {
+		return nil
+	}
+	return []WorktreeIssueJSON{{Source: "size", Code: worktree.MeasureErrorCode(size.Err), Message: size.Err.Error()}}
 }
 
 func (s worktreeSizes) text(path string) string {
@@ -96,7 +111,7 @@ func runWorktreeListAll(cmd *cobra.Command) error {
 			items = append(items, WorktreeJSON{
 				Repository: wt.Repository, Name: filepath.Base(wt.Path), Path: wt.Path,
 				Branch: wt.Branch, Commit: wt.Commit, Status: wt.Status, Locked: wt.IsLocked, Prunable: wt.IsPrunable,
-				AllocatedBytes: sizes.bytes(wt.Path),
+				AllocatedBytes: sizes.bytes(wt.Path), Issues: sizes.issues(wt.Path),
 			})
 		}
 		return printJSON(cmd.OutOrStdout(), items)
@@ -472,6 +487,7 @@ func buildWorktreeJSON(
 			Commit:         wt.Commit,
 			Status:         resolveWorktreeStatus(wtClient, root, wt),
 			AllocatedBytes: sizes.bytes(wt.Path),
+			Issues:         sizes.issues(wt.Path),
 		}
 		if hasStat && stat.HasChanges() {
 			item.DiffBase = stat.Base
