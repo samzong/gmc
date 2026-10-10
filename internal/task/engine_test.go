@@ -451,3 +451,16 @@ func runGit(t *testing.T, args ...string) {
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(out))
 }
+
+func TestEngineStartKeepsWorktreeWarnings(t *testing.T) {
+	stubTmuxStarter(t)
+	engine, _ := newTestEngineWithGit(t)
+	require.NoError(t, os.WriteFile(filepath.Join(".git", "gmc-share.yml"), []byte("hooks:\n  - cmd: exit 3\n"), 0o644))
+	rec, _, err := engine.CreateTask("warn task")
+	require.NoError(t, err)
+
+	sum, err := engine.Start(StartOptions{TaskID: rec.ID, Agent: "codex"})
+	require.NoError(t, err)
+	require.NotEmpty(t, sum.Warnings)
+	assert.True(t, strings.HasPrefix(sum.Warnings[0], "failed to sync shared resources: hook failed"), sum.Warnings[0])
+}

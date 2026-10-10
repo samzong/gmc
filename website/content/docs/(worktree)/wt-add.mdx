@@ -30,6 +30,19 @@ gmc wt add feature-login --sync
 gmc wt add --pr 1065
 ```
 
+## JSON output
+
+```bash
+gmc wt add feat-a feat-b -o json
+```
+
+Prints a JSON array on stdout with one result per name: `name`, `path`,
+`branch`, `base` (omitted when an existing branch is checked out), `created`,
+`error`, and `warnings`. Progress and hook output go to stderr. If any name
+fails, the command exits non-zero, the array still lists every name, and
+worktrees already created are kept. With `--pr`, the array has one item named
+`pr/<number>` whose `base` is `<remote>/pull/<number>/head`.
+
 ## Notes
 
 Use clear names. The worktree name normally becomes the branch name.

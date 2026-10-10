@@ -23,34 +23,46 @@ type addContext struct {
 	baseBranch string
 }
 
-func (c *Client) Add(name string, opts AddOptions) (Report, error) {
-	var report Report
+func (c *Client) Add(name string, opts AddOptions) (AddResult, error) {
+	result := AddResult{CreateResult: CreateResult{Name: name}}
+	err := c.add(name, opts, &result)
+	result.Err = err
+	result.Warnings = result.Report.Warnings()
+	return result, err
+}
 
+func (c *Client) add(name string, opts AddOptions, result *AddResult) error {
 	ctx, err := c.prepareAdd(name, opts)
+	result.Path = ctx.targetPath
+	result.Branch = ctx.branchName
 	if err != nil {
-		return report, err
+		return err
 	}
 
 	if opts.Fetch {
-		report.Info("Fetching latest changes...")
+		result.Report.Info("Fetching latest changes...")
 		_ = c.runner.RunStreamingLogged("-C", c.repoDir, "fetch", "--all")
 	}
-	branchExists, err := c.createAddedWorktree(ctx, &report)
-	if err != nil {
-		return report, err
+	branchExists, created, err := c.createAddedWorktree(ctx, &result.Report)
+	result.Created = created
+	if created && !branchExists {
+		result.Base = ctx.baseBranch
 	}
-	c.appendAddSummary(&report, ctx, branchExists)
-	return report, nil
+	if err != nil {
+		return err
+	}
+	c.appendAddSummary(&result.Report, ctx, branchExists)
+	return nil
 }
 
-func (c *Client) createAddedWorktree(ctx addContext, report *Report) (bool, error) {
+func (c *Client) createAddedWorktree(ctx addContext, report *Report) (bool, bool, error) {
 	args, branchExists := c.addArgs(ctx)
-	result, err := c.runner.RunLogged(args...)
+	runResult, err := c.runner.RunLogged(args...)
 	if err != nil {
-		return false, gitutil.WrapGitError("failed to create worktree", result, err)
+		return branchExists, false, gitutil.WrapGitError("failed to create worktree", runResult, err)
 	}
 	if err := c.ensureAddedWorktreeConfig(ctx.targetPath); err != nil {
-		return false, err
+		return branchExists, true, err
 	}
 
 	sharedReport, err := c.prepareNewWorktree(ctx.targetPath)
@@ -61,7 +73,7 @@ func (c *Client) createAddedWorktree(ctx addContext, report *Report) (bool, erro
 
 	c.InvalidateList()
 
-	return branchExists, nil
+	return branchExists, true, nil
 }
 
 func (c *Client) prepareAdd(name string, opts AddOptions) (addContext, error) {
@@ -89,21 +101,21 @@ func (c *Client) prepareAdd(name string, opts AddOptions) (addContext, error) {
 		targetPath = filepath.Join(filepath.Dir(c.worktreeRoot), filepath.Base(c.worktreeRoot)+"--"+dirName)
 	}
 
-	if _, err := os.Stat(targetPath); err == nil {
-		return addContext{}, fmt.Errorf("directory already exists: %s", targetPath)
-	}
-
 	baseBranch := opts.BaseBranch
 	if baseBranch == "" {
 		baseBranch = "HEAD"
 	}
 
-	return addContext{
+	ctx := addContext{
 		name:       name,
 		branchName: branchName,
 		targetPath: targetPath,
 		baseBranch: baseBranch,
-	}, nil
+	}
+	if _, err := os.Stat(targetPath); err == nil {
+		return ctx, fmt.Errorf("directory already exists: %s", targetPath)
+	}
+	return ctx, nil
 }
 
 func (c *Client) addArgs(ctx addContext) ([]string, bool) {

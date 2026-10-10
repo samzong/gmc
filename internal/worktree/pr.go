@@ -46,18 +46,25 @@ func (c *Client) PRExists(prNumber int, remote, repoDir string) (bool, string, e
 	return true, parts[0], nil
 }
 
-func (c *Client) AddPR(prNumber int, remote string) (Report, error) {
-	var report Report
+func (c *Client) AddPR(prNumber int, remote string) (AddResult, error) {
+	result := AddResult{CreateResult: CreateResult{Name: fmt.Sprintf("pr/%d", prNumber)}}
+	err := c.addPR(prNumber, remote, &result)
+	result.Err = err
+	result.Warnings = result.Report.Warnings()
+	return result, err
+}
 
+func (c *Client) addPR(prNumber int, remote string, result *AddResult) error {
+	report := &result.Report
 	if err := c.ensureInit(); err != nil {
-		return report, fmt.Errorf("failed to find worktree root: %w", err)
+		return fmt.Errorf("failed to find worktree root: %w", err)
 	}
 	repoDir := c.repoDir
 
 	if remote == "" {
 		detectedRemote, err := c.DetectPRRemote(repoDir)
 		if err != nil {
-			return report, err
+			return err
 		}
 		remote = detectedRemote
 		report.Info("Auto-detected remote: " + remote)
@@ -65,33 +72,40 @@ func (c *Client) AddPR(prNumber int, remote string) (Report, error) {
 
 	exists, commitHash, err := c.PRExists(prNumber, remote, repoDir)
 	if err != nil {
-		return report, err
+		return err
 	}
 	if !exists {
-		return report, fmt.Errorf("PR #%d not found on remote '%s'", prNumber, remote)
+		return fmt.Errorf("PR #%d not found on remote '%s'", prNumber, remote)
 	}
 
-	branchName := fmt.Sprintf("pr/%d", prNumber)
+	branchName := result.Name
 	ctx, err := c.prepareAdd(branchName, AddOptions{})
+	result.Path = ctx.targetPath
+	result.Branch = ctx.branchName
 	if err != nil {
-		return report, err
+		return err
 	}
 
 	refSpec := fmt.Sprintf("pull/%d/head:%s", prNumber, branchName)
 	report.Info(fmt.Sprintf("Fetching PR #%d from %s...", prNumber, remote))
 
-	result, err := c.runner.RunLogged("-C", c.repoDir, "fetch", remote, refSpec)
+	fetchResult, err := c.runner.RunLogged("-C", c.repoDir, "fetch", remote, refSpec)
 	if err != nil {
-		return report, gitutil.WrapGitError("failed to fetch PR", result, err)
+		return gitutil.WrapGitError("failed to fetch PR", fetchResult, err)
 	}
 
-	if _, err := c.createAddedWorktree(ctx, &report); err != nil {
-		return report, err
+	_, created, err := c.createAddedWorktree(ctx, report)
+	result.Created = created
+	if created {
+		result.Base = fmt.Sprintf("%s/pull/%d/head", remote, prNumber)
+	}
+	if err != nil {
+		return err
 	}
 
 	report.Info(fmt.Sprintf("Created PR worktree '%s' at %s", branchName, ctx.targetPath))
 	report.Info("Commit: " + commitHash[:7])
 	report.Info("Next step: cd " + ctx.targetPath)
 
-	return report, nil
+	return nil
 }

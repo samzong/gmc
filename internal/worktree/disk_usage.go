@@ -25,6 +25,26 @@ type allocatedEntry struct {
 	hardlinks bool
 }
 
+const (
+	MeasureNotFound         = "not_found"
+	MeasurePermissionDenied = "permission_denied"
+	MeasureOverflow         = "overflow"
+	MeasureScanFailed       = "scan_failed"
+)
+
+func MeasureErrorCode(err error) string {
+	switch {
+	case errors.Is(err, errAllocatedOverflow):
+		return MeasureOverflow
+	case errors.Is(err, fs.ErrNotExist):
+		return MeasureNotFound
+	case errors.Is(err, fs.ErrPermission):
+		return MeasurePermissionDenied
+	default:
+		return MeasureScanFailed
+	}
+}
+
 type AllocatedSize struct {
 	Path  string
 	Bytes uint64

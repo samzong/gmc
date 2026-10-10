@@ -30,9 +30,9 @@ func TestDupCopiesTaskFilesAndKeepsBareLayoutPath(t *testing.T) {
 	client := NewClient(Options{})
 	result, err := client.Dup(DupOptions{BaseBranch: "main", Count: 1, TaskFiles: []string{"todo.md"}})
 	require.NoError(t, err)
-	require.Equal(t, ".dup-1", result.Worktrees[0])
+	require.Equal(t, ".dup-1", result.Items[0].Name)
 	dupDir := filepath.Join(repoDir, ".dup-1")
-	require.True(t, sameCleanPath(result.WorktreePaths[0], dupDir))
+	require.True(t, sameCleanPath(result.Items[0].Path, dupDir))
 	require.Equal(t, "task", readFile(t, filepath.Join(dupDir, "todo.md")))
 }
 
@@ -44,8 +44,20 @@ func TestDupWithoutTaskWorksFromBareLayoutRoot(t *testing.T) {
 	result, err := client.Dup(DupOptions{BaseBranch: "main", Count: 1})
 	require.NoError(t, err)
 	dupDir := filepath.Join(repoDir, ".dup-1")
-	require.True(t, sameCleanPath(result.WorktreePaths[0], dupDir))
-	require.Equal(t, ".dup-1", result.RelativePaths[0])
+	require.True(t, sameCleanPath(result.Items[0].Path, dupDir))
+	require.Equal(t, ".dup-1", result.Items[0].RelativePath)
+}
+
+func TestDupRelativePathFromSymlinkedLayoutRoot(t *testing.T) {
+	repoDir := initBareLayoutRepo(t)
+	alias := filepath.Join(t.TempDir(), "alias")
+	require.NoError(t, os.Symlink(repoDir, alias))
+	t.Chdir(alias)
+	t.Setenv("PWD", alias)
+
+	result, err := NewClient(Options{}).Dup(DupOptions{BaseBranch: "main", Count: 1})
+	require.NoError(t, err)
+	require.Equal(t, ".dup-1", result.Items[0].RelativePath)
 }
 
 func TestDupDefaultsToCurrentWorktreeBranchAndSiblingPath(t *testing.T) {
@@ -68,8 +80,8 @@ func TestDupDefaultsToCurrentWorktreeBranchAndSiblingPath(t *testing.T) {
 	dupDir := filepath.Join(filepath.Dir(featureDir), ".dup-1")
 	t.Cleanup(func() { _ = os.RemoveAll(dupDir) })
 	require.Equal(t, "feature/current", result.BaseBranch)
-	require.True(t, sameCleanPath(result.WorktreePaths[0], dupDir))
-	require.Equal(t, "../.dup-1", result.RelativePaths[0])
+	require.True(t, sameCleanPath(result.Items[0].Path, dupDir))
+	require.Equal(t, "../.dup-1", result.Items[0].RelativePath)
 	require.Equal(t, "feature", readFile(t, filepath.Join(dupDir, "feature.txt")))
 }
 
@@ -269,11 +281,11 @@ func TestDupConfiguresBareLayoutWorktreeConfig(t *testing.T) {
 	client := NewClient(Options{})
 	result, err := client.Dup(DupOptions{BaseBranch: "main", Count: 1})
 	require.NoError(t, err)
-	require.Len(t, result.Worktrees, 1)
+	require.Len(t, result.Items, 1)
 
-	dupDir := filepath.Join(repoDir, result.Worktrees[0])
+	dupDir := filepath.Join(repoDir, result.Items[0].Name)
 	status := runGit(t, dupDir, "status", "--short", "--branch")
-	require.Contains(t, status, "## "+result.Branches[0])
+	require.Contains(t, status, "## "+result.Items[0].Branch)
 
 	got := strings.TrimSpace(runGit(t, dupDir, "config", "--worktree", "--bool", "core.bare"))
 	require.Equal(t, "false", got)

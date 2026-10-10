@@ -2,6 +2,7 @@ package worktree
 
 import (
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -12,12 +13,14 @@ import (
 type Options struct {
 	Verbose          bool
 	GlobalConfigPath string
+	HookOutput       io.Writer
 }
 
 type Client struct {
 	runner           gitcmd.Runner
 	verbose          bool
 	globalConfigPath string
+	hookOutput       io.Writer
 
 	once         sync.Once
 	bareRoot     string
@@ -36,6 +39,7 @@ func NewClient(opts Options) *Client {
 		runner:           gitcmd.Runner{Verbose: opts.Verbose},
 		verbose:          opts.Verbose,
 		globalConfigPath: opts.GlobalConfigPath,
+		hookOutput:       opts.HookOutput,
 	}
 }
 

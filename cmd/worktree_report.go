@@ -1,13 +1,21 @@
 package cmd
 
-import "github.com/samzong/gmc/internal/worktree"
+import (
+	"io"
+
+	"github.com/samzong/gmc/internal/worktree"
+)
 
 func printWorktreeReport(report worktree.Report) {
+	printWorktreeReportTo(report, outWriter())
+}
+
+func printWorktreeReportTo(report worktree.Report, infoOut io.Writer) {
 	for _, event := range report.Events {
 		if event.Level == worktree.EventWarn {
 			_, _ = errWriter().Write([]byte(event.Message + "\n"))
 			continue
 		}
-		_, _ = outWriter().Write([]byte(event.Message + "\n"))
+		_, _ = infoOut.Write([]byte(event.Message + "\n"))
 	}
 }
