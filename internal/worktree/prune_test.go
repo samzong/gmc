@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -21,7 +22,7 @@ func TestGhPRStates_ParsesBatchResponse(t *testing.T) {
 
 	stubPRResponse(t, data, nil)
 
-	m, err := ghPRStates("/tmp")
+	m, err := ghPRStates("/tmp", nil)
 	require.NoError(t, err)
 	require.Len(t, m, 3)
 	assert.Equal(t, prs[0], m["feat-a"])
@@ -34,7 +35,7 @@ func TestGhPRStates_NormalizesCase(t *testing.T) {
 
 	stubPRResponse(t, []byte(data), nil)
 
-	m, err := ghPRStates("/tmp")
+	m, err := ghPRStates("/tmp", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "MERGED", m["br"].State)
 }
@@ -42,7 +43,7 @@ func TestGhPRStates_NormalizesCase(t *testing.T) {
 func TestGhPRStates_EmptyResponse(t *testing.T) {
 	stubPRResponse(t, []byte("[]"), nil)
 
-	m, err := ghPRStates("/tmp")
+	m, err := ghPRStates("/tmp", nil)
 	require.NoError(t, err)
 	assert.Len(t, m, 0)
 }
@@ -52,7 +53,7 @@ func TestGhPRStates_FirstPRWins(t *testing.T) {
 
 	stubPRResponse(t, []byte(data), nil)
 
-	m, err := ghPRStates("/tmp")
+	m, err := ghPRStates("/tmp", nil)
 	require.NoError(t, err)
 	assert.Equal(t, 1, m["br"].Number)
 }
@@ -295,5 +296,50 @@ func stubPRResponse(t *testing.T, data []byte, err error) {
 	t.Helper()
 	previous := ghRunFunc
 	t.Cleanup(func() { ghRunFunc = previous })
-	ghRunFunc = func(string, ...string) ([]byte, error) { return data, err }
+	ghRunFunc = func(string, []string, ...string) ([]byte, error) { return data, err }
+}
+
+func TestPruneClientDir_IsolatesRepositories(t *testing.T) {
+	for _, bare := range []bool{false, true} {
+		t.Run(fmt.Sprintf("bare=%t", bare), func(t *testing.T) {
+			cwd := initTestRepoWithBranch(t, "unrelated")
+			t.Chdir(cwd)
+			roots := []string{}
+			clients := []*Client{}
+			for i := range 2 {
+				base := []string{"main", "master"}[i]
+				root := initTestRepoWithBranch(t, base)
+				repo := root
+				if bare {
+					root = initBareLayoutRepo(t)
+					repo = filepath.Join(root, ".bare")
+					base = "main"
+				}
+				feature := filepath.Join(root, "feature")
+				runGit(t, repo, "worktree", "add", "-b", "feature", feature, base)
+				dir, err := filepath.Rel(cwd, root)
+				require.NoError(t, err)
+				client := NewClient(Options{Dir: dir})
+				resolved, err := client.GetWorktreeRoot()
+				require.NoError(t, err)
+				require.Equal(t, root, resolved)
+				roots = append(roots, root)
+				clients = append(clients, client)
+			}
+			for i, client := range clients {
+				result, err := client.Prune(PruneOptions{})
+				require.NoError(t, err)
+				require.Len(t, result.Candidates, 1)
+				assert.Equal(t, "feature", result.Candidates[0].Branch)
+				assertMissing(t, filepath.Join(roots[i], "feature"))
+				if i == 0 {
+					assert.DirExists(t, filepath.Join(roots[1], "feature"))
+				}
+			}
+			actualCwd, err := os.Getwd()
+			require.NoError(t, err)
+			assert.Equal(t, cwd, actualCwd)
+			assert.Contains(t, runGit(t, cwd, "branch", "--show-current"), "unrelated")
+		})
+	}
 }

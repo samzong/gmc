@@ -91,6 +91,7 @@ Copy this checklist and check off items as you complete them:
 ## Workflow: prune merged worktrees
 
 - Run `gmc wt prune --dry-run` first to preview
+- Use `gmc wt prune --all --pr-aware --dry-run` to preview cleanup across repositories with linked worktrees in the home directory
 - Use `gmc wt prune --pr-aware` to check PR state before pruning
 - Use `gmc wt prune --branches` when the user wants stale local branches without worktrees cleaned too
 - Ask before actual removal

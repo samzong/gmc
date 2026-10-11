@@ -101,7 +101,10 @@ func FindBareRoot(startDir string) (string, error) {
 		}
 	}
 
-	dir := startDir
+	dir, err := filepath.Abs(startDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to get absolute path: %w", err)
+	}
 	for {
 		if filepath.Base(dir) == ".bare" {
 			return filepath.Dir(dir), nil
@@ -136,7 +139,7 @@ func (c *Client) GetGitCommonDir() (string, error) {
 		return filepath.Clean(commonDir), nil
 	}
 
-	absCommonDir, err := filepath.Abs(commonDir)
+	absCommonDir, err := filepath.Abs(filepath.Join(c.runner.Dir, commonDir))
 	if err != nil {
 		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}

@@ -218,13 +218,6 @@ func init() {
 
 	wtPromoteCmd.Flags().BoolVar(&wtDryRun, "dry-run", false,
 		"Check whether the candidate can be promoted without changing files")
-	wtPruneCmd.Flags().StringVarP(&wtPruneBase, "base", "b", "", "Base branch to check merge status against")
-	wtPruneCmd.Flags().BoolVarP(&wtPruneForce, "force", "f", false, "Force removal even if worktree is dirty")
-	wtPruneCmd.Flags().BoolVar(&wtPruneDryRun, "dry-run", false, "Preview what would be removed without making changes")
-	wtPruneCmd.Flags().BoolVar(&wtPrunePRAware, "pr-aware", false,
-		"Check GitHub PR state before pruning (requires gh CLI)")
-	wtPruneCmd.Flags().BoolVar(&wtPruneBranches, "branches", false,
-		"Also delete merged local branches that have no worktree")
 
 	wtCmd.Flags().BoolVar(&wtShowPR, "pr", false,
 		"Show review request status for each branch (requires gh or glab CLI)")
@@ -241,7 +234,6 @@ func init() {
 	wtPromoteCmd.ValidArgsFunction = completeWorktreeNames
 	_ = wtAddCmd.RegisterFlagCompletionFunc("base", completeBranchNames)
 	_ = wtDupCmd.RegisterFlagCompletionFunc("base", completeBranchNames)
-	_ = wtPruneCmd.RegisterFlagCompletionFunc("base", completeBranchNames)
 	_ = wtCmd.RegisterFlagCompletionFunc("diff-base", completeBranchNames)
 	_ = wtListCmd.RegisterFlagCompletionFunc("diff-base", completeBranchNames)
 	rootCmd.AddCommand(wtCmd)

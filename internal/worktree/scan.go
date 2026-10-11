@@ -7,30 +7,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"sort"
 	"strings"
 
 	"github.com/samzong/gmc/internal/gitcmd"
 )
-
-var repositoryEnvVars = []string{
-	"GIT_ALTERNATE_OBJECT_DIRECTORIES",
-	"GIT_CONFIG",
-	"GIT_CONFIG_PARAMETERS",
-	"GIT_CONFIG_COUNT",
-	"GIT_OBJECT_DIRECTORY",
-	"GIT_DIR",
-	"GIT_WORK_TREE",
-	"GIT_IMPLICIT_WORK_TREE",
-	"GIT_GRAFT_FILE",
-	"GIT_INDEX_FILE",
-	"GIT_NO_REPLACE_OBJECTS",
-	"GIT_REPLACE_REF_BASE",
-	"GIT_PREFIX",
-	"GIT_SHALLOW_FILE",
-	"GIT_COMMON_DIR",
-}
 
 type ScanResult struct {
 	Worktrees []Info
@@ -50,13 +31,7 @@ func Scan(root string) (ScanResult, error) {
 	if err != nil {
 		return result, err
 	}
-	runner := gitcmd.Runner{Env: []string{"GIT_OPTIONAL_LOCKS=0"}}
-	for _, value := range os.Environ() {
-		name, _, _ := strings.Cut(value, "=")
-		if name != "GIT_OPTIONAL_LOCKS" && !slices.Contains(repositoryEnvVars, name) {
-			runner.Env = append(runner.Env, value)
-		}
-	}
+	runner := gitcmd.Runner{Env: repositoryEnvironment()}
 	seen := make(map[string]bool)
 	add := func(path string, bare bool) bool {
 		runner.Dir = path
