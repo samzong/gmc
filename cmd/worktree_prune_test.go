@@ -32,7 +32,8 @@ func pruneAllFixture(t *testing.T) (string, []string) {
 if [ "$PWD" = "$FAIL_REPO" ]; then
   exit 1
 fi
-cat .git/test-prs.json
+git_dir=$(git rev-parse --git-common-dir) || exit 1
+cat "$git_dir/test-prs.json"
 `), 0o700))
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("HOME", home)
@@ -83,6 +84,27 @@ func TestWorktreePruneAll_JSON(t *testing.T) {
 				assert.Equal(t, action, entries[2*i]["action"])
 				assert.DirExists(t, filepath.Join(repo, "feature"))
 			}
+		})
+	}
+}
+
+func TestWorktreePruneAll_IgnoresRepositoryEnvironment(t *testing.T) {
+	for _, prAware := range []bool{false, true} {
+		t.Run(fmt.Sprintf("pr-aware=%t", prAware), func(t *testing.T) {
+			pruneAllFixture(t)
+			other := initCmdTestRepo(t)
+			args := []string{"--all", "--dry-run", "--branches"}
+			if prAware {
+				args = append(args, "--pr-aware")
+			}
+			baseline, baselineWarnings, err := executePrune(t, "json", args...)
+			require.NoError(t, err)
+			t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
+			t.Setenv("GIT_WORK_TREE", other)
+			out, warnings, err := executePrune(t, "json", args...)
+			require.NoError(t, err)
+			assert.JSONEq(t, baseline, out)
+			assert.Equal(t, baselineWarnings, warnings)
 		})
 	}
 }

@@ -124,22 +124,9 @@ func runWorktreePruneAll(cmd *cobra.Command, opts worktree.PruneOptions) error {
 }
 
 func pruneScannedRepository(repository string, opts worktree.PruneOptions) (worktree.PruneResult, error) {
-	client := newWorktreeClientAt(repository)
-	root, err := client.GetWorktreeRoot()
+	client, err := worktree.NewRepositoryClient(repository, worktreeClientOptions())
 	if err != nil {
 		return worktree.PruneResult{}, err
-	}
-	rootInfo, err := os.Stat(root)
-	if err != nil {
-		return worktree.PruneResult{}, err
-	}
-	repositoryInfo, err := os.Stat(repository)
-	if err != nil {
-		return worktree.PruneResult{}, err
-	}
-	if !os.SameFile(rootInfo, repositoryInfo) {
-		return worktree.PruneResult{}, fmt.Errorf("resolved worktree root %s does not match scanned repository",
-			abbrevPath(root))
 	}
 	return client.Prune(opts)
 }

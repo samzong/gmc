@@ -22,7 +22,7 @@ func TestGhPRStates_ParsesBatchResponse(t *testing.T) {
 
 	stubPRResponse(t, data, nil)
 
-	m, err := ghPRStates("/tmp")
+	m, err := ghPRStates("/tmp", nil)
 	require.NoError(t, err)
 	require.Len(t, m, 3)
 	assert.Equal(t, prs[0], m["feat-a"])
@@ -35,7 +35,7 @@ func TestGhPRStates_NormalizesCase(t *testing.T) {
 
 	stubPRResponse(t, []byte(data), nil)
 
-	m, err := ghPRStates("/tmp")
+	m, err := ghPRStates("/tmp", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "MERGED", m["br"].State)
 }
@@ -43,7 +43,7 @@ func TestGhPRStates_NormalizesCase(t *testing.T) {
 func TestGhPRStates_EmptyResponse(t *testing.T) {
 	stubPRResponse(t, []byte("[]"), nil)
 
-	m, err := ghPRStates("/tmp")
+	m, err := ghPRStates("/tmp", nil)
 	require.NoError(t, err)
 	assert.Len(t, m, 0)
 }
@@ -53,7 +53,7 @@ func TestGhPRStates_FirstPRWins(t *testing.T) {
 
 	stubPRResponse(t, []byte(data), nil)
 
-	m, err := ghPRStates("/tmp")
+	m, err := ghPRStates("/tmp", nil)
 	require.NoError(t, err)
 	assert.Equal(t, 1, m["br"].Number)
 }
@@ -296,7 +296,7 @@ func stubPRResponse(t *testing.T, data []byte, err error) {
 	t.Helper()
 	previous := ghRunFunc
 	t.Cleanup(func() { ghRunFunc = previous })
-	ghRunFunc = func(string, ...string) ([]byte, error) { return data, err }
+	ghRunFunc = func(string, []string, ...string) ([]byte, error) { return data, err }
 }
 
 func TestPruneClientDir_IsolatesRepositories(t *testing.T) {

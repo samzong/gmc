@@ -53,12 +53,13 @@ func (p pruneCandidate) hasWorktree() bool {
 
 var ghRunFunc = ghRunDefault
 
-func ghRunDefault(repoDir string, args ...string) ([]byte, error) {
+func ghRunDefault(repoDir string, env []string, args ...string) ([]byte, error) {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return nil, errors.New("gh CLI not found: install from https://cli.github.com")
 	}
 	cmd := exec.Command("gh", args...)
 	cmd.Dir = repoDir
+	cmd.Env = env
 	return cmd.Output()
 }
 
@@ -181,8 +182,8 @@ type ghPRInfo struct {
 	HeadRefName string `json:"headRefName"`
 }
 
-func ghPRStates(repoDir string) (map[string]ghPRInfo, error) {
-	out, err := ghRunFunc(repoDir,
+func ghPRStates(repoDir string, env []string) (map[string]ghPRInfo, error) {
+	out, err := ghRunFunc(repoDir, env,
 		"pr", "list",
 		"--state", "all",
 		"--json", "number,state,headRefName",
@@ -215,7 +216,7 @@ func ghPRStates(repoDir string) (map[string]ghPRInfo, error) {
 func (c *Client) prunePRAware(
 	opts PruneOptions, candidates []pruneCandidate, repoDir string, result PruneResult,
 ) (PruneResult, error) {
-	prMap, err := ghPRStates(repoDir)
+	prMap, err := ghPRStates(repoDir, c.runner.Env)
 	if err != nil {
 		return result, err
 	}
