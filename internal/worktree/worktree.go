@@ -11,6 +11,7 @@ import (
 )
 
 type Options struct {
+	Dir              string
 	Verbose          bool
 	GlobalConfigPath string
 	HookOutput       io.Writer
@@ -36,7 +37,7 @@ type Client struct {
 
 func NewClient(opts Options) *Client {
 	return &Client{
-		runner:           gitcmd.Runner{Verbose: opts.Verbose},
+		runner:           gitcmd.Runner{Verbose: opts.Verbose, Dir: opts.Dir},
 		verbose:          opts.Verbose,
 		globalConfigPath: opts.GlobalConfigPath,
 		hookOutput:       opts.HookOutput,
@@ -44,7 +45,7 @@ func NewClient(opts Options) *Client {
 }
 
 func (c *Client) init() {
-	bareRoot, err := FindBareRoot("")
+	bareRoot, err := FindBareRoot(c.runner.Dir)
 	if err == nil {
 		c.bareRoot = bareRoot
 		c.worktreeRoot = bareRoot

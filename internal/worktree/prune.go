@@ -21,12 +21,13 @@ type PruneOptions struct {
 }
 
 type PruneEntry struct {
-	Name    string `json:"name"`
-	Branch  string `json:"branch"`
-	PRNum   int    `json:"pr_number,omitempty"`
-	PRState string `json:"pr_state"`
-	Action  string `json:"action"`
-	Reason  string `json:"reason"`
+	Repository string `json:"repository,omitempty"`
+	Name       string `json:"name"`
+	Branch     string `json:"branch"`
+	PRNum      int    `json:"pr_number,omitempty"`
+	PRState    string `json:"pr_state"`
+	Action     string `json:"action"`
+	Reason     string `json:"reason"`
 }
 
 type PruneCandidate struct {

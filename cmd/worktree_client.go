@@ -6,7 +6,11 @@ import (
 )
 
 func newWorktreeClient() *worktree.Client {
-	opts := worktree.Options{Verbose: verbose || debug, GlobalConfigPath: config.FilePath()}
+	return newWorktreeClientAt("")
+}
+
+func newWorktreeClientAt(dir string) *worktree.Client {
+	opts := worktree.Options{Dir: dir, Verbose: verbose || debug, GlobalConfigPath: config.FilePath()}
 	if outputFormat() == "json" {
 		opts.HookOutput = errWriter()
 	}

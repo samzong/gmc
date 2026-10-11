@@ -37,7 +37,7 @@ go install github.com/samzong/gmc@latest
 | `gmc wt sync` | Pull the base branch up to date |
 | `gmc wt share add <path>` | Share `.env` / `node_modules` / venv across worktrees |
 | `gmc wt pr-review <pr-number>` | Spin up a worktree from a GitHub PR |
-| `gmc wt prune` | Remove worktrees whose branches are merged |
+| `gmc wt prune` | Remove worktrees whose branches are merged; `--all` runs across repositories with linked worktrees in the home directory |
 | **Commit — AI message generation** | |
 | `gmc` | Generate Conventional Commits message from staged diff |
 | `gmc -a [paths...]` | Stage (all or given paths), then commit |
