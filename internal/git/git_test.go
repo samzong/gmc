@@ -11,6 +11,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMain(m *testing.M) {
+	if err := os.Setenv("GIT_CONFIG_GLOBAL", os.DevNull); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("GIT_CONFIG_NOSYSTEM", "1"); err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}
+
 func isolateGitIdentity(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{

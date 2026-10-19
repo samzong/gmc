@@ -430,6 +430,16 @@ func TestEngineRunBackgroundChildDoesNotHang(t *testing.T) {
 	assert.Contains(t, string(data), "started")
 }
 
+func TestMain(m *testing.M) {
+	if err := os.Setenv("GIT_CONFIG_GLOBAL", os.DevNull); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("GIT_CONFIG_NOSYSTEM", "1"); err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}
+
 func newTestEngineWithGit(t *testing.T) (*Engine, *Store) {
 	t.Helper()
 	dir := t.TempDir()
