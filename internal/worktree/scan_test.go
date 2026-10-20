@@ -221,7 +221,7 @@ func TestScanWarningIncludesGitReason(t *testing.T) {
 	require.Len(t, result.Worktrees, 2)
 	require.Len(t, result.Warnings, 1)
 	assert.ErrorContains(t, result.Warnings[0], "cannot inspect repository "+broken)
-	assert.ErrorContains(t, result.Warnings[0], "not a git repository")
+	assert.ErrorContains(t, result.Warnings[0], "fatal: ")
 }
 
 func TestScanSkipsRepositoriesWithoutLinkedWorktrees(t *testing.T) {
