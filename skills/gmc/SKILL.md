@@ -78,23 +78,11 @@ Copy this checklist and check off items as you complete them:
 
 ## Workflow: create worktree
 
-- Read `worktree.root` from the selected global gmc config file when you need the new worktree path.
-- Treat an absolute path, `~`, or a `~/` path in global `config.yaml` as the root setting.
-- Do not use `root` from a project `.gmc.yaml` or repository `gmc-share.yml`.
-- If the configured root directory does not exist, gmc uses the previous location and prints a warning. It does not create the missing root.
-- For `add`, `dup`, and PR worktrees, expect `<root>/<owner>/<repository>/<repository>--<worktree-name>`.
-- The owner comes from `origin`; if gmc cannot read it, gmc uses the parent directory name of the main checkout.
-- `add` changes `/` in the name to `--`; `dup` uses its `.dup-N` name.
-- `gmc wt clone` keeps its existing location for the initial default-branch worktree.
-- `gmc wt promote` uses a temporary worktree to check the candidate and does not move it.
-- gmc locks worktrees under the configured root so Git prune preserves their records while the root is unavailable.
-- `gmc wt remove` and `gmc wt prune` manage gmc's own locks when they remove an available worktree.
-- They keep an unavailable global-root worktree and its branch, even with `--force`.
-- A gmc lock keeps a registered worktree manageable after `worktree.root` changes or is removed.
-- For a global-root worktree, removal accepts its absolute path, full directory name, or name without the `<repository>--` prefix.
-- An exact path or a name relative to the repository search directory takes priority.
-- Otherwise, if a removal name matches multiple global-root worktrees, use the absolute path.
-- They do not remove or unlock worktrees with a manual lock.
+- Read `worktree.root` only from global configuration, alongside `shared`; project files cannot set it.
+- New add, dup, and PR worktrees use `<root>/<owner>/<repo>/<repo>--<name>`; owner comes from `origin` or the repository directory's parent.
+- If root is missing, warn and use the old location without creating root; clone's initial main worktree stays in place.
+- Native Git locks protect global worktrees. Before direct `git worktree remove` or `git worktree move`, unlock them or use `-f -f`.
+- Offline `gmc wt rm` and `gmc wt prune` preserve Git metadata and branches, including with `--force`. gmc manages its own locks and keeps manual locks.
 
 - Use `gmc wt add <name>`
 - Use `-b <branch>` only if the user provided a base branch or asked for one
