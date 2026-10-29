@@ -80,6 +80,9 @@ func (c *Client) addPR(prNumber int, remote string, result *AddResult) error {
 
 	branchName := result.Name
 	ctx, err := c.prepareAdd(branchName, AddOptions{})
+	if ctx.warning != "" {
+		report.Warn(ctx.warning)
+	}
 	result.Path = ctx.targetPath
 	result.Branch = ctx.branchName
 	if err != nil {

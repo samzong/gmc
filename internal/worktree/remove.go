@@ -3,6 +3,7 @@ package worktree
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -22,7 +23,27 @@ func (c *Client) previewRemove(target removeContext, opts RemoveOptions, report 
 	}
 }
 
-func (c *Client) removeWorktree(path, name string, force bool, report *Report) error {
+func (c *Client) removeWorktree(wt Info, name string, force bool, report *Report) (removeErr error) {
+	path := wt.Path
+	if c.IsGlobalWorktree(wt) {
+		if info, err := os.Stat(path); err != nil || !info.IsDir() {
+			return errors.New(unavailableGlobalWorktreeMessage(path))
+		}
+	}
+	managedLock := wt.IsLocked && wt.LockReason == globalRootLockReason
+	if managedLock {
+		if _, err := c.runner.RunLogged("-C", c.repoDir, "worktree", "unlock", path); err != nil {
+			return fmt.Errorf("unlock managed worktree: %w", err)
+		}
+		defer func() {
+			if removeErr != nil {
+				_, err := c.runner.RunLogged("-C", c.repoDir, "worktree", "lock", "--reason", globalRootLockReason, path)
+				if err != nil {
+					removeErr = errors.Join(removeErr, fmt.Errorf("restore managed worktree lock: %w", err))
+				}
+			}
+		}()
+	}
 	args := []string{"-C", c.repoDir, "worktree", "remove"}
 	if force {
 		args = append(args, "--force")
@@ -70,7 +91,7 @@ func (c *Client) Remove(name string, opts RemoveOptions) (Report, error) {
 		c.previewRemove(ctx, opts, &report)
 		return report, nil
 	}
-	if err := c.removeWorktree(ctx.wtInfo.Path, ctx.name, opts.Force, &report); err != nil {
+	if err := c.removeWorktree(ctx.wtInfo, ctx.name, opts.Force, &report); err != nil {
 		return report, err
 	}
 	if opts.DeleteBranch && ctx.wtInfo.Branch != "" && ctx.wtInfo.Branch != "(detached)" {
@@ -135,7 +156,7 @@ func (c *Client) RemoveBatch(names []string, opts RemoveOptions) RemoveBatchResu
 			result.Succeeded = append(result.Succeeded, t.name)
 			continue
 		}
-		if err := c.removeWorktree(t.wtInfo.Path, t.name, opts.Force, &result.Report); err != nil {
+		if err := c.removeWorktree(t.wtInfo, t.name, opts.Force, &result.Report); err != nil {
 			result.Failed[t.name] = err
 			continue
 		}
@@ -174,19 +195,32 @@ func (c *Client) resolveRemoveTarget(name string, worktrees []Info) (removeConte
 	if !filepath.IsAbs(name) {
 		targetPath = filepath.Join(c.searchRoot, name)
 	}
-	var found bool
-	var wtInfo Info
+	var matches []Info
 	for _, wt := range worktrees {
 		relPath := strings.TrimPrefix(wt.Path, c.searchRoot+string(filepath.Separator))
 		if samePath(wt.Path, targetPath) || relPath == name {
-			wtInfo = wt
-			found = true
+			matches = append(matches, wt)
 			break
 		}
 	}
-	if !found {
+	if len(matches) == 0 {
+		for _, wt := range worktrees {
+			if !c.IsGlobalWorktree(wt) {
+				continue
+			}
+			base := filepath.Base(wt.Path)
+			if base == name || strings.TrimPrefix(base, filepath.Base(c.worktreeRoot)+"--") == name {
+				matches = append(matches, wt)
+			}
+		}
+	}
+	if len(matches) > 1 {
+		return removeContext{}, fmt.Errorf("ambiguous worktree %q; use an absolute path", name)
+	}
+	if len(matches) == 0 {
 		return removeContext{}, fmt.Errorf("worktree not found: %s\nUse 'gmc wt ls' to see available worktrees", name)
 	}
+	wtInfo := matches[0]
 	pp, err := c.NewProtectionPolicy()
 	if err != nil {
 		return removeContext{}, err
@@ -195,7 +229,7 @@ func (c *Client) resolveRemoveTarget(name string, worktrees []Info) (removeConte
 		return removeContext{}, fmt.Errorf("cannot remove protected worktree '%s' (%s)", name, pp.Reason(wtInfo))
 	}
 
-	if !pathWithin(c.searchRoot, wtInfo.Path) {
+	if !c.isManagedWorktree(wtInfo) {
 		return removeContext{}, fmt.Errorf("worktree '%s' is external (not managed by gmc wt)", name)
 	}
 

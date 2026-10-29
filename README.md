@@ -91,6 +91,28 @@ template: |
   {{.Diff}}
 ```
 
+### Worktree root
+
+Set `worktree.root` in your global gmc config file to place new worktrees outside the repository:
+
+```yaml
+worktree:
+  root: /Volumes/git/worktrees
+  shared:
+    - path: node_modules
+      strategy: link
+```
+
+The `root` field uses an absolute path, `~`, or a path that starts with `~/`. It can appear with the global `shared` rules. Project `.gmc.yaml` files and repository `gmc-share.yml` files cannot set this field.
+
+For `gmc wt add`, `gmc wt dup`, and `gmc wt pr-review`, gmc uses `<root>/<owner>/<repository>/<repository>--<worktree-name>`. The repository directory name comes from the main checkout or the `.bare` container. The owner comes from the `origin` remote. If gmc cannot read an owner from that remote, it uses the parent directory name of the main checkout. `add` replaces `/` in a worktree name with `--`, and `dup` keeps its `.dup-N` name.
+
+If the root directory does not exist, gmc uses the previous worktree location, prints a warning, and leaves the root directory unchanged. Without `worktree.root`, gmc keeps the previous layout. `gmc wt clone` keeps its existing layout for the initial default-branch worktree. `gmc wt promote` checks a temporary worktree and does not move the candidate.
+
+gmc locks worktrees under the configured root so `git worktree prune` does not remove their records when the root is unavailable. `gmc wt remove` and `gmc wt prune` can remove available gmc-managed worktrees. They preserve unavailable global-root worktrees and their branches, even with `--force`, and they do not unlock worktrees with a manual lock. A gmc lock keeps a registered worktree manageable after you change or remove `worktree.root`.
+
+For a global-root worktree, `gmc wt remove` accepts its absolute path, full directory name, or the name without the `<repository>--` prefix. An exact path or a name relative to the repository search directory takes priority. Otherwise, if a name matches multiple global-root worktrees, use the absolute path.
+
 ## Task workflow
 
 `gmc task` manages local AI coding tasks on a repo-family ledger: worktree, agent session, runs, events, and logs.
