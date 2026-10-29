@@ -78,6 +78,8 @@ gmc config set model   gpt-4.1-mini
 gmc config set role    "Backend Developer"
 ```
 
+Set `worktree.root` (e.g. `/Volumes/git/worktrees`) in the global config to create new worktrees at `<root>/<owner>/<repo>/<repo>--<name>`; gmc locks them so an unmounted disk does not lose their Git records, and falls back to the old location with a warning when the root is missing.
+
 Custom prompt template: set `prompt_template` to a YAML file whose `template` key holds a prompt using the `{{.Role}}`, `{{.Files}}` and `{{.Diff}}` variables. A file without a `template` key, or an empty one, is reported and the built-in template is used instead.
 
 ```yaml

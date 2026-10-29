@@ -21,6 +21,8 @@ type addContext struct {
 	branchName string
 	targetPath string
 	baseBranch string
+	globalRoot bool
+	warning    string
 }
 
 func (c *Client) Add(name string, opts AddOptions) (AddResult, error) {
@@ -33,6 +35,9 @@ func (c *Client) Add(name string, opts AddOptions) (AddResult, error) {
 
 func (c *Client) add(name string, opts AddOptions, result *AddResult) error {
 	ctx, err := c.prepareAdd(name, opts)
+	if ctx.warning != "" {
+		result.Report.Warn(ctx.warning)
+	}
 	result.Path = ctx.targetPath
 	result.Branch = ctx.branchName
 	if err != nil {
@@ -57,6 +62,9 @@ func (c *Client) add(name string, opts AddOptions, result *AddResult) error {
 
 func (c *Client) createAddedWorktree(ctx addContext, report *Report) (bool, bool, error) {
 	args, branchExists := c.addArgs(ctx)
+	if ctx.globalRoot {
+		args = append(args[:4], append([]string{"--lock", "--reason", globalRootLockReason}, args[4:]...)...)
+	}
 	runResult, err := c.runner.RunLogged(args...)
 	if err != nil {
 		return branchExists, false, gitutil.WrapGitError("failed to create worktree", runResult, err)
@@ -101,6 +109,11 @@ func (c *Client) prepareAdd(name string, opts AddOptions) (addContext, error) {
 		targetPath = filepath.Join(filepath.Dir(c.worktreeRoot), filepath.Base(c.worktreeRoot)+"--"+dirName)
 	}
 
+	targetPath, globalRoot, warning, err := c.newWorktreePath(dirName, targetPath)
+	if err != nil {
+		return addContext{}, err
+	}
+
 	baseBranch := opts.BaseBranch
 	if baseBranch == "" {
 		baseBranch = "HEAD"
@@ -108,6 +121,8 @@ func (c *Client) prepareAdd(name string, opts AddOptions) (addContext, error) {
 
 	ctx := addContext{
 		name:       name,
+		globalRoot: globalRoot,
+		warning:    warning,
 		branchName: branchName,
 		targetPath: targetPath,
 		baseBranch: baseBranch,

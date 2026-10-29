@@ -179,17 +179,6 @@ func isLocalRel(rel string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-func isExternalPath(root, wtPath string) bool {
-	if root == "" {
-		return false
-	}
-	rel, err := filepath.Rel(root, wtPath)
-	if err != nil {
-		return true
-	}
-	return strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".."
-}
-
 type ProtectionPolicy struct {
 	MainBranch string
 	RootPath   string

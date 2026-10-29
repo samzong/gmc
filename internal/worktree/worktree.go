@@ -30,6 +30,11 @@ type Client struct {
 	repoDir      string
 	initErr      error
 
+	rootOnce       sync.Once
+	globalRoot     string
+	globalRelative string
+	globalRootErr  error
+
 	listMu    sync.Mutex
 	listCache []Info
 	listValid bool
@@ -100,6 +105,7 @@ type Info struct {
 	Branch     string
 	Commit     string
 	IsPrunable bool
+	LockReason string
 	IsLocked   bool
 	IsBare     bool
 }
@@ -152,6 +158,7 @@ func parseWorktreeList(output string) ([]Info, error) {
 			current.IsPrunable = true
 		case line == "locked", strings.HasPrefix(line, "locked "):
 			current.IsLocked = true
+			current.LockReason = strings.TrimSpace(strings.TrimPrefix(line, "locked"))
 		case strings.HasPrefix(line, "detached"):
 			current.Branch = "(detached)"
 		}

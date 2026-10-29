@@ -289,6 +289,11 @@ func resolveWorktreeStatus(wtClient *worktree.Client, root string, wt worktree.I
 	switch {
 	case wt.IsBare:
 		return "bare"
+	case wtClient.IsGlobalWorktree(wt):
+		if _, err := os.Stat(wt.Path); os.IsNotExist(err) {
+			return "missing"
+		}
+		return wtClient.GetWorktreeStatus(wt.Path)
 	case isExternalWorktree(root, wt.Path), isAgentWorktree(wt.Path):
 		return "agent"
 	default:

@@ -44,6 +44,7 @@ const (
 )
 
 type SharedConfig struct {
+	Root      string           `yaml:"root,omitempty"`
 	Resources []SharedResource `yaml:"shared"`
 	Hooks     []Hook           `yaml:"hooks,omitempty"`
 }

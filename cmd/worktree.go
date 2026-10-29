@@ -258,7 +258,7 @@ func completeWorktreeNames(_ *cobra.Command, _ []string, _ string) ([]string, co
 
 	names := make([]string, 0, len(filtered))
 	for _, wt := range filtered {
-		if isExternalWorktree(root, wt.Path) || isAgentWorktree(wt.Path) {
+		if (isExternalWorktree(root, wt.Path) || isAgentWorktree(wt.Path)) && !wtClient.IsGlobalWorktree(wt) {
 			continue
 		}
 		names = append(names, displayWorktreeName(root, wt.Path))

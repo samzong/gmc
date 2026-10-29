@@ -116,11 +116,17 @@ func (c *Client) collectPruneCandidates(root, baseBranch string, report *Report)
 		if pp.IsProtected(wt) {
 			continue
 		}
-		if isBare && isExternalPath(root, wt.Path) {
+		if isBare && !c.isManagedWorktree(wt) {
 			continue
 		}
 		name := filepath.Base(wt.Path)
-		if wt.IsLocked {
+		if c.IsGlobalWorktree(wt) {
+			if info, err := os.Stat(wt.Path); err != nil || !info.IsDir() {
+				report.Warn(fmt.Sprintf("Skipped %s: %s", name, unavailableGlobalWorktreeMessage(wt.Path)))
+				continue
+			}
+		}
+		if wt.IsLocked && wt.LockReason != globalRootLockReason {
 			report.Warn(fmt.Sprintf("Skipped %s: worktree is locked", name))
 			continue
 		}
@@ -308,7 +314,7 @@ func (c *Client) pruneClassic(
 
 func (c *Client) pruneCandidateRefs(cand pruneCandidate, force bool, report *Report) error {
 	if cand.hasWorktree() {
-		if err := c.removeWorktree(cand.wt.Path, filepath.Base(cand.wt.Path), force, report); err != nil {
+		if err := c.removeWorktree(cand.wt, filepath.Base(cand.wt.Path), force, report); err != nil {
 			return err
 		}
 	}

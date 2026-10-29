@@ -78,6 +78,12 @@ Copy this checklist and check off items as you complete them:
 
 ## Workflow: create worktree
 
+- Read `worktree.root` only from global configuration, alongside `shared`; project files cannot set it.
+- New add, dup, and PR worktrees use `<root>/<owner>/<repo>/<repo>--<name>`; owner comes from `origin` or the repository directory's parent.
+- If root is missing, warn and use the old location without creating root; clone's initial main worktree stays in place.
+- Native Git locks protect global worktrees. Before direct `git worktree remove` or `git worktree move`, unlock them or use `-f -f`.
+- Offline `gmc wt rm` and `gmc wt prune` preserve Git metadata and branches, including with `--force`. gmc manages its own locks and keeps manual locks.
+
 - Use `gmc wt add <name>`
 - Use `-b <branch>` only if the user provided a base branch or asked for one
 - Use `--sync` only when the user wants the latest base first

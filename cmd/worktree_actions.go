@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -165,7 +166,7 @@ func resolveAllRemovableWorktrees(wtClient *worktree.Client) ([]string, error) {
 		if pp.IsProtected(wt) {
 			continue
 		}
-		if isExternalWorktree(root, wt.Path) || isAgentWorktree(wt.Path) {
+		if (isExternalWorktree(root, wt.Path) || isAgentWorktree(wt.Path)) && !wtClient.IsGlobalWorktree(wt) {
 			continue
 		}
 		names = append(names, displayWorktreeName(root, wt.Path))
@@ -216,6 +217,10 @@ func runWorktreeDup(wtClient *worktree.Client, args []string) error {
 		relPath := item.Name
 		if item.RelativePath != "" {
 			relPath = item.RelativePath
+		}
+		if wtClient.IsGlobalWorktree(worktree.Info{Path: item.Path}) && !filepath.IsLocal(relPath) {
+			fmt.Fprintf(outWriter(), "  %s -> %s\n", item.Path, item.Branch)
+			continue
 		}
 		if item.Path == "" {
 			fmt.Fprintf(outWriter(), "  %s -> %s\n", relPath, item.Branch)

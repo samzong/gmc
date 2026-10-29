@@ -191,7 +191,7 @@ func (c *Client) SyncAllSharedResources() (Report, error) {
 		if wt.IsBare || filepath.Base(wt.Path) == ".bare" {
 			continue
 		}
-		if isBare && isExternalPath(c.worktreeRoot, wt.Path) {
+		if isBare && !c.isManagedWorktree(wt) {
 			continue
 		}
 		targets = append(targets, wt)
