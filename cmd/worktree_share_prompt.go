@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/samzong/gmc/internal/worktree"
@@ -64,19 +63,11 @@ func runWorktreeShareInteractive(c *worktree.Client) error {
 func promptAddResource(c *worktree.Client, reader *bufio.Reader) {
 	root, _ := c.GetWorktreeRoot()
 
-	cwd, _ := os.Getwd()
-	currentWorktree := ""
-	if strings.HasPrefix(cwd, root) {
-		rel, _ := filepath.Rel(root, cwd)
-		parts := strings.SplitN(rel, string(filepath.Separator), 2)
-		if len(parts) > 0 && parts[0] != "." && parts[0] != ".bare" {
-			currentWorktree = parts[0]
-		}
-	}
-
 	fmt.Fprintf(errWriter(), "\nProject root: %s\n", root)
-	if currentWorktree != "" {
-		fmt.Fprintf(errWriter(), "Current worktree: %s\n", currentWorktree)
+	if worktrees, err := c.ListCached(); err == nil {
+		if wt, ok := c.CurrentWorktree(worktrees); ok {
+			fmt.Fprintf(errWriter(), "Current worktree: %s\n", c.WorktreeName(wt, worktrees))
+		}
 	}
 	fmt.Fprint(errWriter(), "\nPath: ")
 	path, _ := reader.ReadString('\n')

@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/samzong/gmc/internal/gitutil"
 )
@@ -186,45 +184,8 @@ func (c *Client) RemoveBatch(names []string, opts RemoveOptions) RemoveBatchResu
 	return result
 }
 
-func (c *Client) matchRemoveWorktree(name string, worktrees []Info) (Info, error) {
-	if name == "" {
-		return Info{}, errors.New("worktree name cannot be empty")
-	}
-
-	targetPath := name
-	if !filepath.IsAbs(name) {
-		targetPath = filepath.Join(c.searchRoot, name)
-	}
-	var matches []Info
-	for _, wt := range worktrees {
-		relPath := strings.TrimPrefix(wt.Path, c.searchRoot+string(filepath.Separator))
-		if samePath(wt.Path, targetPath) || relPath == name {
-			matches = append(matches, wt)
-			break
-		}
-	}
-	if len(matches) == 0 {
-		for _, wt := range worktrees {
-			if !c.IsGlobalWorktree(wt) {
-				continue
-			}
-			base := filepath.Base(wt.Path)
-			if base == name || strings.TrimPrefix(base, filepath.Base(c.worktreeRoot)+"--") == name {
-				matches = append(matches, wt)
-			}
-		}
-	}
-	if len(matches) > 1 {
-		return Info{}, fmt.Errorf("ambiguous worktree %q; use an absolute path", name)
-	}
-	if len(matches) == 0 {
-		return Info{}, fmt.Errorf("worktree not found: %s\nUse 'gmc wt ls' to see available worktrees", name)
-	}
-	return matches[0], nil
-}
-
 func (c *Client) resolveRemoveTarget(name string, worktrees []Info) (removeContext, error) {
-	wtInfo, err := c.matchRemoveWorktree(name, worktrees)
+	wtInfo, err := c.ResolveWorktree(name, worktrees, RemoveName)
 	if err != nil {
 		return removeContext{}, err
 	}

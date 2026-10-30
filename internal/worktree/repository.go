@@ -8,52 +8,6 @@ import (
 	"strings"
 )
 
-func (c *Client) resolveWorktreePath(worktreeName string) (string, error) {
-	if worktreeName == "" {
-		return "", errors.New("worktree name cannot be empty")
-	}
-
-	c.once.Do(c.init)
-	repoRoot := c.worktreeRoot
-	worktrees, err := c.ListCached()
-	if err != nil {
-		if repoRoot != "" {
-			candidate := filepath.Join(repoRoot, worktreeName)
-			if info, statErr := os.Stat(candidate); statErr == nil && info.IsDir() {
-				return candidate, nil
-			}
-		}
-		return "", err
-	}
-
-	var exactMatches []string
-	var relMatches []string
-	var baseMatches []string
-	for _, wt := range worktrees {
-		if wt.Path == worktreeName {
-			exactMatches = append(exactMatches, wt.Path)
-			continue
-		}
-		if repoRoot != "" {
-			if rel, relErr := filepath.Rel(repoRoot, wt.Path); relErr == nil && rel == worktreeName {
-				relMatches = append(relMatches, wt.Path)
-				continue
-			}
-		}
-		if filepath.Base(wt.Path) == worktreeName {
-			baseMatches = append(baseMatches, wt.Path)
-		}
-	}
-
-	for i, matches := range [][]string{exactMatches, relMatches, baseMatches} {
-		if len(matches) > 0 {
-			return uniqueWorktreeMatch(worktreeName, matches, []string{"exact path", "repo-relative path", "basename"}[i])
-		}
-	}
-
-	return "", fmt.Errorf("worktree not found: %s", worktreeName)
-}
-
 func (c *Client) currentTopLevel() string {
 	result, err := c.runner.Run("rev-parse", "--show-toplevel")
 	if err != nil {
@@ -71,16 +25,6 @@ func (c *Client) currentTopLevel() string {
 		return ""
 	}
 	return absRoot
-}
-
-func uniqueWorktreeMatch(input string, matches []string, matchType string) (string, error) {
-	if len(matches) == 0 {
-		return "", nil
-	}
-	if len(matches) == 1 {
-		return matches[0], nil
-	}
-	return "", fmt.Errorf("ambiguous worktree %q by %s: %s", input, matchType, strings.Join(matches, ", "))
 }
 
 func (c *Client) getGitOutput(dir string, args ...string) string {

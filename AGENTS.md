@@ -34,6 +34,7 @@ Layer 3: Business Logic (internal/*)
 | **Command handlers** | Use `RunE`, not `Run`; always set an `Args` validator |
 | **Output streams** | stdout = data; stderr = progress/errors; use `cmd.OutOrStdout()` / `errWriter()` |
 | **Errors** | Return `error`; `main.go` prints it. Use `exitcode` for structured exit codes; `userFacingError` in `cmd/root.go` for generic wrapping |
+| **Worktree names** | Generate worktree names only with `(*Client).WorktreeName` in `internal/worktree`. Parse worktree names only with `(*Client).ResolveWorktree` in that package. Map the current directory to an entry of a worktree list only with `(*Client).CurrentWorktree` in that package. `currentTopLevel` stays the source for Git's top-level directory of the current checkout. `cmd/` and other packages must not derive worktree names or map the current directory to a worktree. |
 | **Worktree CLI** | All worktree operations go through `gmc wt <subcommand>`. Never invent top-level `gmc add`, `gmc clone`, etc. |
 | **Generated docs** | Never hand-edit `docs/man/*.1`. Man pages are generated from Cobra definitions in `cmd/*.go` via `make man` (`cmd/gendoc/main.go`). |
 

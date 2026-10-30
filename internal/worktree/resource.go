@@ -208,8 +208,8 @@ func (c *Client) SyncAllSharedResources() (Report, error) {
 		resourceReport, err := c.syncSharedResourcesToPath(wt.Path, false)
 		report.Merge(resourceReport)
 		if err != nil {
-			report.Warn(fmt.Sprintf("Warning: failed to sync %s: %v", filepath.Base(wt.Path), err))
-			failures = append(failures, fmt.Errorf("sync %s: %w", filepath.Base(wt.Path), err))
+			report.Warn(fmt.Sprintf("Warning: failed to sync %s: %v", c.WorktreeName(wt, worktrees), err))
+			failures = append(failures, fmt.Errorf("sync %s: %w", c.WorktreeName(wt, worktrees), err))
 		}
 	}
 

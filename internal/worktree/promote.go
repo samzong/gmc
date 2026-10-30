@@ -37,11 +37,16 @@ func (c *Client) Promote(candidate string, opts PromoteOptions) (Report, error) 
 	if err != nil {
 		return report, err
 	}
-	candidatePath, err := c.resolvePromoteCandidate(candidate)
+	worktrees, err := c.ListCached()
 	if err != nil {
 		return report, err
 	}
-	if sameCleanPath(parentRoot, candidatePath) {
+	resolved, err := c.ResolveWorktree(candidate, worktrees, PromoteName)
+	if err != nil {
+		return report, err
+	}
+	candidatePath := resolved.Path
+	if samePath(parentRoot, candidatePath) {
 		return report, errors.New("candidate worktree must be different from the parent worktree")
 	}
 
@@ -117,42 +122,6 @@ func (c *Client) currentTopLevelRequired() (string, error) {
 		return "", errors.New("failed to determine current worktree root")
 	}
 	return root, nil
-}
-
-func (c *Client) resolvePromoteCandidate(candidate string) (string, error) {
-	absCandidate := candidate
-	if !filepath.IsAbs(absCandidate) {
-		var err error
-		absCandidate, err = filepath.Abs(candidate)
-		if err != nil {
-			return c.resolveWorktreePath(candidate)
-		}
-	}
-	if absCandidate != "" {
-		worktrees, listErr := c.ListCached()
-		if listErr == nil {
-			for _, wt := range worktrees {
-				if sameCleanPath(wt.Path, absCandidate) {
-					return wt.Path, nil
-				}
-			}
-		}
-	}
-	return c.resolveWorktreePath(candidate)
-}
-
-func sameCleanPath(a, b string) bool {
-	cleanA := filepath.Clean(a)
-	cleanB := filepath.Clean(b)
-	evalA, errA := filepath.EvalSymlinks(cleanA)
-	if errA == nil {
-		cleanA = filepath.Clean(evalA)
-	}
-	evalB, errB := filepath.EvalSymlinks(cleanB)
-	if errB == nil {
-		cleanB = filepath.Clean(evalB)
-	}
-	return cleanA == cleanB
 }
 
 func relativePathWithin(base, target string) (string, bool) {

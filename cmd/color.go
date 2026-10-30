@@ -3,7 +3,6 @@ package cmd
 import (
 	"io"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -87,25 +86,4 @@ func colorSize(text string, enabled bool) string {
 		return paint(text, sgrDim, enabled)
 	}
 	return text
-}
-
-func currentWorktreePath(worktrees []worktree.Info) string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-	if resolved, err := filepath.EvalSymlinks(cwd); err == nil {
-		cwd = resolved
-	}
-	current := ""
-	for _, wt := range worktrees {
-		rel, err := filepath.Rel(wt.Path, cwd)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			continue
-		}
-		if len(wt.Path) > len(current) {
-			current = wt.Path
-		}
-	}
-	return current
 }

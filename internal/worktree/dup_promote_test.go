@@ -32,7 +32,7 @@ func TestDupCopiesTaskFilesAndKeepsBareLayoutPath(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ".dup-1", result.Items[0].Name)
 	dupDir := filepath.Join(repoDir, ".dup-1")
-	require.True(t, sameCleanPath(result.Items[0].Path, dupDir))
+	require.True(t, samePath(result.Items[0].Path, dupDir))
 	require.Equal(t, "task", readFile(t, filepath.Join(dupDir, "todo.md")))
 }
 
@@ -44,7 +44,7 @@ func TestDupWithoutTaskWorksFromBareLayoutRoot(t *testing.T) {
 	result, err := client.Dup(DupOptions{BaseBranch: "main", Count: 1})
 	require.NoError(t, err)
 	dupDir := filepath.Join(repoDir, ".dup-1")
-	require.True(t, sameCleanPath(result.Items[0].Path, dupDir))
+	require.True(t, samePath(result.Items[0].Path, dupDir))
 	require.Equal(t, ".dup-1", result.Items[0].RelativePath)
 }
 
@@ -80,7 +80,7 @@ func TestDupDefaultsToCurrentWorktreeBranchAndSiblingPath(t *testing.T) {
 	dupDir := filepath.Join(filepath.Dir(featureDir), ".dup-1")
 	t.Cleanup(func() { _ = os.RemoveAll(dupDir) })
 	require.Equal(t, "feature/current", result.BaseBranch)
-	require.True(t, sameCleanPath(result.Items[0].Path, dupDir))
+	require.True(t, samePath(result.Items[0].Path, dupDir))
 	require.Equal(t, "../.dup-1", result.Items[0].RelativePath)
 	require.Equal(t, "feature", readFile(t, filepath.Join(dupDir, "feature.txt")))
 }

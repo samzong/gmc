@@ -128,7 +128,7 @@ func TestGlobalRootConfigurationResolvedOncePerClient(t *testing.T) {
 	assert.Equal(t, filepath.Join("second", filepath.Base(repo)), newRelative)
 }
 
-func TestGlobalWorktreeNameResolvesRemoval(t *testing.T) {
+func TestWorktreeNameResolvesRemoval(t *testing.T) {
 	for _, bare := range []bool{false, true} {
 		t.Run(fmt.Sprintf("bare=%t", bare), func(t *testing.T) {
 			_, _, client := rootFixture(t, bare)
@@ -143,7 +143,7 @@ func TestGlobalWorktreeNameResolvesRemoval(t *testing.T) {
 				}
 			}
 			require.NotEmpty(t, global.Path)
-			name := client.GlobalWorktreeName(global, worktrees)
+			name := client.WorktreeName(global, worktrees)
 			assert.Equal(t, filepath.Base(created.Path), name)
 			target, err := client.resolveRemoveTarget(name, worktrees)
 			require.NoError(t, err)
@@ -153,7 +153,7 @@ func TestGlobalWorktreeNameResolvesRemoval(t *testing.T) {
 			worktrees = append(worktrees, duplicate)
 			_, err = client.resolveRemoveTarget(name, worktrees)
 			require.ErrorContains(t, err, "ambiguous worktree")
-			name = client.GlobalWorktreeName(global, worktrees)
+			name = client.WorktreeName(global, worktrees)
 			assert.Equal(t, global.Path, name)
 			target, err = client.resolveRemoveTarget(name, worktrees)
 			require.NoError(t, err)
