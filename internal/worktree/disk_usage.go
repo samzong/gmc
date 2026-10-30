@@ -51,6 +51,12 @@ type AllocatedSize struct {
 	Err   error
 }
 
+func (s AllocatedSize) RootMissing() bool {
+	var pathErr *fs.PathError
+	return errors.Is(s.Err, fs.ErrNotExist) && errors.As(s.Err, &pathErr) &&
+		filepath.Clean(pathErr.Path) == filepath.Clean(s.Path)
+}
+
 func MeasureAllocated(root string) (uint64, error) {
 	root = filepath.Clean(root)
 	var total uint64

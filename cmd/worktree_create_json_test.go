@@ -97,7 +97,8 @@ func TestWorktreeListJSONIssues(t *testing.T) {
 	assert.Nil(t, items[0].AllocatedBytes)
 	require.Len(t, items[1].Issues, 1)
 	assert.Equal(t, worktree.MeasureNotFound, items[1].Issues[0].Code)
-	assert.Equal(t, 2, strings.Count(warnings.String(), "Warning: cannot measure size of "))
+	assert.Equal(t, 1, strings.Count(warnings.String(), "Warning: cannot measure size of "))
+	assert.NotContains(t, warnings.String(), abbrevPath(missing))
 
 	clean := buildWorktreeJSON(client, worktrees[:1], nil, nil, worktreeSizes{repoDir: {Path: repoDir, Bytes: 1}})
 	data, err := json.Marshal(clean[0])

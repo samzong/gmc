@@ -1,6 +1,8 @@
 package worktree
 
 import (
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,6 +10,27 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestAllocatedSizeRootMissing(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "gone")
+	for _, test := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"root", &fs.PathError{Op: "lstat", Path: root, Err: fs.ErrNotExist}, true},
+		{"wrapped-root", fmt.Errorf("scan: %w", &fs.PathError{Op: "lstat", Path: root, Err: fs.ErrNotExist}), true},
+		{"child", &fs.PathError{Op: "lstat", Path: filepath.Join(root, "child"), Err: fs.ErrNotExist}, false},
+		{"permission", &fs.PathError{Op: "open", Path: root, Err: fs.ErrPermission}, false},
+		{"no-path", fs.ErrNotExist, false},
+		{"success", nil, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			size := AllocatedSize{Path: root, Err: test.err}
+			assert.Equal(t, test.want, size.RootMissing())
+		})
+	}
+}
 
 func writeSizedFile(t *testing.T, path string, size int) {
 	t.Helper()

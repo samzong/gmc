@@ -51,7 +51,7 @@ func loadWorktreeSizes(w io.Writer, worktrees []worktree.Info) worktreeSizes {
 	sizes := make(worktreeSizes, len(paths))
 	for _, size := range worktree.MeasureAllocatedAll(paths) {
 		sizes[size.Path] = size
-		if size.Err != nil {
+		if size.Err != nil && !size.RootMissing() {
 			fmt.Fprintf(w, "Warning: cannot measure size of %s: %s\n",
 				sanitizeForTerminal(abbrevPath(size.Path)), sanitizeForTerminal(size.Err.Error()))
 		}
@@ -285,14 +285,23 @@ func displayWorktreeName(displayRoot string, wtPath string) string {
 	return rel
 }
 
+func listWorktreeName(wtClient *worktree.Client, root string, wt worktree.Info, worktrees []worktree.Info) string {
+	if wtClient.IsGlobalWorktree(wt) {
+		return wtClient.GlobalWorktreeName(wt, worktrees)
+	}
+	return displayWorktreeName(root, wt.Path)
+}
+
 func resolveWorktreeStatus(wtClient *worktree.Client, root string, wt worktree.Info) string {
+	if !wt.IsBare {
+		if _, err := os.Stat(wt.Path); os.IsNotExist(err) {
+			return "missing"
+		}
+	}
 	switch {
 	case wt.IsBare:
 		return "bare"
 	case wtClient.IsGlobalWorktree(wt):
-		if _, err := os.Stat(wt.Path); os.IsNotExist(err) {
-			return "missing"
-		}
 		return wtClient.GetWorktreeStatus(wt.Path)
 	case isExternalWorktree(root, wt.Path), isAgentWorktree(wt.Path):
 		return "agent"
@@ -430,7 +439,7 @@ func printWorktreeTable(
 	maxBranch := len("Branch")
 	maxPR := len("PR")
 	for _, wt := range worktrees {
-		name := displayWorktreeName(root, wt.Path)
+		name := listWorktreeName(wtClient, root, wt, worktrees)
 		maxName = max(maxName, runewidth.StringWidth(name))
 		maxBranch = max(maxBranch, runewidth.StringWidth(wt.Branch))
 		maxPR = max(maxPR, runewidth.StringWidth(formatWorktreeReview(reviews, wt.Branch)))
@@ -451,7 +460,7 @@ func printWorktreeTable(
 	current := currentWorktreePath(worktrees)
 
 	for _, wt := range worktrees {
-		name := displayWorktreeName(root, wt.Path)
+		name := listWorktreeName(wtClient, root, wt, worktrees)
 		shortCommit := stringsutil.ShortHash(wt.Commit, 7, "")
 		stat, hasStat := diffStats[wt.Path]
 		status := formatWorktreeStatus(resolveWorktreeStatus(wtClient, root, wt), stat, hasStat)
@@ -486,11 +495,12 @@ func buildWorktreeJSON(
 	for _, wt := range worktrees {
 		stat, hasStat := diffStats[wt.Path]
 		item := WorktreeJSON{
-			Name:           displayWorktreeName(root, wt.Path),
+			Name:           listWorktreeName(wtClient, root, wt, worktrees),
 			Path:           wt.Path,
 			Branch:         wt.Branch,
 			Commit:         wt.Commit,
 			Status:         resolveWorktreeStatus(wtClient, root, wt),
+			Prunable:       wt.IsPrunable,
 			AllocatedBytes: sizes.bytes(wt.Path),
 			Issues:         sizes.issues(wt.Path),
 		}

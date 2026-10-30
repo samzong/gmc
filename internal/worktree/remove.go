@@ -186,9 +186,9 @@ func (c *Client) RemoveBatch(names []string, opts RemoveOptions) RemoveBatchResu
 	return result
 }
 
-func (c *Client) resolveRemoveTarget(name string, worktrees []Info) (removeContext, error) {
+func (c *Client) matchRemoveWorktree(name string, worktrees []Info) (Info, error) {
 	if name == "" {
-		return removeContext{}, errors.New("worktree name cannot be empty")
+		return Info{}, errors.New("worktree name cannot be empty")
 	}
 
 	targetPath := name
@@ -215,12 +215,19 @@ func (c *Client) resolveRemoveTarget(name string, worktrees []Info) (removeConte
 		}
 	}
 	if len(matches) > 1 {
-		return removeContext{}, fmt.Errorf("ambiguous worktree %q; use an absolute path", name)
+		return Info{}, fmt.Errorf("ambiguous worktree %q; use an absolute path", name)
 	}
 	if len(matches) == 0 {
-		return removeContext{}, fmt.Errorf("worktree not found: %s\nUse 'gmc wt ls' to see available worktrees", name)
+		return Info{}, fmt.Errorf("worktree not found: %s\nUse 'gmc wt ls' to see available worktrees", name)
 	}
-	wtInfo := matches[0]
+	return matches[0], nil
+}
+
+func (c *Client) resolveRemoveTarget(name string, worktrees []Info) (removeContext, error) {
+	wtInfo, err := c.matchRemoveWorktree(name, worktrees)
+	if err != nil {
+		return removeContext{}, err
+	}
 	pp, err := c.NewProtectionPolicy()
 	if err != nil {
 		return removeContext{}, err

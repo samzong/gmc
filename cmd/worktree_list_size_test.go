@@ -75,8 +75,7 @@ func TestWorktreeTableSizeAfterPRAndFailureRow(t *testing.T) {
 
 	assert.Equal(t, []string{"NAME", "BRANCH", "COMMIT", "PR", "SIZE", "STATUS"}, headerColumns(t, out.String(), "NAME"))
 	assert.Regexp(t, regexp.MustCompile(`(?m)feature/gone +bbbbbbb +- +- +`), out.String())
-	assert.Equal(t, 1, strings.Count(warnings.String(), "Warning: "))
-	assert.Contains(t, warnings.String(), "cannot measure size of "+abbrevPath(missing))
+	assert.Empty(t, warnings.String())
 
 	items := buildWorktreeJSON(client, worktrees, nil, nil, sizes)
 	require.NotNil(t, items[0].AllocatedBytes)
