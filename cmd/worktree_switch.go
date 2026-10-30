@@ -31,13 +31,7 @@ func runWorktreeSwitch(wtClient *worktree.Client) error {
 		return errors.New("no worktrees found")
 	}
 
-	root := getDisplayRoot(wtClient)
-
-	options := make([]huh.Option[string], 0, len(filtered))
-	for _, wt := range filtered {
-		name := displayWorktreeName(root, wt.Path)
-		options = append(options, huh.NewOption(fmt.Sprintf("%s (%s)", name, wt.Branch), wt.Path))
-	}
+	options := buildWorktreeSwitchOptions(wtClient, filtered)
 
 	var selected string
 	if err := huh.NewSelect[string]().Title("Select Worktree").Options(options...).Value(&selected).Run(); err != nil {
@@ -50,4 +44,16 @@ func runWorktreeSwitch(wtClient *worktree.Client) error {
 
 	fmt.Println(selected)
 	return nil
+}
+
+func buildWorktreeSwitchOptions(wtClient *worktree.Client, worktrees []worktree.Info) []huh.Option[string] {
+	root := getDisplayRoot(wtClient)
+
+	options := make([]huh.Option[string], 0, len(worktrees))
+	for _, wt := range worktrees {
+		name := listWorktreeName(wtClient, root, wt, worktrees)
+		options = append(options, huh.NewOption(fmt.Sprintf("%s (%s)", name, wt.Branch), wt.Path))
+	}
+
+	return options
 }
