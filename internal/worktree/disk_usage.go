@@ -7,7 +7,6 @@ import (
 	"math"
 	"path/filepath"
 	"strconv"
-	"sync"
 )
 
 const diskUsageWorkers = 4
@@ -58,6 +57,10 @@ func (s AllocatedSize) RootMissing() bool {
 }
 
 func MeasureAllocated(root string) (uint64, error) {
+	return measureAllocated(root)
+}
+
+func measureAllocatedWalk(root string) (uint64, error) {
 	root = filepath.Clean(root)
 	var total uint64
 	seen := make(map[fileID]struct{})
@@ -98,25 +101,7 @@ func MeasureAllocated(root string) (uint64, error) {
 }
 
 func MeasureAllocatedAll(paths []string) []AllocatedSize {
-	results := make([]AllocatedSize, len(paths))
-	jobs := make(chan int)
-	var wg sync.WaitGroup
-	for range min(diskUsageWorkers, len(paths)) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := range jobs {
-				bytes, err := MeasureAllocated(paths[i])
-				results[i] = AllocatedSize{Path: paths[i], Bytes: bytes, Err: err}
-			}
-		}()
-	}
-	for i := range paths {
-		jobs <- i
-	}
-	close(jobs)
-	wg.Wait()
-	return results
+	return measureAllocatedPaths(paths)
 }
 
 func FormatAllocatedSize(n uint64) string {

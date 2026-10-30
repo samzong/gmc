@@ -200,9 +200,20 @@ func runWorktreeList(wtClient *worktree.Client, showCurrent bool) error {
 	}
 	worktrees = filterBareWorktrees(worktrees)
 	reviews := loadWorktreeReviews(wtClient, worktrees)
-	diffStats, err := loadWorktreeDiffStats(wtClient, worktrees)
+	root := getDisplayRoot(wtClient)
+	for i := range worktrees {
+		worktrees[i].Status = knownWorktreeStatus(wtClient, root, worktrees[i])
+	}
+	details, err := wtClient.ListDetails(worktrees, wtDiffBase)
 	if err != nil {
 		return err
+	}
+	diffStats := make(map[string]worktree.DiffStat, len(worktrees))
+	for i, detail := range details {
+		worktrees[i].Status = detail.Status
+		if detail.DiffStat != nil {
+			diffStats[worktrees[i].Path] = *detail.DiffStat
+		}
 	}
 	sizes := loadWorktreeSizes(errWriter(), worktrees)
 	if outputFormat() == "json" {
@@ -260,47 +271,28 @@ func abbrevPath(path string) string {
 }
 
 func resolveWorktreeStatus(wtClient *worktree.Client, root string, wt worktree.Info) string {
+	if status := knownWorktreeStatus(wtClient, root, wt); status != "" {
+		return status
+	}
+	if wt.Status != "" {
+		return wt.Status
+	}
+	return wtClient.GetWorktreeStatus(wt.Path)
+}
+
+func knownWorktreeStatus(wtClient *worktree.Client, root string, wt worktree.Info) string {
 	if !wt.IsBare {
 		if _, err := os.Stat(wt.Path); os.IsNotExist(err) {
 			return "missing"
 		}
 	}
-	switch {
-	case wt.IsBare:
+	if wt.IsBare {
 		return "bare"
-	case wtClient.IsGlobalWorktree(wt):
-		return wtClient.GetWorktreeStatus(wt.Path)
-	case isExternalWorktree(root, wt.Path), worktree.IsAgentWorktree(wt.Path):
+	}
+	if !wtClient.IsGlobalWorktree(wt) && (isExternalWorktree(root, wt.Path) || worktree.IsAgentWorktree(wt.Path)) {
 		return "agent"
-	default:
-		return wtClient.GetWorktreeStatus(wt.Path)
 	}
-}
-
-func loadWorktreeDiffStats(wtClient *worktree.Client, worktrees []worktree.Info) (map[string]worktree.DiffStat, error) {
-	lookup := make(map[string]worktree.DiffStat)
-
-	override := strings.TrimSpace(wtDiffBase)
-
-	for _, wt := range worktrees {
-		base, baseErr := wtClient.ResolveDiffBaseForWorktree(wt.Path, wtDiffBase)
-		if baseErr != nil {
-			if override != "" {
-				return lookup, baseErr
-			}
-			continue
-		}
-
-		stat, statErr := wtClient.WorktreeDiffStat(wt.Path, base)
-		if statErr != nil {
-			if override != "" {
-				return lookup, statErr
-			}
-			continue
-		}
-		lookup[wt.Path] = stat
-	}
-	return lookup, nil
+	return ""
 }
 
 func formatWorktreeStatus(status string, stat worktree.DiffStat, ok bool) string {
