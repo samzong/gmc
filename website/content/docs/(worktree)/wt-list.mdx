@@ -12,6 +12,12 @@ gmc wt list
 gmc wt ls
 ```
 
+## Worktree names
+
+Global worktrees use their directory name in the `NAME` column. If that name
+does not uniquely select the same worktree for `gmc wt rm`, `NAME` shows the
+absolute path instead.
+
 ## PR status
 
 ```bash
@@ -52,11 +58,16 @@ for both `gmc wt list` and `gmc wt list -A`. Measuring walks every file, so
 large trees take longer to list. Symlinks are not followed, the top-level
 `.git` and `.bare` entries are skipped, and hard links count once per
 worktree. Sizes of different worktrees can overlap and are not reclaimable
-space. A worktree that cannot be measured shows `-` with a warning on stderr.
+space. A missing worktree directory shows `missing` in `STATUS` and `-` in
+`SIZE`, without a size warning. This also applies to locked worktrees and
+agent or external worktrees. Other measurement failures show `-` with a
+warning on stderr.
 With `-o json`, the size is reported as `allocated_bytes`. When it cannot be
 measured, `allocated_bytes` is omitted and the item gets
 `"issues": [{"source": "size", "code": "...", "message": "..."}]`, where `code`
 is `not_found`, `permission_denied`, `overflow`, or `scan_failed`.
+For a missing directory, JSON reports `"status": "missing"`. If Git marks the
+entry as prunable, JSON also includes `"prunable": true`.
 
 ## Color
 

@@ -239,6 +239,15 @@ func TestResolveWorktreeStatus(t *testing.T) {
 	info := worktree.Info{Path: repoDir, Branch: "main", IsBare: true}
 	assert.Equal(t, "bare", resolveWorktreeStatus(client, root, info))
 
-	info = worktree.Info{Path: "/tmp/.claude/worktrees/foo", Branch: "feat"}
-	assert.Equal(t, "agent", resolveWorktreeStatus(client, root, info))
+	for _, path := range []string{
+		filepath.Join(repoDir, ".claude", "worktrees", "foo"),
+		filepath.Join(repoDir, ".codex", "worktrees", "foo"),
+		filepath.Join(t.TempDir(), "external"),
+	} {
+		require.NoError(t, os.MkdirAll(path, 0700))
+		info = worktree.Info{Path: path, Branch: "feat"}
+		assert.Equal(t, "agent", resolveWorktreeStatus(client, repoDir, info))
+		require.NoError(t, os.RemoveAll(path))
+		assert.Equal(t, "missing", resolveWorktreeStatus(client, repoDir, info))
+	}
 }
