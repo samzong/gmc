@@ -82,6 +82,7 @@ func TestWorktreeListAllOutsideRepository(t *testing.T) {
 			require.Len(t, items, 2)
 			assert.Equal(t, repo, items[0].Repository)
 			assert.Equal(t, linked, items[1].Path)
+			assert.Equal(t, "~/.codex/worktrees/feature", items[1].Name)
 			assert.Equal(t, "1 untracked", items[1].Status)
 		})
 	}

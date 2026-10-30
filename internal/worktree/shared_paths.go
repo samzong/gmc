@@ -90,19 +90,15 @@ func (c *Client) resolveSharedPaths(
 	if len(parts) == 2 && !res.worktreeRelative {
 		worktrees, listErr := c.ListCached()
 		if listErr == nil {
-			var baseMatches []string
-			for _, wt := range worktrees {
-				if filepath.Base(wt.Path) == parts[0] {
-					baseMatches = append(baseMatches, wt.Path)
-				}
-			}
-			if match, matchErr := uniqueWorktreeMatch(parts[0], baseMatches, "legacy basename"); matchErr != nil {
+			match, matchErr := c.ResolveWorktree(parts[0], worktrees, SharedPrefix)
+			if matchErr != nil && !errors.Is(matchErr, errWorktreeNotFound) {
 				return "", "", false, matchErr
-			} else if match != "" {
-				if match == targetRoot {
+			}
+			if matchErr == nil {
+				if samePath(match.Path, targetRoot) {
 					return "", "", true, nil
 				}
-				srcPath = filepath.Join(match, parts[1])
+				srcPath = filepath.Join(match.Path, parts[1])
 				targetPath, err = sanitizeTargetRelativePath(parts[1])
 				if err != nil {
 					return "", "", false, err

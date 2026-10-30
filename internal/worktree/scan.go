@@ -15,11 +15,12 @@ import (
 
 type ScanResult struct {
 	Worktrees []Info
+	Names     map[string]string
 	Warnings  []error
 }
 
 func Scan(root string) (ScanResult, error) {
-	result := ScanResult{Worktrees: []Info{}}
+	result := ScanResult{Worktrees: []Info{}, Names: make(map[string]string)}
 	if _, err := exec.LookPath("git"); err != nil {
 		return result, err
 	}
@@ -93,6 +94,7 @@ func Scan(root string) (ScanResult, error) {
 				continue
 			}
 			wt.Repository = repository
+			result.Names[wt.Path] = client.WorktreeName(wt, worktrees)
 			if _, statErr := os.Stat(wt.Path); os.IsNotExist(statErr) {
 				wt.Status = "missing"
 			} else {

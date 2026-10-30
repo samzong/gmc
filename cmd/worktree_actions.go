@@ -166,10 +166,10 @@ func resolveAllRemovableWorktrees(wtClient *worktree.Client) ([]string, error) {
 		if pp.IsProtected(wt) {
 			continue
 		}
-		if (isExternalWorktree(root, wt.Path) || isAgentWorktree(wt.Path)) && !wtClient.IsGlobalWorktree(wt) {
+		if (isExternalWorktree(root, wt.Path) || worktree.IsAgentWorktree(wt.Path)) && !wtClient.IsGlobalWorktree(wt) {
 			continue
 		}
-		names = append(names, listWorktreeName(wtClient, root, wt, all))
+		names = append(names, wtClient.WorktreeName(wt, all))
 	}
 	return names, nil
 }

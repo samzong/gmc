@@ -264,7 +264,7 @@ func TestRemoveSharedResource_NormalizesPath(t *testing.T) {
 	assert.Empty(t, cfg.Resources)
 }
 
-func TestResolveWorktreePath_ErrorsOnAmbiguousBasename(t *testing.T) {
+func TestPromoteRejectsAmbiguousBasename(t *testing.T) {
 	repoDir := initTestRepo(t)
 	wt1 := filepath.Join(t.TempDir(), "dup")
 	wt2Parent := filepath.Join(t.TempDir(), "nested")
@@ -276,7 +276,7 @@ func TestResolveWorktreePath_ErrorsOnAmbiguousBasename(t *testing.T) {
 	client := NewClient(Options{})
 	t.Chdir(repoDir)
 
-	_, err := client.resolveWorktreePath("dup")
+	_, err := client.Promote("dup", PromoteOptions{DryRun: true})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ambiguous worktree")
 }

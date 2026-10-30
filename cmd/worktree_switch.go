@@ -47,11 +47,9 @@ func runWorktreeSwitch(wtClient *worktree.Client) error {
 }
 
 func buildWorktreeSwitchOptions(wtClient *worktree.Client, worktrees []worktree.Info) []huh.Option[string] {
-	root := getDisplayRoot(wtClient)
-
 	options := make([]huh.Option[string], 0, len(worktrees))
 	for _, wt := range worktrees {
-		name := listWorktreeName(wtClient, root, wt, worktrees)
+		name := wtClient.WorktreeName(wt, worktrees)
 		options = append(options, huh.NewOption(fmt.Sprintf("%s (%s)", name, wt.Branch), wt.Path))
 	}
 

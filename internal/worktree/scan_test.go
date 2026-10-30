@@ -99,6 +99,13 @@ func TestScanSubmoduleUsesCheckoutPath(t *testing.T) {
 	assert.Equal(t, submodule, result.Worktrees[0].Path)
 	assert.Equal(t, submodule, result.Worktrees[0].Repository)
 	assert.Equal(t, linked, result.Worktrees[1].Path)
+	for _, wt := range result.Worktrees {
+		name := result.Names[wt.Path]
+		require.NotEmpty(t, name)
+		resolved, resolveErr := NewClient(Options{Dir: submodule}).ResolveWorktree(name, result.Worktrees, DisplayName)
+		require.NoError(t, resolveErr)
+		assert.Equal(t, wt.Path, resolved.Path)
+	}
 	t.Chdir(submodule)
 	listed, err := NewClient(Options{}).List()
 	require.NoError(t, err)

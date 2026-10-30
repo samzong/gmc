@@ -241,7 +241,7 @@ func TestPruneBranches_PRAwareDeletesMergedOrphan(t *testing.T) {
 	assert.Equal(t, "skipped", entries["orphan-merged"].Action)
 	assert.Equal(t, "no PR found", entries["orphan-merged"].Reason)
 	assert.Equal(t, "skipped", entries["feat-wt"].Action)
-	assert.Equal(t, "feat-wt", entries["feat-wt"].Name)
+	assert.Equal(t, filepath.Join(filepath.Base(repoDir), "feat-wt"), entries["feat-wt"].Name)
 	assert.False(t, branchExists(t, client, repoDir, "orphan-unmerged"))
 	assert.True(t, branchExists(t, client, repoDir, "orphan-merged"))
 }

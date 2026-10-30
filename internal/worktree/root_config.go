@@ -126,12 +126,3 @@ func unavailableGlobalWorktreeMessage(path string) string {
 	return fmt.Sprintf("worktree directory is unavailable: %s; keeping its Git metadata; reconnect %s and retry",
 		path, root)
 }
-
-func (c *Client) GlobalWorktreeName(wt Info, worktrees []Info) string {
-	name := filepath.Base(wt.Path)
-	matched, err := c.matchRemoveWorktree(name, worktrees)
-	if err == nil && samePath(matched.Path, wt.Path) {
-		return name
-	}
-	return wt.Path
-}

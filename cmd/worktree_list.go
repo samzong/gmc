@@ -109,7 +109,7 @@ func runWorktreeListAll(cmd *cobra.Command) error {
 		items := make([]WorktreeJSON, 0, len(result.Worktrees))
 		for _, wt := range result.Worktrees {
 			items = append(items, WorktreeJSON{
-				Repository: wt.Repository, Name: filepath.Base(wt.Path), Path: wt.Path,
+				Repository: wt.Repository, Name: result.Names[wt.Path], Path: wt.Path,
 				Branch: wt.Branch, Commit: wt.Commit, Status: wt.Status, Locked: wt.IsLocked, Prunable: wt.IsPrunable,
 				AllocatedBytes: sizes.bytes(wt.Path), Issues: sizes.issues(wt.Path),
 			})
@@ -126,7 +126,7 @@ func runWorktreeListAll(cmd *cobra.Command) error {
 
 func printWorktreeListAll(w io.Writer, worktrees []worktree.Info, sizes worktreeSizes, color bool) {
 	sizeWidth := sizes.width()
-	current := currentWorktreePath(worktrees)
+	current, _ := worktree.NewClient(worktree.Options{}).CurrentWorktree(worktrees)
 	for start := 0; start < len(worktrees); {
 		end := start + 1
 		for end < len(worktrees) && worktrees[end].Repository == worktrees[start].Repository {
@@ -136,7 +136,7 @@ func printWorktreeListAll(w io.Writer, worktrees []worktree.Info, sizes worktree
 			fmt.Fprintln(w)
 		}
 		fmt.Fprintln(w, sanitizeForTerminal(abbrevPath(worktrees[start].Repository)))
-		printWorktreeListAllGroup(w, worktrees[start:end], sizes, sizeWidth, current, color)
+		printWorktreeListAllGroup(w, worktrees[start:end], sizes, sizeWidth, current.Path, color)
 		start = end
 	}
 }
@@ -220,12 +220,9 @@ func runWorktreeList(wtClient *worktree.Client, showCurrent bool) error {
 		return nil
 	}
 	printWorktreeTable(wtClient, worktrees, reviews.Reviews, diffStats, sizes, colorEnabled(outWriter()))
-	if cwd, err := os.Getwd(); showCurrent && err == nil {
-		for _, wt := range worktrees {
-			if strings.HasPrefix(cwd, wt.Path) {
-				fmt.Fprintf(outWriter(), "\nYou are here: ./%s (branch: %s)\n", filepath.Base(wt.Path), wt.Branch)
-				break
-			}
+	if showCurrent {
+		if wt, ok := wtClient.CurrentWorktree(worktrees); ok {
+			fmt.Fprintf(outWriter(), "\nYou are here: %s (branch: %s)\n", wtClient.WorktreeName(wt, worktrees), wt.Branch)
 		}
 	}
 	printReviewWarning(outWriter(), reviews)
@@ -255,41 +252,11 @@ func isExternalWorktree(displayRoot, wtPath string) bool {
 	return strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".."
 }
 
-func isAgentWorktree(wtPath string) bool {
-	normalized := filepath.ToSlash(wtPath)
-	return strings.Contains(normalized, "/.claude/worktrees/") ||
-		strings.Contains(normalized, "/.codex/worktrees/")
-}
-
 func abbrevPath(path string) string {
 	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(path, home+string(filepath.Separator)) {
 		return "~" + path[len(home):]
 	}
 	return path
-}
-
-func displayWorktreeName(displayRoot string, wtPath string) string {
-	if displayRoot == "" {
-		return filepath.Base(wtPath)
-	}
-	rel, err := filepath.Rel(displayRoot, wtPath)
-	if err != nil || rel == "." || rel == "" {
-		return filepath.Base(wtPath)
-	}
-	if strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
-		return abbrevPath(wtPath)
-	}
-	if isAgentWorktree(wtPath) {
-		return abbrevPath(wtPath)
-	}
-	return rel
-}
-
-func listWorktreeName(wtClient *worktree.Client, root string, wt worktree.Info, worktrees []worktree.Info) string {
-	if wtClient.IsGlobalWorktree(wt) {
-		return wtClient.GlobalWorktreeName(wt, worktrees)
-	}
-	return displayWorktreeName(root, wt.Path)
 }
 
 func resolveWorktreeStatus(wtClient *worktree.Client, root string, wt worktree.Info) string {
@@ -303,7 +270,7 @@ func resolveWorktreeStatus(wtClient *worktree.Client, root string, wt worktree.I
 		return "bare"
 	case wtClient.IsGlobalWorktree(wt):
 		return wtClient.GetWorktreeStatus(wt.Path)
-	case isExternalWorktree(root, wt.Path), isAgentWorktree(wt.Path):
+	case isExternalWorktree(root, wt.Path), worktree.IsAgentWorktree(wt.Path):
 		return "agent"
 	default:
 		return wtClient.GetWorktreeStatus(wt.Path)
@@ -439,7 +406,7 @@ func printWorktreeTable(
 	maxBranch := len("Branch")
 	maxPR := len("PR")
 	for _, wt := range worktrees {
-		name := listWorktreeName(wtClient, root, wt, worktrees)
+		name := wtClient.WorktreeName(wt, worktrees)
 		maxName = max(maxName, runewidth.StringWidth(name))
 		maxBranch = max(maxBranch, runewidth.StringWidth(wt.Branch))
 		maxPR = max(maxPR, runewidth.StringWidth(formatWorktreeReview(reviews, wt.Branch)))
@@ -457,10 +424,10 @@ func printWorktreeTable(
 	heading := fmt.Sprintf("%-*s %-*s %-8s %s%*s  STATUS", maxName, "NAME", maxBranch, "BRANCH", "COMMIT",
 		reviewHeading, sizeWidth, "SIZE")
 	fmt.Fprintln(writer, paint(heading, sgrDim, color))
-	current := currentWorktreePath(worktrees)
+	current, _ := wtClient.CurrentWorktree(worktrees)
 
 	for _, wt := range worktrees {
-		name := listWorktreeName(wtClient, root, wt, worktrees)
+		name := wtClient.WorktreeName(wt, worktrees)
 		shortCommit := stringsutil.ShortHash(wt.Commit, 7, "")
 		stat, hasStat := diffStats[wt.Path]
 		status := formatWorktreeStatus(resolveWorktreeStatus(wtClient, root, wt), stat, hasStat)
@@ -473,7 +440,7 @@ func printWorktreeTable(
 		sizeText := sizes.text(wt.Path)
 		sizeColumn := padVisibleLeft(colorSize(sizeText, color), runewidth.StringWidth(sizeText), sizeWidth) + "  "
 		nameCell := name
-		if wt.Path == current {
+		if wt.Path == current.Path {
 			nameCell = paint(name, sgrBold, color)
 		}
 		fmt.Fprintf(writer, "%s %s %-8s %s%s%s\n",
@@ -495,7 +462,7 @@ func buildWorktreeJSON(
 	for _, wt := range worktrees {
 		stat, hasStat := diffStats[wt.Path]
 		item := WorktreeJSON{
-			Name:           listWorktreeName(wtClient, root, wt, worktrees),
+			Name:           wtClient.WorktreeName(wt, worktrees),
 			Path:           wt.Path,
 			Branch:         wt.Branch,
 			Commit:         wt.Commit,

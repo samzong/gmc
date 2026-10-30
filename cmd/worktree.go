@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/samzong/gmc/internal/worktree"
 	"github.com/spf13/cobra"
 )
 
@@ -258,10 +259,10 @@ func completeWorktreeNames(_ *cobra.Command, _ []string, _ string) ([]string, co
 
 	names := make([]string, 0, len(filtered))
 	for _, wt := range filtered {
-		if (isExternalWorktree(root, wt.Path) || isAgentWorktree(wt.Path)) && !wtClient.IsGlobalWorktree(wt) {
+		if (isExternalWorktree(root, wt.Path) || worktree.IsAgentWorktree(wt.Path)) && !wtClient.IsGlobalWorktree(wt) {
 			continue
 		}
-		names = append(names, listWorktreeName(wtClient, root, wt, filtered))
+		names = append(names, wtClient.WorktreeName(wt, filtered))
 	}
 	return names, cobra.ShellCompDirectiveNoFileComp
 }

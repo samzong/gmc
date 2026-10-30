@@ -128,10 +128,7 @@ func (e *Engine) Start(opts StartOptions) (Summary, error) {
 		return Summary{}, fmt.Errorf("create worktree: %w", err)
 	}
 
-	wtPath, branch, err := e.findWorktree(wtDir, wtBranch)
-	if err != nil {
-		return Summary{}, err
-	}
+	wtPath, branch := added.Path, added.Branch
 	attempt := AttemptRecord{
 		ID:        attemptID,
 		TaskID:    taskID,
@@ -453,19 +450,6 @@ func (e *Engine) Remove(taskRef string, opts RemoveOptions) error {
 		}
 	}
 	return e.store.RemoveTask(taskID)
-}
-
-func (e *Engine) findWorktree(dirName, branchName string) (string, string, error) {
-	worktrees, err := e.wt.List()
-	if err != nil {
-		return "", "", err
-	}
-	for _, info := range worktrees {
-		if filepath.Base(info.Path) == dirName || info.Branch == branchName {
-			return info.Path, info.Branch, nil
-		}
-	}
-	return "", "", fmt.Errorf("worktree %q not found after creation", dirName)
 }
 
 func (e *Engine) runWorkflowNode(attempt AttemptRecord, node WorkflowNode,
