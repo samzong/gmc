@@ -169,7 +169,7 @@ func resolveAllRemovableWorktrees(wtClient *worktree.Client) ([]string, error) {
 		if (isExternalWorktree(root, wt.Path) || isAgentWorktree(wt.Path)) && !wtClient.IsGlobalWorktree(wt) {
 			continue
 		}
-		names = append(names, displayWorktreeName(root, wt.Path))
+		names = append(names, listWorktreeName(wtClient, root, wt, all))
 	}
 	return names, nil
 }

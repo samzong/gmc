@@ -261,7 +261,7 @@ func completeWorktreeNames(_ *cobra.Command, _ []string, _ string) ([]string, co
 		if (isExternalWorktree(root, wt.Path) || isAgentWorktree(wt.Path)) && !wtClient.IsGlobalWorktree(wt) {
 			continue
 		}
-		names = append(names, displayWorktreeName(root, wt.Path))
+		names = append(names, listWorktreeName(wtClient, root, wt, filtered))
 	}
 	return names, cobra.ShellCompDirectiveNoFileComp
 }
