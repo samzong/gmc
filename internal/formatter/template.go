@@ -67,7 +67,7 @@ func readTemplateFile(filePath string) (string, error) {
 
 func GetPromptTemplate(templateName string) (string, error) {
 	if templateName == "" || templateName == config.DefaultPromptTemplate {
-		return buildDefaultTemplateContentWith(config.MustGetConfig()), nil
+		return buildDefaultTemplateContentWith(config.MustGetSettings()), nil
 	}
 
 	if strings.HasPrefix(templateName, "~/") {

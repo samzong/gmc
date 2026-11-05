@@ -18,6 +18,7 @@ var (
 	initCmd = &cobra.Command{
 		Use:   "init",
 		Short: "Initialize gmc configuration",
+		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			cfg, err := config.GetConfig()
 			if err != nil {
@@ -32,9 +33,17 @@ var (
 	}
 
 	saveConfigValues = func(apiKey, model, apiBase string) error {
-		config.SetConfigValue("api_key", apiKey)
-		config.SetConfigValue("model", model)
-		config.SetConfigValue("api_base", apiBase)
+		for _, setting := range []struct {
+			key   string
+			value string
+		}{{"api_key", apiKey}, {"model", model}, {"api_base", apiBase}} {
+			if setting.key == "api_key" && setting.value == "" {
+				continue
+			}
+			if err := config.SetConfigValue(setting.key, setting.value); err != nil {
+				return err
+			}
+		}
 		return config.SaveConfig()
 	}
 
@@ -120,7 +129,7 @@ func promptAPIKey(out io.Writer, cfg *config.Config, readLine func() (string, er
 		}
 		if line == "" {
 			if cfg.APIKey != "" {
-				return cfg.APIKey, nil
+				return "", nil
 			}
 			fmt.Fprintln(out, "API key is required.")
 			continue

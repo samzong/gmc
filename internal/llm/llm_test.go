@@ -17,6 +17,7 @@ import (
 
 func serveLLM(t *testing.T, handler http.HandlerFunc) *Client {
 	t.Helper()
+	t.Setenv("GMC_API_KEY", "")
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	viper.Reset()

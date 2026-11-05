@@ -69,14 +69,26 @@ Unavailable setup leaves normal Cargo builds available; diagnostics use gmc's ex
 
 ## Config
 
-Config lives at `~/.config/gmc/config.yaml` (legacy `~/.gmc.yaml` still works). A project-level `.gmc.yaml` also applies, but it is repository content and untrusted, so it may only set `role`, `model` and `enable_emoji` — never `api_key`, `api_base` or `prompt_template`. Those three decide which credential is used, where it is sent, and which local file is read into the prompt, so they come only from your own config or `GMC_*` variables. Names passed with `--config` or `GMC_*` always win over a project config, and gmc warns on stderr whenever it ignores something from one. Run `gmc init` for a guided setup, or set fields manually:
+Configuration lives at `~/.config/gmc/config.yaml`. The legacy `~/.gmc.yaml` path still works. A project-level `.gmc.yaml` is untrusted and can set only `role`, `model`, and `enable_emoji`. It cannot set `api_key`, `api_base`, or `prompt_template`. An explicit `--config` or `GMC_CONFIG` skips project configuration, and other `GMC_*` variables take precedence over project values. gmc reports ignored project settings on stderr.
+
+gmc stores API keys in macOS Keychain, Linux Secret Service, or Windows Credential Manager. Each credential uses the resolved absolute path of its configuration file. If you move the file, set the key again. `GMC_API_KEY` takes precedence over OS credential storage, which takes precedence over a legacy file key.
+
+gmc does not move file keys automatically or change the configuration file at startup. When a command uses a file key, gmc warns once on stderr that the key is in plaintext. Run `gmc config set apikey` to enter a key and move it to OS credential storage. After storage succeeds, gmc removes all direct case variants of `api_key` from the file. The values of those variants do not need to match.
+
+Commands that do not need a key, such as `version`, `wt`, and completion, do not read OS credential storage or show key warnings. If gmc cannot read OS credential storage, it warns when a command needs the key. It can still use a file key. Saving other configuration values keeps existing file keys and never copies an environment or stored key into the file.
+
+If OS credential storage is unavailable when you set a new key, the command fails and leaves the file unchanged. Set `GMC_API_KEY` instead. In `gmc init`, leave the key blank to keep the current key without storing it again. A new key follows the same storage and file-removal steps as `gmc config set apikey`. On macOS, gmc uses `/usr/bin/security`, so other programs running as your user can still read the key.
+
+Run `gmc init` for a guided setup, or set fields manually:
 
 ```bash
 gmc config set apibase https://api.openai.com/v1
-gmc config set apikey  sk-...
-gmc config set model   gpt-4.1-mini
-gmc config set role    "Backend Developer"
+gmc config set apikey
+gmc config set model gpt-4.1-mini
+gmc config set role "Backend Developer"
 ```
+
+`gmc config set apikey` reads the key from a hidden terminal prompt. It does not accept the key as a command-line argument.
 
 Set `worktree.root` (e.g. `/Volumes/git/worktrees`) in the global config to create new worktrees at `<root>/<owner>/<repo>/<repo>--<name>`; gmc locks them so an unmounted disk does not lose their Git records, and falls back to the old location with a warning when the root is missing.
 

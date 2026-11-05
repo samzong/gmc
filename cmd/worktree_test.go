@@ -6,22 +6,42 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/samzong/gmc/internal/worktree"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zalando/go-keyring"
 )
 
 func TestMain(m *testing.M) {
+	keyring.MockInit()
+	configDir, err := os.MkdirTemp("", "gmc-command-tests-*")
+	if err != nil {
+		panic(err)
+	}
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(strings.ToUpper(name), "GMC_") {
+			if err := os.Unsetenv(name); err != nil {
+				panic(err)
+			}
+		}
+	}
+	if err := os.Setenv("GMC_CONFIG", filepath.Join(configDir, "config.yaml")); err != nil {
+		panic(err)
+	}
 	if err := os.Setenv("GIT_CONFIG_GLOBAL", os.DevNull); err != nil {
 		panic(err)
 	}
 	if err := os.Setenv("GIT_CONFIG_NOSYSTEM", "1"); err != nil {
 		panic(err)
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	_ = os.RemoveAll(configDir)
+	os.Exit(code)
 }
 
 func TestRunWorktreeDefault_ShowsWorktreesInNonBareRepo(t *testing.T) {

@@ -97,6 +97,7 @@ func init() {
 }
 
 func initConfig() {
+	config.SetCredentialWarningWriter(errWriter())
 	configErr = config.InitConfig(cfgFile)
 	if configErr != nil {
 		return

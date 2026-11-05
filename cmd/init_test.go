@@ -26,7 +26,7 @@ func TestRunInitWizard(t *testing.T) {
 		{
 			name: "keeps key and tests connection", input: "\ngpt-4.2\n\ny\nn\n",
 			current:     config.Config{APIKey: "existing-key", Model: "gpt-4.1-mini", APIBase: "https://proxy.example/v1"},
-			want:        config.Config{APIKey: "existing-key", Model: "gpt-4.2", APIBase: "https://proxy.example/v1"},
+			want:        config.Config{Model: "gpt-4.2", APIBase: "https://proxy.example/v1"},
 			testedModel: "gpt-4.2",
 		},
 	} {

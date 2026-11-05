@@ -129,13 +129,21 @@ credentials:
   repository could turn any local file into prompt text — `prompt_template: ~/id_rsa`
   was enough to put a private key in the request body.
 
-Those three are read only from the user's own config or `GMC_*` variables. Do not
+`api_base` and `prompt_template` are read only from the user's own config or `GMC_*` variables. Do not
 route repository values through `viper.Set`: that writes to viper's override layer,
 which outranks environment variables and is also what `SaveConfig` persists, so a
 repository file could both mask explicit user input and be copied into the user's
 config file.
 
 **Config keys** (`internal/config/config.go`): `role`, `model`, `api_key`, `api_base`, `prompt_template`, `enable_emoji`.
+
+- API key reads use `GMC_API_KEY`, then OS credential storage, then a legacy file value.
+- `SetConfigValue("api_key", ...)` writes to OS credential storage and returns an error on failure. Check that error.
+- `SaveConfig` excludes environment and stored API keys. It preserves the file's existing direct `api_key` fields and their case variants.
+- Startup does not move keys or write configuration files. Read OS credentials only when a command needs a key.
+- If a command uses a file key, warn once on stderr that it is plaintext and suggest `gmc config set apikey`.
+- An explicit API key write stores the key first, then removes all direct file variants. Do not compare variant values or block other writes.
+- Credentials use service `gmc` and the resolved absolute configuration path as the account. Tests must use `keyring.MockInit`.
 
 - `prompt_template` is a **file path** to a YAML template (or `"default"` for built-in). There is no `prompts_dir` key.
 - Template variables: `{{.Role}}`, `{{.Files}}`, `{{.Diff}}`
