@@ -50,8 +50,12 @@ var (
 	configSetAPIKeyCmd = &cobra.Command{
 		Use:   "apikey",
 		Short: "Set the OpenAI API key (hidden input)",
-		Long:  `Read the OpenAI API key from a hidden interactive prompt. A terminal is required.`,
-		Args:  cobra.NoArgs,
+		Long: `Read the OpenAI API key from a hidden interactive prompt and store it in OS credential storage.
+After storage succeeds, gmc removes all api_key fields from the configuration file.
+A terminal is required. If OS credential storage is unavailable, use GMC_API_KEY instead.`,
+		Example:           "  gmc config set apikey",
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return runConfigSetAPIKey()
 		},
@@ -103,7 +107,9 @@ type configJSONOutput struct {
 }
 
 func setConfigValue(key string, value any, message string) error {
-	config.SetConfigValue(key, value)
+	if err := config.SetConfigValue(key, value); err != nil {
+		return err
+	}
 	if err := config.SaveConfig(); err != nil {
 		return fmt.Errorf("failed to save configuration: %w", err)
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zalando/go-keyring"
 )
 
 func TestConfigFiles(t *testing.T) {
@@ -41,11 +42,13 @@ func TestConfigCreationAndPaths(t *testing.T) {
 	require.NoError(t, os.Remove(path))
 	t.Setenv("XDG_CONFIG_HOME", "")
 	require.NoError(t, InitConfig(""))
-	assert.FileExists(t, path)
+	assert.NoFileExists(t, path)
 	assert.Equal(t, path, FilePath())
 	cfg, err := GetConfig()
 	require.NoError(t, err)
 	assert.Equal(t, defaultConfig(), cfg)
+	require.NoError(t, SaveConfig())
+	assert.FileExists(t, path)
 	if runtime.GOOS != "windows" {
 		info, err := os.Stat(path)
 		require.NoError(t, err)
@@ -67,14 +70,14 @@ func TestInvalidConfig(t *testing.T) {
 	viper.Set("enable_emoji", []string{"not", "a", "boolean"})
 	_, err := GetConfig()
 	require.Error(t, err)
-	assert.Equal(t, defaultConfig(), MustGetConfig())
+	assert.Equal(t, defaultConfig(), MustGetSettings())
 }
 
 func TestSaveConfig(t *testing.T) {
 	path := arrangeRepoConfig(t, "role: Original Role\nmodel: original-model\n", "")
 	require.NoError(t, InitConfig(path))
-	SetConfigValue("role", "Modified Role")
-	SetConfigValue("model", "modified-model")
+	require.NoError(t, SetConfigValue("role", "Modified Role"))
+	require.NoError(t, SetConfigValue("model", "modified-model"))
 	require.NoError(t, SaveConfig())
 	content, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -119,6 +122,7 @@ func arrangeRepoConfig(t *testing.T, userYAML, repoYAML string) string {
 	t.Helper()
 
 	viper.Reset()
+	keyring.MockInit()
 	t.Cleanup(func() { repo = repoLayer{} })
 
 	home := t.TempDir()
@@ -234,13 +238,13 @@ func TestRepoConfig_NotPersistedBySaveConfig(t *testing.T) {
 
 	require.NoError(t, InitConfig(""))
 
-	SetConfigValue("model", "my-new-model")
+	require.NoError(t, SetConfigValue("model", "my-new-model"))
 	require.NoError(t, SaveConfig())
 
 	saved, err := os.ReadFile(userConfig)
 	require.NoError(t, err)
 	assert.Contains(t, string(saved), "my-new-model")
-	assert.Contains(t, string(saved), "USER_KEY")
+	assert.Contains(t, string(saved), "api_key: USER_KEY")
 	assert.NotContains(t, string(saved), "attacker.example")
 	assert.NotContains(t, string(saved), "repo-role")
 }

@@ -13,7 +13,7 @@ import (
 
 var (
 	ErrLLM           = errors.New("LLM error")
-	errMissingAPIKey = errors.New("API key not set, please set the API key first: gmc config set apikey YOUR_API_KEY")
+	errMissingAPIKey = errors.New("API key not set. Run gmc config set apikey or set GMC_API_KEY")
 )
 
 type Options struct {

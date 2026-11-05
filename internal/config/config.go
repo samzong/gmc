@@ -76,6 +76,7 @@ func InitConfig(cfgFile string) error {
 	}
 	configFilePath = configPath
 	repo = repoLayer{}
+	credentials = credentialState{}
 
 	viper.SetConfigFile(configPath)
 	viper.SetConfigType("yaml")
@@ -93,21 +94,11 @@ func InitConfig(cfgFile string) error {
 
 	if err := viper.ReadInConfig(); err != nil {
 		var notFoundErr viper.ConfigFileNotFoundError
-		if errors.As(err, &notFoundErr) || os.IsNotExist(err) {
-			configDir := filepath.Dir(configFilePath)
-			if err := os.MkdirAll(configDir, 0755); err != nil {
-				return fmt.Errorf("failed to create configuration directory: %w", err)
-			}
-
-			if err := viper.WriteConfigAs(configFilePath); err != nil {
-				return fmt.Errorf("failed to write configuration file: %w", err)
-			}
-		} else {
+		if !errors.As(err, &notFoundErr) && !os.IsNotExist(err) {
 			return fmt.Errorf("failed to read configuration file: %w", err)
 		}
-	}
-	if err := enforceConfigFilePermissions(configFilePath); err != nil {
-		return err
+	} else if err := enforceConfigFilePermissions(configPath); err != nil {
+		fmt.Fprintf(credentialWarningWriter, "gmc: cannot secure configuration file permissions: %v\n", err)
 	}
 
 	loadRepoLayer(explicit)
@@ -115,7 +106,7 @@ func InitConfig(cfgFile string) error {
 	return nil
 }
 
-func GetConfig() (*Config, error) {
+func getSettings() (*Config, error) {
 	cfg := defaultConfig()
 	if err := viper.Unmarshal(cfg); err != nil {
 		return cfg, fmt.Errorf("failed to parse configuration: %w", err)
@@ -124,8 +115,33 @@ func GetConfig() (*Config, error) {
 	return cfg, nil
 }
 
-func MustGetConfig() *Config {
-	cfg, err := GetConfig()
+func GetConfig() (*Config, error) {
+	cfg, err := getSettings()
+	if err != nil {
+		return cfg, err
+	}
+	if key := os.Getenv("GMC_API_KEY"); key != "" {
+		cfg.APIKey = key
+	} else {
+		warning := loadAPIKey()
+		if credentials.key != "" {
+			cfg.APIKey = credentials.key
+		} else if cfg.APIKey != "" && configFilePath != "" {
+			if warning != "" {
+				warning += ". "
+			}
+			warning += fmt.Sprintf("API key is stored in plaintext in %q. "+
+				"Run gmc config set apikey to move it to OS credential storage", configFilePath)
+		}
+		if warning != "" {
+			warnCredential(warning)
+		}
+	}
+	return cfg, nil
+}
+
+func MustGetSettings() *Config {
+	cfg, err := getSettings()
 	if err != nil {
 		return defaultConfig()
 	}
@@ -141,14 +157,18 @@ func defaultConfig() *Config {
 }
 
 func SaveConfig() error {
-	if err := viper.WriteConfig(); err != nil {
+	if err := writeConfig(); err != nil {
 		return err
 	}
 	return enforceConfigFilePermissions(configFilePath)
 }
 
-func SetConfigValue(key string, value any) {
+func SetConfigValue(key string, value any) error {
+	if strings.EqualFold(key, "api_key") {
+		return storeAPIKey(fmt.Sprint(value))
+	}
 	viper.Set(key, value)
+	return nil
 }
 
 func IsValidRole(role string) bool {
