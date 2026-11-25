@@ -3,7 +3,7 @@ package version
 import (
 	"testing"
 
-	"github.com/samzong/gmc/internal/git"
+	"github.com/samzong/gmc/internal/gitutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -36,7 +36,7 @@ func TestSemVerComparison(t *testing.T) {
 
 func TestSuggestWithRulesMajor(t *testing.T) {
 	base, _ := ParseSemVer("v1.2.3")
-	commits := []git.CommitInfo{
+	commits := []gitutil.CommitInfo{
 		{Message: "feat!: new API"},
 		{Message: "fix: adjust tests"},
 	}
@@ -49,7 +49,7 @@ func TestSuggestWithRulesMajor(t *testing.T) {
 
 func TestSuggestWithRulesBreakingInBody(t *testing.T) {
 	base, _ := ParseSemVer("v0.1.4")
-	commits := []git.CommitInfo{
+	commits := []gitutil.CommitInfo{
 		{Message: "chore: update deps", Body: "BREAKING CHANGE: new config"},
 	}
 
@@ -60,7 +60,7 @@ func TestSuggestWithRulesBreakingInBody(t *testing.T) {
 
 func TestSuggestWithRulesMinor(t *testing.T) {
 	base, _ := ParseSemVer("v0.1.4")
-	commits := []git.CommitInfo{
+	commits := []gitutil.CommitInfo{
 		{Message: "feat: add CLI"},
 		{Message: "docs: update readme"},
 	}
@@ -73,7 +73,7 @@ func TestSuggestWithRulesMinor(t *testing.T) {
 
 func TestSuggestWithRulesPatch(t *testing.T) {
 	base, _ := ParseSemVer("v0.1.4")
-	commits := []git.CommitInfo{
+	commits := []gitutil.CommitInfo{
 		{Message: "fix: resolve bug"},
 		{Message: "chore: update"},
 	}
@@ -85,7 +85,7 @@ func TestSuggestWithRulesPatch(t *testing.T) {
 
 func TestSuggestWithRulesNoChange(t *testing.T) {
 	base, _ := ParseSemVer("v0.1.4")
-	commits := []git.CommitInfo{
+	commits := []gitutil.CommitInfo{
 		{Message: "docs: update readme"},
 		{Message: "chore: tidy"},
 	}

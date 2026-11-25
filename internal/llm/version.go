@@ -6,11 +6,12 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/samzong/gmc/internal/version"
 	"github.com/sashabaranov/go-openai"
 )
 
 var (
-	versionPattern = regexp.MustCompile(`(?i)version:\s*(v?\d+\.\d+\.\d+)`)
+	versionPattern = regexp.MustCompile(`(?im)^version:[ \t]*(\S+)[ \t]*\r?$`)
 	reasonPattern  = regexp.MustCompile(`(?is)reason:\s*(.+)$`)
 )
 
@@ -77,9 +78,9 @@ func parseVersionSuggestion(response string) (string, string, error) {
 		return "", "", errors.New("LLM response missing VERSION line in expected format")
 	}
 
-	version := strings.TrimSpace(versionMatch[1])
-	if !strings.HasPrefix(version, "v") {
-		version = "v" + version
+	parsed, err := version.ParseSemVer(versionMatch[1])
+	if err != nil {
+		return "", "", err
 	}
 
 	reason := ""
@@ -87,5 +88,5 @@ func parseVersionSuggestion(response string) (string, string, error) {
 		reason = strings.TrimSpace(reasonMatch[1])
 	}
 
-	return version, reason, nil
+	return parsed.String(), reason, nil
 }

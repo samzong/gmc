@@ -20,8 +20,6 @@ import (
 var (
 	tagAutoYes bool
 
-	// isStdinTerminal is a function to check if stdin is a terminal.
-	// It can be overridden in tests.
 	isStdinTerminal = func() bool {
 		return isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd())
 	}
@@ -29,6 +27,7 @@ var (
 	tagCmd = &cobra.Command{
 		Use:   "tag",
 		Short: "Suggest and create the next semver tag",
+		Args:  cobra.NoArgs,
 		Example: `  gmc tag
   gmc tag --yes`,
 		RunE: func(_ *cobra.Command, _ []string) error {
@@ -232,7 +231,7 @@ func selectVersionSuggestion(
 	case parseErr != nil:
 		fmt.Fprintf(errWriter(), "Warning: Invalid LLM version suggestion %q: %v\n", llmVersionStr, parseErr)
 		return version.SemVer{}, "", false
-	case llmVersion.LessThan(ruleVersion):
+	case llmVersion.LessThan(baseVersion) || llmVersion.Release().LessThan(ruleVersion.Release()):
 		fmt.Fprintf(
 			errWriter(),
 			"Warning: LLM suggested %s which is lower than rule-based %s; keeping rule result.\n",
