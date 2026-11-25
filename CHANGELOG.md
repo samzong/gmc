@@ -1,6 +1,47 @@
 # Changelog
 
 
+## [1.0.0-rc.1] (2026-11-25)
+
+This candidate prepares the public CLI, JSON, and configuration contracts for v1.0.0.
+Final v1.0.0 requires owner approval after candidate acceptance.
+See [Public contracts](docs/public-contracts.md) for compatibility rules and audit coverage.
+
+Go 1.27.0 or newer is required to build from source.
+New worktrees use a configured global root when available.
+API keys use OS credential storage when explicitly saved.
+Existing file keys remain readable.
+
+
+
+### Features
+
+* **worktree:** show worktree size by default and color wt list (#114)
+* **worktree:** structured JSON results for wt add, wt dup, and list issues (#116)
+* **worktree:** prune across all repositories (#117)
+* **worktree:** place new worktrees under a global root (#120)
+* **config:** store API key in OS credential storage (#126)
+
+
+### Fixes
+
+* stop querying the terminal on every startup (#115)
+* **worktree:** shorten list names and show missing status (#121)
+* **worktree:** align switch and removal names with list (#122)
+* **tag:** select and preserve semantic versions (#131)
+* **release:** resolve build versions and gate prereleases (#132)
+
+
+### Performance
+
+* **worktree:** scan list sizes with getattrlistbulk on darwin (#124)
+
+
+### Refactors
+
+* **worktree:** unify worktree names and current directory mapping (#123)
+
+
 ## [v0.11.0] - 2026-10-01
 ### Bug Fixes
 - **deps:** upgrade golang.org/x/text to v0.39.0 (CVE-2026-56852)

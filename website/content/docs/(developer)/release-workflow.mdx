@@ -14,6 +14,18 @@ goreleaser check
 goreleaser release --snapshot --clean
 ```
 
+## Prepare release notes
+
+Before tagging, update and commit `CHANGELOG.md` with git-cliff:
+
+```bash
+git-cliff --config cliff.toml --unreleased --tag v1.0.0-rc.1 --prepend CHANGELOG.md
+```
+
+Use the approved release version in place of `v1.0.0-rc.1` for later releases.
+Read the generated section and remove entries superseded before publication.
+Keep the `# Changelog` heading above the new section.
+
 ## Create a tag
 
 ```bash
@@ -26,4 +38,26 @@ The centralized [samzong/homebrew-tap](https://github.com/samzong/homebrew-tap) 
 
 ## Notes
 
-GoReleaser generates release notes from commits in the tagged release. Release automation does not open changelog pull requests. `CHANGELOG.md` keeps historical entries.
+GoReleaser generates release notes from commits in the tagged release. Release automation does not open changelog pull requests. `CHANGELOG.md` records reviewed release entries before tagging.
+
+
+## Accept a candidate package
+
+Use an isolated temporary directory and the archive for the host operating system and architecture.
+Download the candidate archive and `checksums.txt` with `gh release download v1.0.0-rc.1 --repo samzong/gmc`.
+Make sure that the downloaded archive matches its SHA-256 entry before extraction.
+Use the extracted binary by its absolute path for every command below.
+
+1. Run `gmc --version`, `gmc --help`, `gmc wt --help`, and `gmc version`.
+2. Initialize an empty Git repository with a `main` branch and one commit inside the temporary directory.
+3. Run `gmc wt list -o json` and parse stdout as JSON independently of stderr.
+4. Run `gmc wt add candidate -b main -o json` and use the returned path to confirm the worktree exists.
+5. Find the created path in `gmc wt list -o json`. Run `gmc wt remove <name>` with that list entry's `name`, then confirm the candidate is absent.
+6. Run an invalid flag and `gmc wt add` without arguments. Both must exit with code `1`.
+
+Use an isolated `HOME`, `XDG_CONFIG_HOME`, and Git configuration to avoid user hooks and preparation rules.
+Remove only the temporary directory created for this acceptance run.
+Record the tag, release commit, asset checksum, host platform, outputs, and exit codes with the release evidence.
+Make sure that the GitHub release is published as a prerelease and that Latest still points to the prior stable release.
+Compare the container `latest` digest and stable Homebrew formula with their values recorded before publication.
+Keep final promotion subject to owner approval after candidate acceptance.
