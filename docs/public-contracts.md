@@ -76,7 +76,9 @@ The `hook` group without a subcommand lists hooks.
 ## Worktree JSON
 
 Structured commands write JSON to stdout and progress or warnings to stderr.
-An empty result is an array, not `null`.
+List, creation, sharing, hooks, and ordinary prune results use arrays, including empty arrays.
+A single-repository `wt prune --pr-aware` returns `null` when it has no entries; consumers must accept this existing exception.
+With `--all`, an empty PR-aware prune result is `[]`.
 List and creation tests cover the serialized field names independently of the Go struct tags.
 Existing behavior tests cover list states, partial creation failures, discovery, hooks, and prune actions.
 
@@ -84,10 +86,14 @@ Existing behavior tests cover list states, partial creation failures, discovery,
 | --- | --- | --- |
 | `wt`, `wt list` | Array of `name`, `path`, `branch`, `commit`, `status` strings | `repository`, `diff_base`, `review_provider`, `review_state`, `review_url` strings; `locked`, `prunable` booleans; `changed_files`, `insertions`, `deletions`, `review_number`, `allocated_bytes` integers; `issues` array |
 | `wt add`, `wt add --pr`, `wt pr-review`, `wt dup` | Array of `name` string and `created` boolean | `path`, `branch`, `base`, `error` strings; `warnings` array of strings |
-| `wt prune` | Array of `name`, `branch`, `status`, `action` strings | `repository` string for home scanning |
+| `wt prune` without `--pr-aware` | Array of `name`, `branch`, `status`, `action` strings | `repository` string for home scanning |
+| `wt prune --pr-aware` | Array of `name`, `branch`, `pr_state`, `action`, `reason` strings, or the empty-result exception above | `repository` string for home scanning; `pr_number` integer |
 | `wt share list` | Array of `path`, `strategy`, `origin` strings and `disabled` boolean | None |
 | `wt hook`, `wt hook list` | Array of `index` integer, `cmd`, `origin` strings, `disabled` boolean | `id`, `desc` strings |
 | `wt share discover` | Object with `resources` and `hooks` arrays | None |
+
+Ordinary prune uses action values such as `would-remove`; PR-aware prune uses `would_remove`.
+An empty `pr_state` string means no PR state was found.
 
 Each issue has `source`, `code`, and `message` strings.
 Size issue codes are `not_found`, `permission_denied`, `overflow`, and `scan_failed`.
@@ -111,6 +117,9 @@ The legacy fallback is `~/.gmc.yaml`.
 Project configuration is `.gmc.yaml` in the current directory, without a parent-directory search.
 
 Nonempty `GMC_*` values override file values.
+For `role`, `model`, and `enable_emoji`, a set but empty environment variable still blocks the project value.
+The empty environment value then falls back to the user file or built-in default.
+For example, unset `GMC_MODEL` to use the project model; `GMC_MODEL=` uses the user model or default.
 An explicit `--config` or `GMC_CONFIG` skips project configuration and reports this on stderr.
 Otherwise, allowed project values override the user file, which overrides built-in defaults.
 Project configuration permits only `role`, `model`, and `enable_emoji`.
