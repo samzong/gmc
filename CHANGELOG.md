@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.0-rc.2] (2026-11-25)
+
+
+Archives include the release version in their filenames.
+The CLI and configuration behavior match v1.0.0-rc.1.
+
+### Fixes
+
+* **release:** include versions in archive names
 
 ## [1.0.0-rc.1] (2026-11-25)
 

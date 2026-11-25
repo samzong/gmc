@@ -44,7 +44,9 @@ GoReleaser generates release notes from commits in the tagged release. Release a
 ## Accept a candidate package
 
 Use an isolated temporary directory and the archive for the host operating system and architecture.
-Download the candidate archive and `checksums.txt` with `gh release download v1.0.0-rc.1 --repo samzong/gmc`.
+Download the candidate archive and `checksums.txt` with `gh release download v1.0.0-rc.2 --repo samzong/gmc`.
+From v1.0.0-rc.2, archive filenames include the version, such as `gmc_1.0.0-rc.2_Darwin_arm64.tar.gz`.
+Make sure that the tap manifest matches the archive filenames before updating the stable formula.
 Make sure that the downloaded archive matches its SHA-256 entry before extraction.
 Use the extracted binary by its absolute path for every command below.
 
@@ -61,3 +63,4 @@ Record the tag, release commit, asset checksum, host platform, outputs, and exit
 Make sure that the GitHub release is published as a prerelease and that Latest still points to the prior stable release.
 Compare the container `latest` digest and stable Homebrew formula with their values recorded before publication.
 Keep final promotion subject to owner approval after candidate acceptance.
+Promote accepted candidate content unchanged, except for required version metadata.
