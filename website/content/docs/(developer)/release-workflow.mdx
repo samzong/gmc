@@ -22,8 +22,8 @@ gmc tag
 
 ## Homebrew
 
-The release workflow dispatches the Homebrew tap update after a successful tagged release.
+The centralized [samzong/homebrew-tap](https://github.com/samzong/homebrew-tap) automation scans gmc releases and updates `Formula/gmc.rb`.
 
 ## Notes
 
-Keep release changes focused. Generated changelog and Homebrew updates are handled by release automation.
+GoReleaser generates release notes from commits in the tagged release. Release automation does not open changelog pull requests. `CHANGELOG.md` keeps historical entries.

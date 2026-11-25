@@ -212,7 +212,8 @@ Go **1.27.0+**. Key deps: Cobra, Viper, `go-openai` (OpenAI-compatible API).
 ## Release (only when doing release work)
 
 - Tags `v*` trigger GoReleaser ([`.goreleaser.yaml`](.goreleaser.yaml))
-- Homebrew formula update: `make update-homebrew` (requires `GH_PAT`)
+- Homebrew updates: centralized `samzong/homebrew-tap` automation scans gmc releases.
+- Release notes: GoReleaser generates notes from the tagged release. No post-release changelog PR runs.
 - Validate locally: `goreleaser check` and `goreleaser release --snapshot --clean`
 
 Changes must stay backward-compatible unless an explicit migration path is documented.
