@@ -1,6 +1,9 @@
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 version: 2
 
+release:
+  prerelease: auto
+
 before:
   hooks:
     - go mod tidy
@@ -66,7 +69,7 @@ dockers_v2:
       - "ghcr.io/{{ if .Env.IMAGE_REGISTRY_OWNER }}{{ .Env.IMAGE_REGISTRY_OWNER }}{{ else }}samzong{{ end }}/{{ .ProjectName }}"
     tags:
       - "{{ .Tag }}"
-      - latest
+      - "{{ if not .Prerelease }}latest{{ end }}"
     dockerfile: Dockerfile.goreleaser
     platforms:
       - linux/amd64
