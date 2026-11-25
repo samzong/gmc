@@ -41,7 +41,7 @@ Run 'gmc' with no arguments to generate a Conventional Commits message from the 
 		Example: `  gmc -a -y
   gmc wt add feature-login
   gmc`,
-		Version:       fmt.Sprintf("%s (built at %s)", Version, BuildTime),
+		Version:       versionString(),
 		Args:          cobra.ArbitraryArgs,
 		RunE:          runRoot,
 		SilenceErrors: false,
