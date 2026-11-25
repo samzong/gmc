@@ -9,28 +9,33 @@ import (
 	"strings"
 
 	"github.com/samzong/gmc/internal/gitutil"
+	"github.com/samzong/gmc/internal/version"
 )
 
-type CommitInfo struct {
-	Hash    string `json:"hash"`
-	Author  string `json:"author"`
-	Date    string `json:"date"`
-	Message string `json:"message"`
-	Body    string `json:"body"`
-}
+type CommitInfo = gitutil.CommitInfo
 
 func (c *Client) GetLatestTag() (string, error) {
 	if err := c.CheckGitRepository(); err != nil {
 		return "", err
 	}
 
-	result, err := c.runner.RunLogged("tag", "--sort=-creatordate")
+	result, err := c.runner.RunLogged("tag", "--list")
 	if err != nil {
 		return "", fmt.Errorf("failed to list tags: %w", err)
 	}
 
-	tag, _, _ := strings.Cut(result.StdoutString(true), "\n")
-	return strings.TrimSpace(tag), nil
+	var latest string
+	var latestVersion version.SemVer
+	for _, tag := range strings.Fields(result.StdoutString(true)) {
+		parsed, err := version.ParseSemVer(tag)
+		if err != nil {
+			continue
+		}
+		if latest == "" || latestVersion.LessThan(parsed) {
+			latest, latestVersion = tag, parsed
+		}
+	}
+	return latest, nil
 }
 
 func (c *Client) GetCommitsSinceTag(tag string) ([]CommitInfo, error) {

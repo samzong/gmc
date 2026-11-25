@@ -6,48 +6,55 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/samzong/gmc/internal/git"
+	"github.com/samzong/gmc/internal/gitutil"
 )
 
 type SemVer struct {
-	Major int
-	Minor int
-	Patch int
+	Major      int
+	Minor      int
+	Patch      int
+	Prerelease string
+	Build      string
 }
 
+var semverPattern = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)` +
+	`(?:-((?:alpha|beta|rc)\.(?:0|[1-9][0-9]*)))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$`)
+
 func ParseSemVer(tag string) (SemVer, error) {
-	if strings.TrimSpace(tag) == "" {
-		return SemVer{}, nil
-	}
-
-	trimmed := strings.TrimSpace(tag)
-	trimmed = strings.TrimPrefix(trimmed, "v")
-
-	parts := strings.Split(trimmed, ".")
-	if len(parts) != 3 {
+	parts := semverPattern.FindStringSubmatch(strings.TrimSpace(tag))
+	if parts == nil {
 		return SemVer{}, fmt.Errorf("invalid semantic version: %s", tag)
 	}
-
 	var values [3]int
-	for i, name := range []string{"major", "minor", "patch"} {
-		value, err := strconv.Atoi(parts[i])
+	for i := range values {
+		value, err := strconv.Atoi(parts[i+1])
 		if err != nil {
-			return SemVer{}, fmt.Errorf("invalid %s version in %s: %w", name, tag, err)
+			return SemVer{}, fmt.Errorf("invalid semantic version: %s: %w", tag, err)
 		}
 		values[i] = value
 	}
-	if values[0] < 0 || values[1] < 0 || values[2] < 0 {
-		return SemVer{}, fmt.Errorf("semantic version components must be non-negative: %s", tag)
-	}
-	return SemVer{Major: values[0], Minor: values[1], Patch: values[2]}, nil
+	return SemVer{Major: values[0], Minor: values[1], Patch: values[2], Prerelease: parts[4], Build: parts[5]}, nil
 }
 
 func (v SemVer) String() string {
-	return fmt.Sprintf("v%d.%d.%d", v.Major, v.Minor, v.Patch)
+	value := fmt.Sprintf("v%d.%d.%d", v.Major, v.Minor, v.Patch)
+	if v.Prerelease != "" {
+		value += "-" + v.Prerelease
+	}
+	if v.Build != "" {
+		value += "+" + v.Build
+	}
+	return value
+}
+
+func (v SemVer) Release() SemVer {
+	v.Prerelease = ""
+	v.Build = ""
+	return v
 }
 
 func (v SemVer) Equal(other SemVer) bool {
-	return v == other
+	return !v.LessThan(other) && !other.LessThan(v)
 }
 
 func (v SemVer) LessThan(other SemVer) bool {
@@ -57,7 +64,24 @@ func (v SemVer) LessThan(other SemVer) bool {
 	if v.Minor != other.Minor {
 		return v.Minor < other.Minor
 	}
-	return v.Patch < other.Patch
+	if v.Patch != other.Patch {
+		return v.Patch < other.Patch
+	}
+	if v.Prerelease == other.Prerelease || other.Prerelease == "" {
+		return v.Prerelease != other.Prerelease
+	}
+	if v.Prerelease == "" {
+		return false
+	}
+	stage, number, _ := strings.Cut(v.Prerelease, ".")
+	otherStage, otherNumber, _ := strings.Cut(other.Prerelease, ".")
+	if stage != otherStage {
+		return stage < otherStage
+	}
+	if len(number) != len(otherNumber) {
+		return len(number) < len(otherNumber)
+	}
+	return number < otherNumber
 }
 
 type RuleStats struct {
@@ -74,7 +98,7 @@ type RuleResult struct {
 
 var commitTypePattern = regexp.MustCompile(`^(?P<type>[a-z]+)(?:\([^)]+\))?(?P<breaking>!)?:`)
 
-func SuggestWithRules(base SemVer, commits []git.CommitInfo) RuleResult {
+func SuggestWithRules(base SemVer, commits []gitutil.CommitInfo) RuleResult {
 	stats := RuleStats{}
 
 	for _, commit := range commits {
