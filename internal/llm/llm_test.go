@@ -144,6 +144,7 @@ func TestParseVersionSuggestion(t *testing.T) {
 		{"VERSION: v1.2.3\nREASON: Minor improvements", "v1.2.3", "Minor improvements"},
 		{"Version: 0.2.0\nReason: Feature release", "v0.2.0", "Feature release"},
 		{"VERSION: v1.2.3-rc.1+build.01\nREASON: Candidate", "v1.2.3-rc.1+build.01", "Candidate"},
+		{"VERSION: v1.2.3-rc.1+build.01\r\nREASON: Candidate", "v1.2.3-rc.1+build.01", "Candidate"},
 	} {
 		version, reason, err := parseVersionSuggestion(tt.input)
 		require.NoError(t, err)

@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	versionPattern = regexp.MustCompile(`(?im)^version:[ \t]*(\S+)[ \t]*$`)
+	versionPattern = regexp.MustCompile(`(?im)^version:[ \t]*(\S+)[ \t]*\r?$`)
 	reasonPattern  = regexp.MustCompile(`(?is)reason:\s*(.+)$`)
 )
 
