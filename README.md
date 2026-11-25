@@ -11,6 +11,8 @@
   </p>
 </div>
 
+The [v1.0.0 public contracts](docs/public-contracts.md) describe CLI compatibility, JSON fields, exit codes, and configuration precedence.
+
 ## Installation
 
 ### Homebrew (macOS/Linux)
