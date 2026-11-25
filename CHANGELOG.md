@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.0.0] (2026-11-25)
+
+The public CLI and configuration contracts are stable for v1.0.0.
+This release promotes the accepted v1.0.0-rc.2 content with only version metadata changes.
+
+
+### Features
+
+* **worktree:** add --size column to wt list (#112)
+* **worktree:** show worktree size by default and color wt list (#114)
+* **worktree:** structured JSON results for wt add, wt dup, and list issues (#116)
+* **worktree:** prune across all repositories (#117)
+* **worktree:** place new worktrees under a global root (#120)
+* **config:** store API key in OS credential storage (#126)
+
+
+### Fixes
+
+* stop querying the terminal on every startup (#115)
+* **worktree:** shorten list names and show missing status (#121)
+* **worktree:** align switch and removal names with list (#122)
+* **tag:** select and preserve semantic versions (#131)
+* **release:** resolve build versions and gate prereleases (#132)
+* **release:** include versions in archive names (#135)
+
+
+### Performance
+
+* **worktree:** scan list sizes with getattrlistbulk on darwin (#124)
+
+
+### Refactors
+
+* **worktree:** unify worktree names and current directory mapping (#123)
+
 ## [1.0.0-rc.2] (2026-11-25)
 
 
